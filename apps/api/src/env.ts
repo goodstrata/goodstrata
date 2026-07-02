@@ -17,8 +17,23 @@ const envSchema = z.object({
   SMS_PROVIDER: z.string().default("console"),
   STORAGE_PROVIDER: z.string().default("local"),
   PAYMENTS_PROVIDER: z.string().default("mock"),
+  VIDEO_PROVIDER: z.string().default("console"),
   DATA_DIR: z.string().default("./data"),
   MOCK_PAYMENTS_SECRET: z.string().optional(),
+
+  /** AWS SES (EMAIL_PROVIDER=ses). */
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  AWS_REGION: z.string().optional(),
+  AWS_SES_FROM_EMAIL: z.string().optional(),
+
+  /** Twilio (SMS_PROVIDER=twilio). */
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_PHONE_NUMBER: z.string().optional(),
+
+  /** Daily.co (VIDEO_PROVIDER=daily). */
+  DAILY_API_KEY: z.string().optional(),
 
   /** Serve the built web app from this directory (production single-image mode). */
   WEB_DIST: z.string().optional(),

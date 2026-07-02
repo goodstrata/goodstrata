@@ -1,3 +1,5 @@
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+
 export interface OutboundEmail {
   to: string;
   subject: string;
@@ -22,6 +24,56 @@ export function consoleEmailProvider(): EmailProvider {
         `[email:console] to=${email.to} subject="${email.subject}" id=${id}\n${email.text}`,
       );
       return { providerMessageId: id };
+    },
+  };
+}
+
+/** Minimal shape of the SESv2 client so tests can inject a mock. */
+export interface SesClientLike {
+  send(command: SendEmailCommand): Promise<{ MessageId?: string }>;
+}
+
+export interface SesEmailConfig {
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** Verified sender identity, e.g. "notices@yourdomain.com". */
+  from: string;
+  /** Injectable for tests; defaults to a real SESv2Client. */
+  client?: SesClientLike;
+}
+
+/** AWS SES (v2 API): SendEmail with Simple content. */
+export function sesEmailProvider(cfg: SesEmailConfig): EmailProvider {
+  const client: SesClientLike =
+    cfg.client ??
+    (() => {
+      const sdk = new SESv2Client({
+        region: cfg.region,
+        credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+      });
+      return { send: (command: SendEmailCommand) => sdk.send(command) };
+    })();
+
+  return {
+    name: "ses",
+    async send(email) {
+      const out = await client.send(
+        new SendEmailCommand({
+          FromEmailAddress: cfg.from,
+          Destination: { ToAddresses: [email.to] },
+          Content: {
+            Simple: {
+              Subject: { Data: email.subject, Charset: "UTF-8" },
+              Body: {
+                Text: { Data: email.text, Charset: "UTF-8" },
+                ...(email.html ? { Html: { Data: email.html, Charset: "UTF-8" } } : {}),
+              },
+            },
+          },
+        }),
+      );
+      return { providerMessageId: out.MessageId ?? "" };
     },
   };
 }
