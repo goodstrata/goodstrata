@@ -15,5 +15,31 @@ services:
       timeout: 3s
       retries: 10
 
+  # The whole platform in one process: API, event dispatcher, agents, PWA.
+  # Start with: docker compose --profile app up --build
+  app:
+    profiles: ["app"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://goodstrata:goodstrata@postgres:5432/goodstrata
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-change-me-0123456789abcdef}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      PORT: 3000
+      # Offline by default; set AI_PROVIDER=anthropic + ANTHROPIC_API_KEY,
+      # or AI_PROVIDER=local + OLLAMA_BASE_URL for a local model.
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+    ports:
+      - "3000:3000"
+    volumes:
+      - appdata:/data
+
 volumes:
   pgdata:
+  appdata:

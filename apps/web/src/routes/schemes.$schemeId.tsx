@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { AgentsTab } from "../components/AgentsTab";
 import { DecisionsTab } from "../components/DecisionsTab";
 import { FinanceTab } from "../components/FinanceTab";
 import { MaintenanceTab } from "../components/MaintenanceTab";
@@ -17,6 +18,7 @@ const TABS = [
   "maintenance",
   "meetings",
   "decisions",
+  "agents",
   "lots",
   "people",
   "committee",
@@ -81,6 +83,7 @@ function SchemePage() {
         {tab === "maintenance" && <MaintenanceTab schemeId={schemeId} />}
         {tab === "meetings" && <MeetingsTab schemeId={schemeId} />}
         {tab === "decisions" && <DecisionsTab schemeId={schemeId} />}
+        {tab === "agents" && <AgentsTab schemeId={schemeId} />}
         {tab === "lots" && <LotsTab schemeId={schemeId} />}
         {tab === "people" && <PeopleTab schemeId={schemeId} />}
         {tab === "committee" && <CommitteeTab schemeId={schemeId} />}

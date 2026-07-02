@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/migrate.ts",
-    "seed:demo": "tsx src/seed/demo.ts",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

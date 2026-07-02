@@ -18,7 +18,7 @@
     "test:e2e": "turbo run test:e2e",
     "db:generate": "pnpm --filter @goodstrata/db db:generate",
     "db:migrate": "pnpm --filter @goodstrata/db db:migrate",
-    "seed:demo": "pnpm --filter @goodstrata/db seed:demo"
+    "seed:demo": "pnpm --filter @goodstrata/api seed:demo"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.8",
