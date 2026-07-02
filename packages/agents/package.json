@@ -1,0 +1,31 @@
+{
+  "name": "@goodstrata/agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "catalog:",
+    "@ai-sdk/openai-compatible": "catalog:",
+    "@goodstrata/core": "workspace:*",
+    "@goodstrata/db": "workspace:*",
+    "@goodstrata/events": "workspace:*",
+    "@goodstrata/shared": "workspace:*",
+    "ai": "catalog:",
+    "drizzle-orm": "catalog:",
+    "pg-boss": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@goodstrata/integrations": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

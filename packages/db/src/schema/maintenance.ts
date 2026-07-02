@@ -1,4 +1,9 @@
 import {
+  MAINTENANCE_STATUSES,
+  MAINTENANCE_URGENCIES,
+  WORK_ORDER_STATUSES,
+} from "@goodstrata/shared";
+import {
   bigint,
   boolean,
   date,
@@ -10,11 +15,6 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import {
-  MAINTENANCE_STATUSES,
-  MAINTENANCE_URGENCIES,
-  WORK_ORDER_STATUSES,
-} from "@goodstrata/shared";
 import { createdAt, pk, updatedAt } from "./_common.js";
 import { contractors } from "./contractors.js";
 import { documents } from "./documents.js";

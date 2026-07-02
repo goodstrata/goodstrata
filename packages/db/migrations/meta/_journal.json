@@ -15,6 +15,20 @@
       "when": 1782980069275,
       "tag": "0001_event_log_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782980412123,
+      "tag": "0002_careful_imperial_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782980907326,
+      "tag": "0003_fantastic_young_avengers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,14 +1,5 @@
-import {
-  bigint,
-  date,
-  index,
-  jsonb,
-  pgEnum,
-  pgTable,
-  text,
-  uuid,
-} from "drizzle-orm/pg-core";
 import { DOCUMENT_ACCESS_LEVELS, DOCUMENT_CATEGORIES } from "@goodstrata/shared";
+import { bigint, date, index, jsonb, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { createdAt, pk } from "./_common.js";
 import { schemes } from "./tenancy.js";
 

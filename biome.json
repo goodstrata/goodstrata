@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/migrations", "!**/routeTree.gen.ts", "!**/*.gen.ts"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/migrations",
+      "!**/routeTree.gen.ts",
+      "!**/*.gen.ts",
+      "!**/*.css",
+      "!apps/web/public"
+    ]
   },
   "formatter": {
     "enabled": true,

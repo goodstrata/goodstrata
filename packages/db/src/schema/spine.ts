@@ -1,4 +1,11 @@
 import {
+  AGENT_NAMES,
+  AGENT_RUN_STATUSES,
+  DECIDER_ROLES,
+  DECISION_KINDS,
+  DECISION_STATUSES,
+} from "@goodstrata/shared";
+import {
   bigint,
   boolean,
   index,
@@ -11,13 +18,6 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import {
-  AGENT_NAMES,
-  AGENT_RUN_STATUSES,
-  DECIDER_ROLES,
-  DECISION_KINDS,
-  DECISION_STATUSES,
-} from "@goodstrata/shared";
 import { createdAt, pk } from "./_common.js";
 import { users } from "./auth.js";
 import { schemes } from "./tenancy.js";
@@ -75,6 +75,7 @@ export const agentRuns = pgTable(
     schemeId: uuid().references(() => schemes.id),
     agent: agentNameEnum().notNull(),
     triggerEventId: uuid().notNull(),
+    correlationId: uuid().notNull(),
     model: text().notNull(),
     status: agentRunStatusEnum().notNull().default("running"),
     /** Deterministic context given to the model. */
@@ -86,13 +87,15 @@ export const agentRuns = pgTable(
     inputTokens: integer().notNull().default(0),
     outputTokens: integer().notNull().default(0),
     causationDepth: integer().notNull().default(0),
+    /** 0 = first attempt; retries insert attempt+1 (see runtime idempotency). */
+    attempt: integer().notNull().default(0),
     retryOf: uuid(),
     startedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp({ withTimezone: true }),
   },
   (t) => [
     // Retried pg-boss jobs find the existing run instead of double-running.
-    uniqueIndex("agent_runs_trigger_idx").on(t.triggerEventId, t.agent, t.retryOf),
+    uniqueIndex("agent_runs_trigger_idx").on(t.triggerEventId, t.agent, t.attempt),
     index("agent_runs_scheme_idx").on(t.schemeId, t.startedAt),
   ],
 );

@@ -1,5 +1,5 @@
-import { date, index, jsonb, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { COMPLIANCE_KINDS, COMPLIANCE_STATUSES } from "@goodstrata/shared";
+import { date, index, jsonb, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { createdAt, pk, updatedAt } from "./_common.js";
 import { schemes } from "./tenancy.js";
 

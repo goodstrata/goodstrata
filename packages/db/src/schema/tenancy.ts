@@ -1,3 +1,4 @@
+import { LOT_TYPES, MEMBERSHIP_ROLES, OWNERSHIP_KINDS, SCHEME_STATUSES } from "@goodstrata/shared";
 import {
   boolean,
   date,
@@ -11,12 +12,6 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import {
-  LOT_TYPES,
-  MEMBERSHIP_ROLES,
-  OWNERSHIP_KINDS,
-  SCHEME_STATUSES,
-} from "@goodstrata/shared";
 import { createdAt, pk, updatedAt } from "./_common.js";
 import { users } from "./auth.js";
 
@@ -152,10 +147,7 @@ export const ownerships = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [
-    index("ownerships_lot_idx").on(t.lotId),
-    index("ownerships_person_idx").on(t.personId),
-  ],
+  (t) => [index("ownerships_lot_idx").on(t.lotId), index("ownerships_person_idx").on(t.personId)],
 );
 
 export const tenancies = pgTable(

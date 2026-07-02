@@ -157,13 +157,7 @@ export type ComplianceStatus = (typeof COMPLIANCE_STATUSES)[number];
 export const MESSAGE_CHANNELS = ["email", "sms", "in_app", "post"] as const;
 export type MessageChannel = (typeof MESSAGE_CHANNELS)[number];
 
-export const MESSAGE_STATUSES = [
-  "queued",
-  "sent",
-  "delivered",
-  "bounced",
-  "failed",
-] as const;
+export const MESSAGE_STATUSES = ["queued", "sent", "delivered", "bounced", "failed"] as const;
 export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 
 export const DECISION_KINDS = [
@@ -203,12 +197,7 @@ export const AGENT_NAMES = [
 ] as const;
 export type AgentName = (typeof AGENT_NAMES)[number];
 
-export const AGENT_RUN_STATUSES = [
-  "running",
-  "succeeded",
-  "failed",
-  "awaiting_decision",
-] as const;
+export const AGENT_RUN_STATUSES = ["running", "succeeded", "failed", "awaiting_decision"] as const;
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 
 export const CONTRACTOR_STATUSES = ["pending", "approved", "suspended"] as const;

@@ -1,4 +1,11 @@
 import {
+  MEETING_KINDS,
+  MEETING_STATUSES,
+  MOTION_STATUSES,
+  RESOLUTION_TYPES,
+  VOTE_CHOICES,
+} from "@goodstrata/shared";
+import {
   boolean,
   date,
   index,
@@ -11,13 +18,6 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import {
-  MEETING_KINDS,
-  MEETING_STATUSES,
-  MOTION_STATUSES,
-  RESOLUTION_TYPES,
-  VOTE_CHOICES,
-} from "@goodstrata/shared";
 import { createdAt, pk, updatedAt } from "./_common.js";
 import { documents } from "./documents.js";
 import { lots, people, schemes } from "./tenancy.js";

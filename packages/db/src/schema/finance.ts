@@ -1,6 +1,14 @@
 import {
+  BUDGET_STATUSES,
+  FUND_KINDS,
+  INVOICE_STATUSES,
+  LEDGER_ENTRY_KINDS,
+  LEVY_FREQUENCIES,
+  LEVY_NOTICE_STATUSES,
+  PAYMENT_STATUSES,
+} from "@goodstrata/shared";
+import {
   bigint,
-  boolean,
   date,
   index,
   integer,
@@ -12,15 +20,6 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import {
-  BUDGET_STATUSES,
-  FUND_KINDS,
-  INVOICE_STATUSES,
-  LEDGER_ENTRY_KINDS,
-  LEVY_FREQUENCIES,
-  LEVY_NOTICE_STATUSES,
-  PAYMENT_STATUSES,
-} from "@goodstrata/shared";
 import { createdAt, pk, updatedAt } from "./_common.js";
 import { contractors } from "./contractors.js";
 import { documents } from "./documents.js";
@@ -34,16 +33,8 @@ export const levyNoticeStatusEnum = pgEnum("levy_notice_status", LEVY_NOTICE_STA
 export const ledgerEntryKindEnum = pgEnum("ledger_entry_kind", LEDGER_ENTRY_KINDS);
 export const paymentStatusEnum = pgEnum("payment_status", PAYMENT_STATUSES);
 export const invoiceStatusEnum = pgEnum("invoice_status", INVOICE_STATUSES);
-export const payoutStatusEnum = pgEnum("payout_status", [
-  "queued",
-  "sent",
-  "settled",
-  "failed",
-]);
-export const bankAccountKindEnum = pgEnum("bank_account_kind", [
-  "virtual_collection",
-  "operating",
-]);
+export const payoutStatusEnum = pgEnum("payout_status", ["queued", "sent", "settled", "failed"]);
+export const bankAccountKindEnum = pgEnum("bank_account_kind", ["virtual_collection", "operating"]);
 
 /** Admin fund + maintenance (capital works) fund, per OC Act. */
 export const funds = pgTable(

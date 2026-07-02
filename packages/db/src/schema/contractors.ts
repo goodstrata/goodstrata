@@ -1,13 +1,5 @@
-import {
-  date,
-  index,
-  integer,
-  pgEnum,
-  pgTable,
-  text,
-  uuid,
-} from "drizzle-orm/pg-core";
 import { CONTRACTOR_STATUSES, CREDENTIAL_KINDS } from "@goodstrata/shared";
+import { date, index, integer, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { createdAt, pk, updatedAt } from "./_common.js";
 import { documents } from "./documents.js";
 import { organizations, schemes } from "./tenancy.js";

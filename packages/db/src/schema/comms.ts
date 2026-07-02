@@ -1,13 +1,5 @@
-import {
-  index,
-  jsonb,
-  pgEnum,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
 import { MESSAGE_CHANNELS, MESSAGE_STATUSES } from "@goodstrata/shared";
+import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createdAt, pk } from "./_common.js";
 import { people, schemes } from "./tenancy.js";
 
