@@ -15,7 +15,8 @@
       "!**/*.css",
       "!apps/web/public",
       "!docs/blog/sim-artifacts",
-      "!site"
+      "!site",
+      "!.claude"
     ]
   },
   "formatter": {
