@@ -30,9 +30,7 @@ export class GoodstrataDemo extends Container<Env> {
               OPENAI_COMPAT_API_KEY: env.OPENROUTER_API_KEY,
             }
           : {}),
-        ...(env.DAILY_API_KEY
-          ? { VIDEO_PROVIDER: "daily", DAILY_API_KEY: env.DAILY_API_KEY }
-          : {}),
+        ...(env.DAILY_API_KEY ? { VIDEO_PROVIDER: "daily", DAILY_API_KEY: env.DAILY_API_KEY } : {}),
       },
     });
   }
