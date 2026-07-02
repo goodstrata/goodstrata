@@ -35,14 +35,14 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await expect(page.getByRole("heading", { name: "48 Rose St Owners Corporation" })).toBeVisible();
 
   // --- Import lots via CSV ---
-  await page.getByRole("button", { name: "lots" }).click();
+  await page.getByRole("tab", { name: "lots" }).click();
   await page.getByTestId("csv-input").fill(CSV);
   await page.getByRole("button", { name: "Import lots" }).click();
   await expect(page.getByRole("cell", { name: "Sam Shopkeeper" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "Kim Nguyen" })).toBeVisible();
 
   // --- Invite an owner ---
-  await page.getByRole("button", { name: "people" }).click();
+  await page.getByRole("tab", { name: "people" }).click();
   const alexRow = page.getByTestId("person-alex@example.com");
   await alexRow.getByRole("button", { name: "Invite" }).click();
   await expect(alexRow.getByText("invited")).toBeVisible();
@@ -68,22 +68,24 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
 
   // --- Manager sees the owner joined ---
   await page.reload();
-  await page.getByRole("button", { name: "people" }).click();
+  await page.getByRole("tab", { name: "people" }).click();
   await expect(page.getByTestId("person-alex@example.com").getByText("joined")).toBeVisible();
 
   // --- Assign the owner as treasurer ---
-  await page.getByRole("button", { name: "committee" }).click();
-  await page.getByRole("combobox").first().selectOption({ label: "Alex Owner (alex@example.com)" });
-  await page.getByRole("combobox").nth(1).selectOption("treasurer");
+  await page.getByRole("tab", { name: "committee" }).click();
+  await page.getByTestId("committee-member").click();
+  await page.getByRole("option", { name: "Alex Owner (alex@example.com)" }).click();
+  await page.getByTestId("committee-role").click();
+  await page.getByRole("option", { name: "Treasurer", exact: true }).click();
   await page.getByRole("button", { name: "Assign" }).click();
   await expect(page.getByTestId("committee-list").getByText("treasurer")).toBeVisible();
 
   // --- Activation is blocked until insurance is uploaded ---
-  await page.getByRole("button", { name: "overview" }).click();
+  await page.getByRole("tab", { name: "overview" }).click();
   await expect(page.getByRole("button", { name: "Activate scheme" })).toBeDisabled();
 
   // --- Upload insurance certificate ---
-  await page.getByRole("button", { name: "documents" }).click();
+  await page.getByRole("tab", { name: "documents" }).click();
   await page.getByTestId("doc-file").setInputFiles({
     name: "certificate-of-currency.pdf",
     mimeType: "application/pdf",
@@ -93,14 +95,14 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await expect(page.getByText("certificate-of-currency.pdf")).toBeVisible();
 
   // --- Activate ---
-  await page.getByRole("button", { name: "overview" }).click();
+  await page.getByRole("tab", { name: "overview" }).click();
   const activate = page.getByRole("button", { name: "Activate scheme" });
   await expect(activate).toBeEnabled();
   await activate.click();
   await expect(page.getByText("This owners corporation is active")).toBeVisible();
 
   // --- The event bus saw everything, including the echo agent ---
-  await page.getByRole("button", { name: "activity" }).click();
+  await page.getByRole("tab", { name: "activity" }).click();
   const feed = page.getByTestId("event-feed");
   await expect(feed.getByText("scheme.activated")).toBeVisible();
   await expect(feed.getByText("lots.imported")).toBeVisible();
@@ -109,7 +111,8 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   // ======================= The money loop =======================
 
   // --- Draft a budget (opens the treasurer decision gate) ---
-  await page.getByRole("button", { name: "finance" }).click();
+  await page.getByRole("tab", { name: "finance" }).click();
+  await page.getByRole("button", { name: "New budget" }).click();
   await page.getByTestId("budget-fy").fill("2026-07-01");
   await page.getByTestId("budget-admin").fill("48000");
   await page.getByTestId("budget-maintenance").fill("12000");
@@ -117,7 +120,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await expect(page.getByText("committee review")).toBeVisible();
 
   // --- Approve it in the decisions inbox ---
-  await page.getByRole("button", { name: "decisions" }).click();
+  await page.getByRole("tab", { name: "decisions" }).click();
   const budgetDecision = page.getByTestId("decision-budget_adoption");
   await expect(budgetDecision).toBeVisible();
   await budgetDecision.getByRole("button", { name: "Approve" }).click();
@@ -126,12 +129,14 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   // --- The code executor adopts the budget asynchronously ---
   await expect(async () => {
     await page.reload();
-    await page.getByRole("button", { name: "finance" }).click();
+    await page.getByRole("tab", { name: "finance" }).click();
     await expect(page.getByText("adopted", { exact: true })).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 20_000 });
 
   // --- Create the quarterly schedule and issue instalment 1 ---
-  await page.getByTestId("schedule-budget").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "New schedule" }).click();
+  await page.getByTestId("schedule-budget").click();
+  await page.getByRole("option").first().click();
   await page.getByTestId("schedule-first-due").fill("2026-10-01");
   await page.getByRole("button", { name: "Create quarterly schedule" }).click();
   await expect(page.getByText(/quarterly × 4/)).toBeVisible();
@@ -153,13 +158,15 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
 
   // ======================= Maintenance =======================
 
-  await page.getByRole("button", { name: "maintenance" }).click();
+  await page.getByRole("tab", { name: "maintenance" }).click();
+  await page.getByRole("button", { name: "New contractor" }).click();
   await page.getByTestId("contractor-name").fill("Fitzroy Plumbing Co");
   await page.getByTestId("contractor-email").fill("jobs@fitzroyplumbing.example");
   await page.getByTestId("contractor-trades").fill("plumbing, roofing");
   await page.getByRole("button", { name: "Add contractor" }).click();
   await expect(page.getByText("Fitzroy Plumbing Co")).toBeVisible();
 
+  await page.getByRole("button", { name: "Report issue" }).click();
   await page.getByTestId("mr-title").fill("Water stain on lot 9 ceiling");
   await page.getByTestId("mr-description").fill("Brown stain spreading after heavy rain.");
   await page.getByRole("button", { name: "Submit request" }).click();
@@ -167,7 +174,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
 
   // The maintenance agent picked the event up (mock model: run completes
   // without tool calls; real triage behaviour is covered by agent tests).
-  await page.getByRole("button", { name: "activity" }).click();
+  await page.getByRole("tab", { name: "activity" }).click();
   await expect(
     page.getByTestId("event-feed").getByText("maintenance.request.created"),
   ).toBeVisible();
@@ -177,7 +184,8 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   const agmDate = new Date(Date.now() + 30 * 86_400_000);
   const agmLocal = `${agmDate.toISOString().slice(0, 10)}T18:00`;
 
-  await page.getByRole("button", { name: "meetings" }).click();
+  await page.getByRole("tab", { name: "meetings" }).click();
+  await page.getByRole("button", { name: "New meeting" }).click();
   await page.getByTestId("meeting-title").fill("2026 Annual General Meeting");
   await page.getByTestId("meeting-when").fill(agmLocal);
   await page.getByTestId("meeting-agenda").fill("Financial statements\nCommittee election");
@@ -185,8 +193,9 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await page.getByRole("button", { name: /2026 Annual General Meeting/ }).click();
 
   await page.getByRole("button", { name: "Send notice" }).click();
-  await expect(page.getByText("notice sent")).toBeVisible();
+  await expect(page.getByText("notice sent", { exact: true })).toBeVisible();
 
+  await page.getByRole("button", { name: "New motion" }).click();
   await page.getByTestId("motion-title").fill("Repaint the stairwell");
   await page.getByTestId("motion-text").fill("That the OC engages a painter for the stairwell.");
   await page.getByRole("button", { name: "Add motion", exact: true }).click();
@@ -206,11 +215,12 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
     timeout: 15_000,
   });
   await voterPage.getByRole("link", { name: /48 Rose St Owners Corporation/ }).click();
-  await voterPage.getByRole("button", { name: "meetings" }).click();
+  await voterPage.getByRole("tab", { name: "meetings" }).click();
   await voterPage.getByRole("button", { name: /2026 Annual General Meeting/ }).click();
   await voterPage.getByRole("button", { name: "I'm attending" }).click();
   const voterMotion = voterPage.getByTestId("motion-Repaint the stairwell");
-  await voterMotion.getByTestId("vote-lot").selectOption({ label: "Lot 2" });
+  await voterMotion.getByTestId("vote-lot").click();
+  await voterPage.getByRole("option", { name: "Lot 2", exact: true }).click();
   await voterMotion.getByRole("button", { name: "for", exact: true }).click();
   await expect(voterPage.getByTestId("quorum")).toContainText("entitlements represented");
   await voterContext.close();
