@@ -194,8 +194,21 @@ export const AGENT_NAMES = [
   "compliance",
   "documents",
   "meetings",
+  "chair",
 ] as const;
 export type AgentName = (typeof AGENT_NAMES)[number];
+
+/** Kinds of note the AI chair writes to a meeting's chair log. */
+export const CHAIR_NOTE_KINDS = ["guidance", "agenda", "action", "info"] as const;
+export type ChairNoteKind = (typeof CHAIR_NOTE_KINDS)[number];
+
+/** One entry in meetings.chair_log (append-only jsonb array). */
+export interface ChairLogEntry {
+  /** ISO timestamp. */
+  at: string;
+  kind: ChairNoteKind;
+  note: string;
+}
 
 export const AGENT_RUN_STATUSES = ["running", "succeeded", "failed", "awaiting_decision"] as const;
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];

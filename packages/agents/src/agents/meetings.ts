@@ -1,5 +1,5 @@
 import { documentsService, meetingsService } from "@goodstrata/core";
-import { meetings, schemes } from "@goodstrata/db";
+import { documents, meetings, schemes } from "@goodstrata/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { defineAgentTool } from "../tool-factory.js";
@@ -8,12 +8,18 @@ import type { AgentDefinition } from "../types.js";
 interface ClosedPayload {
   meetingId: string;
   quorumMet: boolean;
+  transcriptDocumentId?: string | null;
 }
+
+/** How much transcript text the minutes model sees. */
+const TRANSCRIPT_CONTEXT_CHARS = 8000;
 
 /**
  * The meetings agent drafts minutes when a meeting closes, from the
- * structured record (agenda, motions, tallies, attendance) — no transcription
- * in v1. The draft is stored as a document and linked to the meeting.
+ * structured record (agenda, motions, tallies, attendance) plus — when the
+ * video meeting was transcribed — the stored transcript, so the minutes
+ * reflect the actual discussion. The draft is stored as a document and
+ * linked to the meeting.
  */
 export const meetingsAgent: AgentDefinition = {
   name: "meetings",
@@ -25,7 +31,11 @@ export const meetingsAgent: AgentDefinition = {
     "Markdown: heading with scheme/meeting/date, quorum statement, then each motion with its",
     "text, mover (if known), the entitlement-weighted result (for/against/abstain figures are",
     "provided — copy them exactly), and CARRIED or LOST. Close with a next-meeting placeholder.",
+    "If a transcript of the discussion is provided, add a concise 'Discussion' summary for each",
+    "agenda item or motion drawn from it, and list any action items you find. When no transcript",
+    "is provided, do not invent discussion.",
     "Be accurate and neutral; do not invent attendees, discussion, or figures.",
+    "Write plain Markdown only — no XML tags, no <summary> tags.",
     "Call saveMinutes exactly once with the full Markdown, then finish with one line.",
   ].join("\n"),
 
@@ -37,6 +47,27 @@ export const meetingsAgent: AgentDefinition = {
     });
     const detail = await meetingsService.meetingDetail(services, event.schemeId, payload.meetingId);
     if (!scheme) return null;
+
+    // When the video meeting was transcribed, load the stored transcript so
+    // minutes are drafted from the discussion. Best-effort: missing or
+    // unreadable transcripts degrade to structured-record-only minutes.
+    let transcript: string | null = null;
+    if (payload.transcriptDocumentId) {
+      try {
+        const doc = await services.db.query.documents.findFirst({
+          where: and(
+            eq(documents.id, payload.transcriptDocumentId),
+            eq(documents.schemeId, event.schemeId),
+          ),
+        });
+        if (doc) {
+          const bytes = await services.integrations.storage.get(doc.storageKey);
+          transcript = new TextDecoder().decode(bytes).slice(0, TRANSCRIPT_CONTEXT_CHARS);
+        }
+      } catch {
+        transcript = null;
+      }
+    }
 
     return [
       `Scheme: ${scheme.name} (${scheme.planOfSubdivision})`,
@@ -63,6 +94,20 @@ export const meetingsAgent: AgentDefinition = {
             : "  Tally: not put to a vote",
         ];
       }),
+      ...(detail.chairLog.length > 0
+        ? [
+            "",
+            "Chair log (notes the AI chair posted during the meeting):",
+            ...detail.chairLog.map((e) => `  [${e.kind}] ${e.note}`),
+          ]
+        : []),
+      ...(transcript
+        ? [
+            "",
+            `Transcript of the discussion (first ${TRANSCRIPT_CONTEXT_CHARS} characters):`,
+            transcript,
+          ]
+        : []),
     ].join("\n");
   },
 

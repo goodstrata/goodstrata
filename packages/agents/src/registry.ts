@@ -1,4 +1,5 @@
 import type { Subscription } from "@goodstrata/events";
+import { chairAgent } from "./agents/chair.js";
 import { echoAgent } from "./agents/echo.js";
 import { financeAgent } from "./agents/finance.js";
 import { maintenanceAgent } from "./agents/maintenance.js";
@@ -6,6 +7,7 @@ import { meetingsAgent } from "./agents/meetings.js";
 import type { AgentDefinition } from "./types.js";
 
 export const allAgents: AgentDefinition[] = [
+  chairAgent,
   echoAgent,
   financeAgent,
   maintenanceAgent,

@@ -1,6 +1,10 @@
 import { funds, lots, ownerships, people, schemes } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
-import { integrationsFromEnv, mockPaymentsProvider } from "@goodstrata/integrations";
+import {
+  type ConsoleVideoProvider,
+  integrationsFromEnv,
+  mockPaymentsProvider,
+} from "@goodstrata/integrations";
 import { type Actor, fixedClock, systemActor, userActor } from "@goodstrata/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServiceContext } from "../src/context.js";
@@ -374,5 +378,104 @@ describe("video meetings", () => {
     await expect(meetingsService.startVideoMeeting(ctx, schemeId, sgm.id)).rejects.toThrow(
       /committee meetings and AGMs/,
     );
+  });
+
+  it("started transcription with the room and reports it in meetingDetail", async () => {
+    const ctx = ctxAt(NOW);
+    const video = integrations.video as ConsoleVideoProvider;
+    expect(video.transcribingRooms.has(meetingsService.videoRoomName(committeeMeetingId))).toBe(
+      true,
+    );
+    const detail = await meetingsService.meetingDetail(ctx, schemeId, committeeMeetingId);
+    expect(detail.transcriptionStarted).toBe(true);
+    expect(detail.chairLog).toEqual([]);
+  });
+
+  it("chair notes append to the log, publish an event, and post to the room chat", async () => {
+    const ctx = ctxAt(NOW);
+    const entry = await meetingsService.chairNote(ctx, schemeId, committeeMeetingId, {
+      kind: "guidance",
+      note: "Welcome everyone — we will start with item 1.",
+    });
+    expect(entry).toEqual({
+      at: "2026-07-02T00:00:00.000Z",
+      kind: "guidance",
+      note: "Welcome everyone — we will start with item 1.",
+    });
+
+    const detail = await meetingsService.meetingDetail(ctx, schemeId, committeeMeetingId);
+    expect(detail.chairLog).toEqual([entry]);
+
+    const video = integrations.video as ConsoleVideoProvider;
+    expect(video.chatMessages).toContainEqual({
+      roomName: meetingsService.videoRoomName(committeeMeetingId),
+      text: "Welcome everyone — we will start with item 1.",
+      fromName: "GoodStrata Chair",
+    });
+
+    const events = await tdb.db.query.eventLog.findMany({
+      where: (t, { eq }) => eq(t.type, "meeting.chair.note"),
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.payload).toMatchObject({
+      meetingId: committeeMeetingId,
+      kind: "guidance",
+      note: "Welcome everyone — we will start with item 1.",
+    });
+  });
+
+  it("conductTick publishes tick events while in progress and enforces the cap", async () => {
+    const ctx = ctxAt(NOW);
+    const first = await meetingsService.conductTick(ctx, schemeId, committeeMeetingId, 1);
+    expect(first).toEqual({ proceed: true });
+
+    const ticks = await tdb.db.query.eventLog.findMany({
+      where: (t, { eq }) => eq(t.type, "meeting.conduct.tick"),
+    });
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0]!.payload).toMatchObject({ meetingId: committeeMeetingId, tick: 1 });
+
+    // Runaway guard: past the cap the loop stops without publishing.
+    const capped = await meetingsService.conductTick(
+      ctx,
+      schemeId,
+      committeeMeetingId,
+      meetingsService.MAX_CONDUCT_TICKS + 1,
+    );
+    expect(capped).toEqual({ proceed: false, reason: "tick_cap" });
+  });
+
+  it("closeMeeting stops transcription, stores the transcript, and links it in the event", async () => {
+    const ctx = ctxAt(NOW);
+    const video = integrations.video as ConsoleVideoProvider;
+    const roomName = meetingsService.videoRoomName(committeeMeetingId);
+    video.setTranscript(
+      roomName,
+      "Alex Chen: I move we accept the gutter quote.\nKim Nguyen: Seconded.",
+    );
+
+    await meetingsService.closeMeeting(ctx, schemeId, committeeMeetingId);
+
+    expect(video.transcribingRooms.has(roomName)).toBe(false);
+
+    const docs = await tdb.db.query.documents.findMany({
+      where: (t, { eq }) => eq(t.title, "Meeting transcript"),
+    });
+    expect(docs).toHaveLength(1);
+    expect(docs[0]).toMatchObject({ category: "minutes", accessLevel: "committee" });
+    const stored = await integrations.storage.get(docs[0]!.storageKey);
+    expect(new TextDecoder().decode(stored)).toContain("Seconded.");
+
+    const closed = await tdb.db.query.eventLog.findMany({
+      where: (t, { eq }) => eq(t.type, "meeting.closed"),
+    });
+    const committeeClosed = closed.find(
+      (e) => (e.payload as { meetingId: string }).meetingId === committeeMeetingId,
+    );
+    expect(committeeClosed?.payload).toMatchObject({ transcriptDocumentId: docs[0]!.id });
+
+    // The conductor loop refuses to continue once the meeting has closed.
+    const after = await meetingsService.conductTick(ctx, schemeId, committeeMeetingId, 2);
+    expect(after).toEqual({ proceed: false, reason: "not_in_progress" });
   });
 });

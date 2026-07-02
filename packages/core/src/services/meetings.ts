@@ -11,14 +11,20 @@ import {
   votes,
 } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
-import { daysBetween, type VoteChoice } from "@goodstrata/shared";
-import { and, eq, isNull } from "drizzle-orm";
+import {
+  CHAIR_NOTE_KINDS,
+  type ChairLogEntry,
+  daysBetween,
+  type VoteChoice,
+} from "@goodstrata/shared";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { type CastVote, quorumMet, tallyMotion } from "../engines/voting.js";
 import { DomainError, notFound } from "../errors.js";
 import { arrearsForScheme } from "./arrears.js";
 import { sendEmail } from "./comms.js";
+import { uploadDocument } from "./documents.js";
 
 const AGM_NOTICE_DAYS = 14; // s 71: at least 14 days' notice
 
@@ -204,11 +210,24 @@ export async function startVideoMeeting(ctx: ServiceContext, schemeId: string, m
     expiresMinutes: VIDEO_ROOM_EXPIRES_MINUTES,
   });
 
+  // Best-effort live transcription (optional provider capability; may be
+  // unavailable on the plan). Failure never blocks the meeting.
+  let transcriptionStarted = false;
+  if (ctx.integrations.video.startTranscription) {
+    try {
+      const started = await ctx.integrations.video.startTranscription(room.roomName);
+      transcriptionStarted = started.ok;
+    } catch {
+      transcriptionStarted = false;
+    }
+  }
+
   await ctx.db.transaction(async (tx) => {
     await tx
       .update(meetings)
       .set({
         videoUrl: room.url,
+        transcriptionStarted,
         ...(meeting.status === "notice_sent" ? { status: "in_progress" as const } : {}),
       })
       .where(eq(meetings.id, meetingId));
@@ -247,6 +266,127 @@ export async function joinVideoMeeting(
     isOwner,
   });
   return { url: meeting.videoUrl, token };
+}
+
+// ---------------------------------------------------------------------------
+// AI chair: chair log + conductor ticks
+// ---------------------------------------------------------------------------
+
+export const chairNoteInput = z.object({
+  kind: z.enum(CHAIR_NOTE_KINDS),
+  note: z.string().min(1).max(2000),
+});
+export type ChairNoteInput = z.infer<typeof chairNoteInput>;
+
+/**
+ * Record a note from the AI chair: append it to the meeting's chair_log and
+ * publish meeting.chair.note in one transaction, then (after commit,
+ * best-effort) surface it in the video room's chat.
+ */
+export async function chairNote(
+  ctx: ServiceContext,
+  schemeId: string,
+  meetingId: string,
+  input: ChairNoteInput,
+): Promise<ChairLogEntry> {
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting) throw notFound("Meeting");
+
+  const entry: ChairLogEntry = {
+    at: ctx.clock.now().toISOString(),
+    kind: input.kind,
+    note: input.note,
+  };
+
+  await ctx.db.transaction(async (tx) => {
+    // SQL-level append so concurrent ticks can't drop each other's entries.
+    await tx
+      .update(meetings)
+      .set({
+        chairLog: sql`${meetings.chairLog} || ${JSON.stringify([entry])}::jsonb`,
+      })
+      .where(eq(meetings.id, meetingId));
+    await publishEvent(tx, {
+      schemeId,
+      stream: `meeting:${meetingId}`,
+      type: "meeting.chair.note",
+      payload: { meetingId, kind: entry.kind, note: entry.note },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+  });
+
+  if (meeting.videoUrl && ctx.integrations.video.sendChatMessage) {
+    try {
+      await ctx.integrations.video.sendChatMessage(
+        videoRoomName(meetingId),
+        input.note,
+        "GoodStrata Chair",
+      );
+    } catch (err) {
+      console.warn(`[meetings] chair chat message failed: ${(err as Error).message}`);
+    }
+  }
+
+  return entry;
+}
+
+/** Runaway guard: the conductor stops itself after this many ticks (~1h). */
+export const MAX_CONDUCT_TICKS = 60;
+
+export type ConductTickResult =
+  | { proceed: true }
+  | { proceed: false; reason: "not_found" | "not_in_progress" | "tick_cap" };
+
+/**
+ * One beat of the conductor loop (called by the meeting.conduct worker).
+ * While the meeting is in progress it publishes a meeting.conduct.tick event —
+ * the dispatcher fans that out to the chair agent, which does the actual
+ * conducting. Each tick is a fresh correlation root on purpose: a long meeting
+ * must not trip the per-correlation agent-run cap.
+ */
+export async function conductTick(
+  ctx: ServiceContext,
+  schemeId: string,
+  meetingId: string,
+  tick: number,
+): Promise<ConductTickResult> {
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting) return { proceed: false, reason: "not_found" };
+
+  if (meeting.status !== "in_progress") {
+    if (meeting.transcriptionStarted) {
+      await stopTranscriptionBestEffort(ctx, meetingId);
+    }
+    return { proceed: false, reason: "not_in_progress" };
+  }
+  if (tick > MAX_CONDUCT_TICKS) {
+    console.warn(`[meetings] conductor tick cap reached for meeting ${meetingId} — stopping`);
+    return { proceed: false, reason: "tick_cap" };
+  }
+
+  await publishEvent(ctx.db, {
+    schemeId,
+    stream: `meeting:${meetingId}`,
+    type: "meeting.conduct.tick",
+    payload: { meetingId, tick },
+    actor: ctx.actor,
+    // Deliberately NO causation inheritance: each tick starts a fresh chain.
+  });
+  return { proceed: true };
+}
+
+async function stopTranscriptionBestEffort(ctx: ServiceContext, meetingId: string) {
+  if (!ctx.integrations.video.stopTranscription) return;
+  try {
+    await ctx.integrations.video.stopTranscription(videoRoomName(meetingId));
+  } catch (err) {
+    console.warn(`[meetings] stopTranscription failed: ${(err as Error).message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +737,31 @@ export async function closeMeeting(ctx: ServiceContext, schemeId: string, meetin
 
   const quorum = await quorumStatus(ctx, schemeId, meetingId);
 
+  // Wind down transcription and preserve what it captured. All best-effort:
+  // a video/transcription failure must never block closing the meeting.
+  let transcriptDocumentId: string | null = null;
+  if (meeting.transcriptionStarted) {
+    await stopTranscriptionBestEffort(ctx, meetingId);
+    if (ctx.integrations.video.fetchTranscriptText) {
+      try {
+        const text = await ctx.integrations.video.fetchTranscriptText(videoRoomName(meetingId));
+        if (text) {
+          const doc = await uploadDocument(ctx, schemeId, {
+            filename: `transcript-${meetingId}.txt`,
+            contentType: "text/plain",
+            content: new TextEncoder().encode(text),
+            category: "minutes",
+            title: "Meeting transcript",
+            accessLevel: "committee",
+          });
+          transcriptDocumentId = doc.id;
+        }
+      } catch (err) {
+        console.warn(`[meetings] transcript retrieval failed: ${(err as Error).message}`);
+      }
+    }
+  }
+
   await ctx.db.transaction(async (tx) => {
     await tx
       .update(meetings)
@@ -606,7 +771,7 @@ export async function closeMeeting(ctx: ServiceContext, schemeId: string, meetin
       schemeId,
       stream: `meeting:${meetingId}`,
       type: "meeting.closed",
-      payload: { meetingId, quorumMet: quorum.quorate },
+      payload: { meetingId, quorumMet: quorum.quorate, transcriptDocumentId },
       actor: ctx.actor,
       ...causationFields(ctx),
     });
@@ -633,7 +798,14 @@ export async function meetingDetail(ctx: ServiceContext, schemeId: string, meeti
     orderBy: (t, { asc }) => asc(t.createdAt),
   });
   const quorum = await quorumStatus(ctx, schemeId, meetingId);
-  return { meeting, agenda, motions: motionRows, quorum };
+  return {
+    meeting,
+    agenda,
+    motions: motionRows,
+    quorum,
+    chairLog: meeting.chairLog,
+    transcriptionStarted: meeting.transcriptionStarted,
+  };
 }
 
 export async function listMeetings(ctx: ServiceContext, schemeId: string) {
