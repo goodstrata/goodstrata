@@ -167,7 +167,7 @@ export function dailyVideoProvider(apiKey: string, fetchFn: typeof fetch = fetch
       const room = await post("/rooms", {
         name,
         privacy: "private",
-        properties: { exp },
+        properties: { exp, enable_chat: true, enable_prejoin_ui: true },
       });
       return { url: String(room.url), roomName: String(room.name) };
     },
