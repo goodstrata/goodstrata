@@ -119,6 +119,7 @@ function LoginPage() {
                 <Input
                   id="login-name"
                   placeholder="Your name"
+                  autoComplete="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
@@ -130,6 +131,7 @@ function LoginPage() {
                 id="login-email"
                 placeholder="Email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -141,6 +143,7 @@ function LoginPage() {
                 id="login-password"
                 placeholder="Password"
                 type="password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
                 required
                 minLength={8}
                 value={password}
@@ -149,7 +152,13 @@ function LoginPage() {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={busy}>
-              {busy ? "…" : mode === "signin" ? "Sign in" : "Sign up"}
+              {busy
+                ? mode === "signin"
+                  ? "Signing in…"
+                  : "Creating account…"
+                : mode === "signin"
+                  ? "Sign in"
+                  : "Sign up"}
             </Button>
           </form>
           <Button

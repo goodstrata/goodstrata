@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
+import { stripAgentTags } from "@/lib/agent-text";
 import { api, unwrap } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 
@@ -215,7 +216,9 @@ function RunDetailView({
                   <span className="absolute top-1 -left-[27px] flex size-4 items-center justify-center rounded-full bg-muted font-mono text-[9px] text-muted-foreground ring-4 ring-background">
                     {step.index + 1}
                   </span>
-                  {step.text && <p className="mb-2 text-sm">{step.text}</p>}
+                  {step.text && stripAgentTags(step.text) && (
+                    <p className="mb-2 text-sm">{stripAgentTags(step.text)}</p>
+                  )}
                   <div className="space-y-1.5">
                     {step.toolCalls.map((call, i) => (
                       <ToolCallBlock
