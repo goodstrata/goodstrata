@@ -1,10 +1,39 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Plus } from "lucide-react";
 import { useState } from "react";
-import { api, unwrap } from "../lib/api";
-
-function dollars(cents: number): string {
-  return `$${(cents / 100).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
-}
+import { toast } from "sonner";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { api, unwrap } from "@/lib/api";
+import { dollars } from "@/lib/format";
 
 interface Budget {
   id: string;
@@ -48,10 +77,10 @@ export function FinanceTab({ schemeId }: { schemeId: string }) {
 
   return (
     <div className="space-y-6">
+      <ArrearsSection schemeId={schemeId} />
       <BudgetsSection schemeId={schemeId} onChange={invalidate} />
       <SchedulesSection schemeId={schemeId} onChange={invalidate} />
       <NoticesSection schemeId={schemeId} onChange={invalidate} />
-      <ArrearsSection schemeId={schemeId} />
     </div>
   );
 }
@@ -64,6 +93,7 @@ function BudgetsSection({ schemeId, onChange }: { schemeId: string; onChange: ()
         await api.schemes[":schemeId"].budgets.$get({ param: { schemeId } }),
       ),
   });
+  const [open, setOpen] = useState(false);
   const [fyStart, setFyStart] = useState("");
   const [admin, setAdmin] = useState("");
   const [maintenance, setMaintenance] = useState("");
@@ -80,93 +110,110 @@ function BudgetsSection({ schemeId, onChange }: { schemeId: string; onChange: ()
         }),
       ),
     onSuccess: () => {
+      setOpen(false);
       setFyStart("");
       setAdmin("");
       setMaintenance("");
+      toast.success("Budget drafted — a committee decision has been opened");
       onChange();
     },
+    onError: (e) => toast.error(e.message),
   });
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="text-sm font-medium">Budgets</h3>
-      <ul className="mt-2 space-y-1 text-sm">
-        {data?.budgets.map((b) => (
-          <li key={b.id} className="flex items-center justify-between">
-            <span>
-              FY from {b.fiscalYearStart} —{" "}
-              {b.lines.map((l) => `${l.fundKind}: ${dollars(l.amountCents)}`).join(" · ")}
-            </span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs ${
-                b.status === "adopted"
-                  ? "bg-green-100 text-green-800"
-                  : "bg-amber-100 text-amber-800"
-              }`}
-            >
-              {b.status.replace("_", " ")}
-            </span>
-          </li>
-        ))}
-        {data?.budgets.length === 0 && <li className="text-gray-500">No budgets yet.</li>}
-      </ul>
-
-      <form
-        className="mt-3 flex flex-wrap items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          create.mutate();
-        }}
-      >
-        <label className="text-xs text-gray-500">
-          FY start
-          <input
-            type="date"
-            required
-            data-testid="budget-fy"
-            className="mt-1 block rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-            value={fyStart}
-            onChange={(e) => setFyStart(e.target.value)}
-          />
-        </label>
-        <label className="text-xs text-gray-500">
-          Admin fund ($/yr)
-          <input
-            type="number"
-            min="1"
-            step="0.01"
-            required
-            data-testid="budget-admin"
-            className="mt-1 block w-32 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-            value={admin}
-            onChange={(e) => setAdmin(e.target.value)}
-          />
-        </label>
-        <label className="text-xs text-gray-500">
-          Maintenance fund ($/yr)
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            data-testid="budget-maintenance"
-            className="mt-1 block w-32 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-            value={maintenance}
-            onChange={(e) => setMaintenance(e.target.value)}
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={create.isPending}
-          className="rounded-md bg-brand-700 px-3 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-40"
-        >
-          Draft budget
-        </button>
-      </form>
-      <p className="mt-1 text-xs text-gray-400">
-        Drafting a budget opens a treasurer decision — see the Decisions tab.
-      </p>
-      {create.error && <p className="mt-1 text-sm text-red-600">{create.error.message}</p>}
-    </section>
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <CardTitle>Budgets</CardTitle>
+            <CardDescription>
+              Drafting a budget opens a treasurer decision — see the Decisions tab.
+            </CardDescription>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">
+                <Plus className="size-4" /> New budget
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Draft a budget</DialogTitle>
+                <DialogDescription>
+                  Annual amounts for each fund, from the fiscal year start.
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                id="budget-form"
+                className="flex flex-col gap-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  create.mutate();
+                }}
+              >
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="budget-fy">FY start</Label>
+                  <Input
+                    id="budget-fy"
+                    type="date"
+                    required
+                    data-testid="budget-fy"
+                    value={fyStart}
+                    onChange={(e) => setFyStart(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="budget-admin">Admin fund ($/yr)</Label>
+                  <Input
+                    id="budget-admin"
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    required
+                    data-testid="budget-admin"
+                    value={admin}
+                    onChange={(e) => setAdmin(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="budget-maintenance">Maintenance fund ($/yr)</Label>
+                  <Input
+                    id="budget-maintenance"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    data-testid="budget-maintenance"
+                    value={maintenance}
+                    onChange={(e) => setMaintenance(e.target.value)}
+                  />
+                </div>
+                {create.error && <p className="text-sm text-destructive">{create.error.message}</p>}
+              </form>
+              <DialogFooter>
+                <Button type="submit" form="budget-form" disabled={create.isPending}>
+                  Draft budget
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!data && <Skeleton className="h-10" />}
+        <ul className="space-y-2.5 text-sm">
+          {data?.budgets.map((b) => (
+            <li key={b.id} className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                FY from {b.fiscalYearStart} —{" "}
+                {b.lines.map((l) => `${l.fundKind}: ${dollars(l.amountCents)}`).join(" · ")}
+              </span>
+              <StatusBadge status={b.status} />
+            </li>
+          ))}
+          {data?.budgets.length === 0 && <li className="text-muted-foreground">No budgets yet.</li>}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -186,6 +233,7 @@ function SchedulesSection({ schemeId, onChange }: { schemeId: string; onChange: 
       ),
   });
   const adopted = budgets?.budgets.filter((b) => b.status === "adopted") ?? [];
+  const [open, setOpen] = useState(false);
   const [budgetId, setBudgetId] = useState("");
   const [firstDueOn, setFirstDueOn] = useState("");
   const [instalment, setInstalment] = useState(1);
@@ -198,7 +246,12 @@ function SchedulesSection({ schemeId, onChange }: { schemeId: string; onChange: 
           json: { budgetId, frequency: "quarterly", firstDueOn },
         }),
       ),
-    onSuccess: onChange,
+    onSuccess: () => {
+      setOpen(false);
+      toast.success("Levy schedule created");
+      onChange();
+    },
+    onError: (e) => toast.error(e.message),
   });
   const issue = useMutation({
     mutationFn: async (scheduleId: string) =>
@@ -208,93 +261,123 @@ function SchedulesSection({ schemeId, onChange }: { schemeId: string; onChange: 
           json: { instalment },
         }),
       ),
-    onSuccess: onChange,
+    onSuccess: () => {
+      toast.success("Levy notices issued to all lots");
+      onChange();
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="text-sm font-medium">Levy schedules</h3>
-      <ul className="mt-2 space-y-2 text-sm">
-        {data?.schedules.map((s) => (
-          <li key={s.id} className="flex items-center justify-between gap-2">
-            <span>
-              {s.frequency} × {s.instalments}, first due {s.firstDueOn}
-            </span>
-            <span className="flex items-center gap-2">
-              <select
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                value={instalment}
-                data-testid="issue-instalment"
-                onChange={(e) => setInstalment(Number(e.target.value))}
-              >
-                {Array.from({ length: s.instalments }, (_, i) => (
-                  <option key={`${s.id}-${i + 1}`} value={i + 1}>
-                    Instalment {i + 1}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => issue.mutate(s.id)}
-                disabled={issue.isPending}
-                className="rounded-md bg-brand-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-800 disabled:opacity-40"
-              >
-                Issue notices
-              </button>
-            </span>
-          </li>
-        ))}
-        {data?.schedules.length === 0 && <li className="text-gray-500">No schedules yet.</li>}
-      </ul>
-      {issue.error && <p className="mt-1 text-sm text-red-600">{issue.error.message}</p>}
-
-      {adopted.length > 0 && (
-        <form
-          className="mt-3 flex flex-wrap items-end gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            create.mutate();
-          }}
-        >
-          <label className="text-xs text-gray-500">
-            Adopted budget
-            <select
-              required
-              data-testid="schedule-budget"
-              className="mt-1 block rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-              value={budgetId}
-              onChange={(e) => setBudgetId(e.target.value)}
-            >
-              <option value="">Select…</option>
-              {adopted.map((b) => (
-                <option key={b.id} value={b.id}>
-                  FY {b.fiscalYearStart}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs text-gray-500">
-            First due
-            <input
-              type="date"
-              required
-              data-testid="schedule-first-due"
-              className="mt-1 block rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-              value={firstDueOn}
-              onChange={(e) => setFirstDueOn(e.target.value)}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={create.isPending || !budgetId}
-            className="rounded-md bg-brand-700 px-3 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-40"
-          >
-            Create quarterly schedule
-          </button>
-        </form>
-      )}
-      {create.error && <p className="mt-1 text-sm text-red-600">{create.error.message}</p>}
-    </section>
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <CardTitle>Levy schedules</CardTitle>
+            <CardDescription>
+              Split an adopted budget into instalments and issue notices.
+            </CardDescription>
+          </div>
+          {adopted.length > 0 && (
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Plus className="size-4" /> New schedule
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-sm">
+                <DialogHeader>
+                  <DialogTitle>Create a levy schedule</DialogTitle>
+                  <DialogDescription>
+                    Quarterly instalments across the fiscal year.
+                  </DialogDescription>
+                </DialogHeader>
+                <form
+                  id="schedule-form"
+                  className="flex flex-col gap-4"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    create.mutate();
+                  }}
+                >
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Adopted budget</Label>
+                    <Select value={budgetId} onValueChange={setBudgetId}>
+                      <SelectTrigger className="w-full" data-testid="schedule-budget">
+                        <SelectValue placeholder="Select…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {adopted.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>
+                            FY {b.fiscalYearStart}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="schedule-first-due">First due</Label>
+                    <Input
+                      id="schedule-first-due"
+                      type="date"
+                      required
+                      data-testid="schedule-first-due"
+                      value={firstDueOn}
+                      onChange={(e) => setFirstDueOn(e.target.value)}
+                    />
+                  </div>
+                  {create.error && (
+                    <p className="text-sm text-destructive">{create.error.message}</p>
+                  )}
+                </form>
+                <DialogFooter>
+                  <Button
+                    type="submit"
+                    form="schedule-form"
+                    disabled={create.isPending || !budgetId}
+                  >
+                    Create quarterly schedule
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!data && <Skeleton className="h-10" />}
+        <ul className="space-y-3 text-sm">
+          {data?.schedules.map((s) => (
+            <li key={s.id} className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                {s.frequency} × {s.instalments}, first due {s.firstDueOn}
+              </span>
+              <span className="flex items-center gap-2">
+                <Select value={String(instalment)} onValueChange={(v) => setInstalment(Number(v))}>
+                  <SelectTrigger size="sm" data-testid="issue-instalment">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: s.instalments }, (_, i) => (
+                      <SelectItem key={`${s.id}-${i + 1}`} value={String(i + 1)}>
+                        Instalment {i + 1}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="sm" onClick={() => issue.mutate(s.id)} disabled={issue.isPending}>
+                  Issue notices
+                </Button>
+              </span>
+            </li>
+          ))}
+          {data?.schedules.length === 0 && (
+            <li className="text-muted-foreground">No schedules yet.</li>
+          )}
+        </ul>
+        {issue.error && <p className="mt-2 text-sm text-destructive">{issue.error.message}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -316,59 +399,60 @@ function NoticesSection({ schemeId, onChange }: { schemeId: string; onChange: ()
       if (!res.ok) throw new Error("Simulation failed (dev server only)");
       return res.json();
     },
-    onSuccess: onChange,
+    onSuccess: () => {
+      toast.success("Payment received");
+      onChange();
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   if (!data || data.notices.length === 0) return null;
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="text-sm font-medium">Levy notices</h3>
-      <table className="mt-2 w-full text-sm">
-        <thead>
-          <tr className="text-left text-gray-500">
-            <th className="py-1 pr-3">Notice</th>
-            <th className="py-1 pr-3">Amount</th>
-            <th className="py-1 pr-3">Due</th>
-            <th className="py-1 pr-3">Status</th>
-            <th className="py-1" />
-          </tr>
-        </thead>
-        <tbody>
-          {data.notices.map((n) => (
-            <tr key={n.id} className="border-t border-gray-100">
-              <td className="py-1.5 pr-3 font-mono text-xs">{n.noticeNumber}</td>
-              <td className="py-1.5 pr-3">{dollars(n.totalCents)}</td>
-              <td className="py-1.5 pr-3">{n.dueOn}</td>
-              <td className="py-1.5 pr-3">
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    n.status === "paid"
-                      ? "bg-green-100 text-green-800"
-                      : n.status === "overdue"
-                        ? "bg-red-100 text-red-800"
-                        : "bg-gray-100 text-gray-700"
-                  }`}
-                >
-                  {n.status.replace("_", " ")}
-                </span>
-              </td>
-              <td className="py-1.5 text-right">
-                {n.status !== "paid" && n.payid && (
-                  <button
-                    type="button"
-                    onClick={() => simulate.mutate(n)}
-                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-                    title="Dev only: post a signed mock webhook"
-                  >
-                    Simulate payment
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <Card className="overflow-hidden">
+      <CardHeader>
+        <CardTitle>Levy notices</CardTitle>
+        <CardDescription>Issued to each lot with a unique PayID.</CardDescription>
+      </CardHeader>
+      <CardContent className="px-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-6">Notice</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Due</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="pr-6" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.notices.map((n) => (
+                <TableRow key={n.id}>
+                  <TableCell className="pl-6 font-mono text-xs">{n.noticeNumber}</TableCell>
+                  <TableCell className="tabular-nums">{dollars(n.totalCents)}</TableCell>
+                  <TableCell>{n.dueOn}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={n.status} />
+                  </TableCell>
+                  <TableCell className="pr-6 text-right">
+                    {n.status !== "paid" && n.payid && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => simulate.mutate(n)}
+                        title="Dev only: post a signed mock webhook"
+                      >
+                        Simulate payment
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -382,20 +466,26 @@ function ArrearsSection({ schemeId }: { schemeId: string }) {
   });
   if (!data || data.arrears.length === 0) return null;
   return (
-    <section className="rounded-lg border border-red-200 bg-red-50 p-4">
-      <h3 className="text-sm font-medium text-red-900">Arrears</h3>
-      <ul className="mt-2 space-y-1 text-sm text-red-900">
-        {data.arrears.map((a) => (
-          <li key={a.lotId} className="flex justify-between">
-            <span>
-              Lot {a.lotNumber} — {a.daysOverdue} days overdue (stage {a.stage})
-            </span>
-            <span>
-              {dollars(a.outstandingCents)} + {dollars(a.interestAccruedCents)} interest
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <Card className="border-red-200 bg-red-50/60">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-red-900">
+          <AlertTriangle className="size-4" /> Arrears
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2 text-sm text-red-900">
+          {data.arrears.map((a) => (
+            <li key={a.lotId} className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                Lot {a.lotNumber} — {a.daysOverdue} days overdue (stage {a.stage})
+              </span>
+              <span className="font-medium tabular-nums">
+                {dollars(a.outstandingCents)} + {dollars(a.interestAccruedCents)} interest
+              </span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

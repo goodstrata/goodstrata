@@ -1,12 +1,40 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { Bot, Check, CircleCheck, FileText, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { AgentsTab } from "../components/AgentsTab";
-import { DecisionsTab } from "../components/DecisionsTab";
-import { FinanceTab } from "../components/FinanceTab";
-import { MaintenanceTab } from "../components/MaintenanceTab";
-import { MeetingsTab } from "../components/MeetingsTab";
-import { api, unwrap } from "../lib/api";
+import { toast } from "sonner";
+import { AgentsTab } from "@/components/AgentsTab";
+import { DecisionsTab } from "@/components/DecisionsTab";
+import { FinanceTab } from "@/components/FinanceTab";
+import { MaintenanceTab } from "@/components/MaintenanceTab";
+import { MeetingsTab } from "@/components/MeetingsTab";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { api, unwrap } from "@/lib/api";
+import { formatDate, formatTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/schemes/$schemeId")({
   component: SchemePage,
@@ -27,6 +55,20 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
+const TAB_LABELS: Record<Tab, string> = {
+  overview: "Overview",
+  finance: "Finance",
+  maintenance: "Maintenance",
+  meetings: "Meetings",
+  decisions: "Decisions",
+  agents: "Agents",
+  lots: "Lots",
+  people: "People",
+  committee: "Committee",
+  documents: "Documents",
+  activity: "Activity",
+};
+
 function SchemePage() {
   const { schemeId } = Route.useParams();
   const [tab, setTab] = useState<Tab>("overview");
@@ -40,56 +82,70 @@ function SchemePage() {
   });
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">{data?.scheme.name ?? "…"}</h1>
-          <p className="text-sm text-gray-500">
-            {data?.scheme.planOfSubdivision} · Tier {data?.scheme.tier} · your roles:{" "}
-            {data?.roles.join(", ")}
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          {data ? (
+            <h1 className="text-2xl font-semibold tracking-tight">{data.scheme.name}</h1>
+          ) : (
+            <Skeleton className="h-8 w-72" />
+          )}
+          <p className="mt-1 text-sm text-muted-foreground">
+            {data
+              ? `${data.scheme.planOfSubdivision} · Tier ${data.scheme.tier} · your roles: ${data.roles
+                  .map((r) => r.replace(/_/g, " "))
+                  .join(", ")}`
+              : " "}
           </p>
         </div>
-        <span
-          className={`rounded-full px-3 py-1 text-sm font-medium ${
-            data?.scheme.status === "active"
-              ? "bg-green-100 text-green-800"
-              : "bg-amber-100 text-amber-800"
-          }`}
-        >
-          {data?.scheme.status}
-        </span>
+        {data && <StatusBadge status={data.scheme.status} className="mt-1.5" />}
       </div>
 
-      <nav className="mt-4 flex gap-1 border-b border-gray-200">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`rounded-t-md px-3 py-2 text-sm capitalize ${
-              tab === t
-                ? "border border-b-0 border-gray-200 bg-white font-medium text-brand-700"
-                : "text-gray-500 hover:text-gray-800"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </nav>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <div className="-mx-4 overflow-x-auto px-4 pb-1 md:-mx-6 md:px-6">
+          <TabsList className="w-max">
+            {TABS.map((t) => (
+              <TabsTrigger key={t} value={t}>
+                {TAB_LABELS[t]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-      <div className="pt-4">
-        {tab === "overview" && <OverviewTab schemeId={schemeId} />}
-        {tab === "finance" && <FinanceTab schemeId={schemeId} />}
-        {tab === "maintenance" && <MaintenanceTab schemeId={schemeId} />}
-        {tab === "meetings" && <MeetingsTab schemeId={schemeId} />}
-        {tab === "decisions" && <DecisionsTab schemeId={schemeId} />}
-        {tab === "agents" && <AgentsTab schemeId={schemeId} />}
-        {tab === "lots" && <LotsTab schemeId={schemeId} />}
-        {tab === "people" && <PeopleTab schemeId={schemeId} />}
-        {tab === "committee" && <CommitteeTab schemeId={schemeId} />}
-        {tab === "documents" && <DocumentsTab schemeId={schemeId} />}
-        {tab === "activity" && <ActivityTab schemeId={schemeId} />}
-      </div>
+        <TabsContent value="overview" className="pt-4">
+          {tab === "overview" && <OverviewTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="finance" className="pt-4">
+          {tab === "finance" && <FinanceTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="maintenance" className="pt-4">
+          {tab === "maintenance" && <MaintenanceTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="meetings" className="pt-4">
+          {tab === "meetings" && <MeetingsTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="decisions" className="pt-4">
+          {tab === "decisions" && <DecisionsTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="agents" className="pt-4">
+          {tab === "agents" && <AgentsTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="lots" className="pt-4">
+          {tab === "lots" && <LotsTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="people" className="pt-4">
+          {tab === "people" && <PeopleTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="committee" className="pt-4">
+          {tab === "committee" && <CommitteeTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="documents" className="pt-4">
+          {tab === "documents" && <DocumentsTab schemeId={schemeId} />}
+        </TabsContent>
+        <TabsContent value="activity" className="pt-4">
+          {tab === "activity" && <ActivityTab schemeId={schemeId} />}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -109,49 +165,63 @@ function OverviewTab({ schemeId }: { schemeId: string }) {
     mutationFn: async () =>
       unwrap(await api.schemes[":schemeId"].activate.$post({ param: { schemeId } })),
     onSuccess: () => {
+      toast.success("Scheme activated — agents are watching the event bus");
       void queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["onboarding", schemeId] });
     },
+    onError: (e) => toast.error(e.message),
   });
 
-  if (!data) return <p className="text-gray-500">Loading…</p>;
+  if (!data) return <Skeleton className="h-48 max-w-xl" />;
 
   const item = (done: boolean, label: string) => (
-    <li className="flex items-center gap-2">
+    <li className="flex items-center gap-2.5">
       <span
-        className={`flex h-5 w-5 items-center justify-center rounded-full text-xs text-white ${done ? "bg-green-600" : "bg-gray-300"}`}
+        className={cn(
+          "flex size-5 items-center justify-center rounded-full",
+          done ? "bg-green-600 text-white" : "border border-border bg-muted",
+        )}
       >
-        {done ? "✓" : ""}
+        {done && <Check className="size-3" strokeWidth={3} />}
       </span>
-      <span className={done ? "text-gray-800" : "text-gray-500"}>{label}</span>
+      <span className={done ? "text-foreground" : "text-muted-foreground"}>{label}</span>
     </li>
   );
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-5">
-      <h2 className="font-medium">Onboarding checklist</h2>
-      <ul className="mt-3 space-y-2 text-sm" data-testid="onboarding-checklist">
-        {item(true, "Scheme registered")}
-        {item(data.hasLots, "Lots imported from plan of subdivision")}
-        {item(data.hasInsurance, "Insurance certificate of currency uploaded")}
-      </ul>
-      {data.status !== "active" && (
-        <button
-          type="button"
-          disabled={!data.ready || activate.isPending}
-          onClick={() => activate.mutate()}
-          className="mt-4 rounded-md bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-40"
-        >
-          Activate scheme
-        </button>
-      )}
-      {activate.error && <p className="mt-2 text-sm text-red-600">{activate.error.message}</p>}
-      {data.status === "active" && (
-        <p className="mt-4 text-sm text-green-700">
-          This owners corporation is active. Agents are watching the event bus.
-        </p>
-      )}
-    </div>
+    <Card className="max-w-xl">
+      <CardHeader>
+        <CardTitle>Onboarding checklist</CardTitle>
+        <CardDescription>
+          Everything a compliant owners corporation needs before going live.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-3 text-sm" data-testid="onboarding-checklist">
+          {item(true, "Scheme registered")}
+          {item(data.hasLots, "Lots imported from plan of subdivision")}
+          {item(data.hasInsurance, "Insurance certificate of currency uploaded")}
+        </ul>
+        {data.status !== "active" && (
+          <Button
+            className="mt-6"
+            disabled={!data.ready || activate.isPending}
+            onClick={() => activate.mutate()}
+          >
+            Activate scheme
+          </Button>
+        )}
+        {activate.error && (
+          <p className="mt-2 text-sm text-destructive">{activate.error.message}</p>
+        )}
+        {data.status === "active" && (
+          <p className="mt-6 flex items-center gap-2 text-sm text-green-700">
+            <CircleCheck className="size-4" />
+            This owners corporation is active. Agents are watching the event bus.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -191,71 +261,91 @@ function LotsTab({ schemeId }: { schemeId: string }) {
       ),
     onSuccess: () => {
       setCsv("");
+      toast.success("Lots imported");
       void queryClient.invalidateQueries({ queryKey: ["lots", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["people", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["onboarding", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
     },
+    onError: (e) => toast.error(e.message),
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {!data && <Skeleton className="h-40" />}
       {data && data.lots.length > 0 ? (
-        <table className="w-full rounded-lg border border-gray-200 bg-white text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-gray-500">
-              <th className="px-3 py-2">Lot</th>
-              <th className="px-3 py-2">Type</th>
-              <th className="px-3 py-2">Entitlement</th>
-              <th className="px-3 py-2">Liability</th>
-              <th className="px-3 py-2">Owner</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.lots.map((lot) => (
-              <tr key={lot.id} className="border-b border-gray-100 last:border-0">
-                <td className="px-3 py-2 font-medium">{lot.lotNumber}</td>
-                <td className="px-3 py-2">{lot.lotType}</td>
-                <td className="px-3 py-2">{lot.entitlement}</td>
-                <td className="px-3 py-2">{lot.liability}</td>
-                <td className="px-3 py-2 text-gray-600">
-                  {lot.owners
-                    .map((o) => `${o.givenName ?? ""} ${o.familyName ?? ""}`.trim() || o.email)
-                    .join(", ") || "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card className="overflow-hidden py-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Lot</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Entitlement</TableHead>
+                  <TableHead className="text-right">Liability</TableHead>
+                  <TableHead>Owner</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...data.lots]
+                  .sort((a, b) =>
+                    a.lotNumber.localeCompare(b.lotNumber, undefined, { numeric: true }),
+                  )
+                  .map((lot) => (
+                    <TableRow key={lot.id}>
+                      <TableCell className="font-medium">{lot.lotNumber}</TableCell>
+                      <TableCell className="capitalize">{lot.lotType}</TableCell>
+                      <TableCell className="text-right tabular-nums">{lot.entitlement}</TableCell>
+                      <TableCell className="text-right tabular-nums">{lot.liability}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {lot.owners
+                          .map(
+                            (o) => `${o.givenName ?? ""} ${o.familyName ?? ""}`.trim() || o.email,
+                          )
+                          .join(", ") || "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
       ) : (
-        <p className="text-sm text-gray-500">No lots yet — import the plan of subdivision.</p>
+        data && (
+          <p className="text-sm text-muted-foreground">
+            No lots yet — import the plan of subdivision.
+          </p>
+        )
       )}
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-medium">Import lots (CSV)</h3>
-        <p className="mt-1 text-xs text-gray-500">
-          Columns: lot_number, entitlement, liability[, lot_type, unit_number, owner_name,
-          owner_email]
-        </p>
-        <textarea
-          data-testid="csv-input"
-          className="mt-2 h-36 w-full rounded-md border border-gray-300 p-2 font-mono text-xs"
-          placeholder={SAMPLE_CSV}
-          value={csv}
-          onChange={(e) => setCsv(e.target.value)}
-        />
-        {importMutation.error && (
-          <p className="text-sm text-red-600">{importMutation.error.message}</p>
-        )}
-        <button
-          type="button"
-          disabled={!csv || importMutation.isPending}
-          onClick={() => importMutation.mutate()}
-          className="mt-2 rounded-md bg-brand-700 px-3 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-40"
-        >
-          {importMutation.isPending ? "Importing…" : "Import lots"}
-        </button>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Import lots (CSV)</CardTitle>
+          <CardDescription>
+            Columns: lot_number, entitlement, liability[, lot_type, unit_number, owner_name,
+            owner_email]
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Textarea
+            data-testid="csv-input"
+            className="h-36 font-mono text-xs"
+            placeholder={SAMPLE_CSV}
+            value={csv}
+            onChange={(e) => setCsv(e.target.value)}
+          />
+          {importMutation.error && (
+            <p className="mt-2 text-sm text-destructive">{importMutation.error.message}</p>
+          )}
+          <Button
+            className="mt-4"
+            disabled={!csv || importMutation.isPending}
+            onClick={() => importMutation.mutate()}
+          >
+            {importMutation.isPending ? "Importing…" : "Import lots"}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -288,49 +378,49 @@ function PeopleTab({ schemeId }: { schemeId: string }) {
           json: { role: "owner" },
         }),
       ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["people", schemeId] }),
+    onSuccess: () => {
+      toast.success("Invite sent");
+      void queryClient.invalidateQueries({ queryKey: ["people", schemeId] });
+    },
+    onError: (e) => toast.error(e.message),
   });
 
+  if (!data) return <Skeleton className="h-40 max-w-2xl" />;
+
   return (
-    <div className="space-y-2">
-      {data?.people.length === 0 && (
-        <p className="text-sm text-gray-500">
+    <div className="max-w-2xl space-y-2">
+      {data.people.length === 0 && (
+        <p className="text-sm text-muted-foreground">
           No people yet — owners appear here when you import lots.
         </p>
       )}
-      {data?.people.map((p) => (
-        <div
-          key={p.id}
-          data-testid={`person-${p.email ?? p.id}`}
-          className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3"
-        >
-          <div>
-            <p className="text-sm font-medium">
-              {`${p.givenName ?? ""} ${p.familyName ?? ""}`.trim() || p.email || "Unnamed"}
-            </p>
-            <p className="text-xs text-gray-500">{p.email ?? "no email"}</p>
-          </div>
-          {p.userId ? (
-            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">
-              joined
-            </span>
-          ) : p.pendingInvite ? (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-              invited
-            </span>
-          ) : (
-            <button
-              type="button"
-              disabled={!p.email || invite.isPending}
-              onClick={() => invite.mutate(p.id)}
-              className="rounded-md border border-brand-600 px-3 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-40"
-            >
-              Invite
-            </button>
-          )}
-        </div>
+      {data.people.map((p) => (
+        <Card key={p.id} data-testid={`person-${p.email ?? p.id}`} className="py-3">
+          <CardContent className="flex items-center justify-between gap-3 px-4">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">
+                {`${p.givenName ?? ""} ${p.familyName ?? ""}`.trim() || p.email || "Unnamed"}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">{p.email ?? "no email"}</p>
+            </div>
+            {p.userId ? (
+              <StatusBadge status="joined" />
+            ) : p.pendingInvite ? (
+              <StatusBadge status="invited" />
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!p.email || invite.isPending}
+                onClick={() => invite.mutate(p.id)}
+              >
+                Invite
+              </Button>
+            )}
+          </CardContent>
+        </Card>
       ))}
-      {invite.error && <p className="text-sm text-red-600">{invite.error.message}</p>}
+      {invite.error && <p className="text-sm text-destructive">{invite.error.message}</p>}
     </div>
   );
 }
@@ -365,63 +455,87 @@ function CommitteeTab({ schemeId }: { schemeId: string }) {
           json: { userId, role },
         }),
       ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["committee", schemeId] }),
+    onSuccess: () => {
+      toast.success("Committee role assigned");
+      void queryClient.invalidateQueries({ queryKey: ["committee", schemeId] });
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   const nameFor = (id: string) => members?.members.find((m) => m.userId === id)?.name ?? id;
+  const officers =
+    committee?.committee.filter((m) => m.role !== "owner" && m.role !== "tenant") ?? [];
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-medium">Current committee</h3>
-        <ul className="mt-2 space-y-1 text-sm" data-testid="committee-list">
-          {committee?.committee
-            .filter((m) => m.role !== "owner" && m.role !== "tenant")
-            .map((m) => (
-              <li key={`${m.userId}-${m.role}`} className="flex justify-between">
-                <span>{nameFor(m.userId)}</span>
-                <span className="text-gray-500">{m.role.replace("_", " ")}</span>
+    <div className="max-w-2xl space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Current committee</CardTitle>
+          <CardDescription>Office holders for this owners corporation.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-2.5 text-sm" data-testid="committee-list">
+            {officers.length === 0 && (
+              <li className="text-muted-foreground">No committee roles assigned yet.</li>
+            )}
+            {officers.map((m) => (
+              <li key={`${m.userId}-${m.role}`} className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <User className="size-4 text-muted-foreground" />
+                  {nameFor(m.userId)}
+                </span>
+                <Badge variant="secondary" className="bg-brand-50 text-brand-800">
+                  {m.role.replace("_", " ")}
+                </Badge>
               </li>
             ))}
-        </ul>
-      </div>
+          </ul>
+        </CardContent>
+      </Card>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-medium">Assign role</h3>
-        <div className="mt-2 flex gap-2">
-          <select
-            className="flex-1 rounded-md border border-gray-300 px-2 py-2 text-sm"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-          >
-            <option value="">Select member…</option>
-            {members?.members.map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {m.name} ({m.email})
-              </option>
-            ))}
-          </select>
-          <select
-            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
-            value={role}
-            onChange={(e) => setRole(e.target.value as typeof role)}
-          >
-            <option value="chair">Chair</option>
-            <option value="secretary">Secretary</option>
-            <option value="treasurer">Treasurer</option>
-            <option value="committee_member">Committee member</option>
-          </select>
-          <button
-            type="button"
-            disabled={!userId || assign.isPending}
-            onClick={() => assign.mutate()}
-            className="rounded-md bg-brand-700 px-3 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-40"
-          >
-            Assign
-          </button>
-        </div>
-        {assign.error && <p className="mt-2 text-sm text-red-600">{assign.error.message}</p>}
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Assign role</CardTitle>
+          <CardDescription>Appoint a member as an office holder.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label>Member</Label>
+              <Select value={userId} onValueChange={setUserId}>
+                <SelectTrigger className="w-full" data-testid="committee-member">
+                  <SelectValue placeholder="Select member…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members?.members.map((m) => (
+                    <SelectItem key={m.userId} value={m.userId}>
+                      {m.name} ({m.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Role</Label>
+              <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
+                <SelectTrigger className="w-full sm:w-48" data-testid="committee-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="chair">Chair</SelectItem>
+                  <SelectItem value="secretary">Secretary</SelectItem>
+                  <SelectItem value="treasurer">Treasurer</SelectItem>
+                  <SelectItem value="committee_member">Committee member</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button disabled={!userId || assign.isPending} onClick={() => assign.mutate()}>
+              Assign
+            </Button>
+          </div>
+          {assign.error && <p className="mt-2 text-sm text-destructive">{assign.error.message}</p>}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -455,52 +569,70 @@ function DocumentsTab({ schemeId }: { schemeId: string }) {
     },
     onSuccess: () => {
       if (fileRef.current) fileRef.current.value = "";
+      toast.success("Document uploaded");
       void queryClient.invalidateQueries({ queryKey: ["documents", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["onboarding", schemeId] });
     },
+    onError: (e) => toast.error(e.message),
   });
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-medium">Upload document</h3>
-        <div className="mt-2 flex items-center gap-2">
-          <input ref={fileRef} type="file" data-testid="doc-file" className="text-sm" />
-          <select
-            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            <option value="insurance">Insurance</option>
-            <option value="plan_of_subdivision">Plan of subdivision</option>
-            <option value="rules">Rules</option>
-            <option value="financial">Financial</option>
-            <option value="minutes">Minutes</option>
-            <option value="other">Other</option>
-          </select>
-          <button
-            type="button"
-            disabled={upload.isPending}
-            onClick={() => upload.mutate()}
-            className="rounded-md bg-brand-700 px-3 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-40"
-          >
-            Upload
-          </button>
-        </div>
-        {upload.error && <p className="mt-2 text-sm text-red-600">{upload.error.message}</p>}
-      </div>
+    <div className="max-w-2xl space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Upload document</CardTitle>
+          <CardDescription>
+            Insurance certificates, plans, rules and minutes live here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Input ref={fileRef} type="file" data-testid="doc-file" className="sm:flex-1" />
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="w-full sm:w-52" data-testid="doc-category">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="insurance">Insurance</SelectItem>
+                <SelectItem value="plan_of_subdivision">Plan of subdivision</SelectItem>
+                <SelectItem value="rules">Rules</SelectItem>
+                <SelectItem value="financial">Financial</SelectItem>
+                <SelectItem value="minutes">Minutes</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button disabled={upload.isPending} onClick={() => upload.mutate()}>
+              Upload
+            </Button>
+          </div>
+          {upload.error && <p className="mt-2 text-sm text-destructive">{upload.error.message}</p>}
+        </CardContent>
+      </Card>
 
-      <ul className="space-y-1">
-        {data?.documents.map((d) => (
-          <li
-            key={d.id}
-            className="flex justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <span>{d.title}</span>
-            <span className="text-gray-500">{d.category}</span>
-          </li>
-        ))}
-      </ul>
+      {!data && <Skeleton className="h-24" />}
+      {data && data.documents.length > 0 && (
+        <div className="space-y-2">
+          {data.documents.map((d) => (
+            <Card key={d.id} className="py-3">
+              <CardContent className="flex items-center justify-between gap-3 px-4">
+                <span className="flex min-w-0 items-center gap-2.5 text-sm">
+                  <FileText className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate font-medium">{d.title}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <Badge variant="secondary">{d.category.replace(/_/g, " ")}</Badge>
+                  <span className="hidden text-xs text-muted-foreground sm:inline">
+                    {formatDate(d.createdAt)}
+                  </span>
+                </span>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+      {data && data.documents.length === 0 && (
+        <p className="text-sm text-muted-foreground">No documents yet.</p>
+      )}
     </div>
   );
 }
@@ -517,35 +649,61 @@ interface DomainEvent {
   occurredAt: string;
 }
 
+function ActorBadge({ actor }: { actor: DomainEvent["actor"] }) {
+  if (actor.kind === "agent") {
+    return (
+      <Badge
+        variant="outline"
+        className="shrink-0 gap-1 border-purple-200 bg-purple-50 text-purple-700"
+      >
+        <Bot className="size-3" /> {actor.id}
+      </Badge>
+    );
+  }
+  if (actor.kind === "user") {
+    return (
+      <Badge variant="outline" className="shrink-0 gap-1 border-blue-200 bg-blue-50 text-blue-700">
+        <User className="size-3" /> user
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="shrink-0 text-muted-foreground">
+      {actor.kind}
+    </Badge>
+  );
+}
+
 function ActivityTab({ schemeId }: { schemeId: string }) {
   const events = useEventStream(schemeId);
   return (
-    <ul className="space-y-1.5" data-testid="event-feed">
-      {events.length === 0 && <li className="text-sm text-gray-400">Waiting for events…</li>}
-      {events.map((evt) => (
-        <li
-          key={evt.id}
-          className="flex items-baseline gap-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <span className="shrink-0 font-mono text-xs text-gray-400">#{evt.seq}</span>
-          <span
-            className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
-              evt.actor.kind === "agent"
-                ? "bg-purple-100 text-purple-700"
-                : evt.actor.kind === "user"
-                  ? "bg-blue-100 text-blue-700"
-                  : "bg-gray-100 text-gray-600"
-            }`}
-          >
-            {evt.actor.kind === "agent" ? `🤖 ${evt.actor.id}` : evt.actor.kind}
-          </span>
-          <span className="font-medium">{evt.type}</span>
-          <span className="ml-auto shrink-0 text-xs text-gray-400">
-            {new Date(evt.occurredAt).toLocaleTimeString()}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <div className="max-w-3xl">
+      <p className="text-sm text-muted-foreground">
+        Live event feed — every domain event on this scheme's bus, as it happens.
+      </p>
+      <ol className="relative mt-4 space-y-0 border-l border-border pl-6" data-testid="event-feed">
+        {events.length === 0 && (
+          <li className="py-2 text-sm text-muted-foreground">Waiting for events…</li>
+        )}
+        {events.map((evt) => (
+          <li key={evt.id} className="relative pb-5 last:pb-0">
+            <span
+              className={cn(
+                "absolute top-1.5 -left-[30px] size-2.5 rounded-full ring-4 ring-background",
+                evt.actor.kind === "agent" ? "bg-purple-400" : "bg-brand-600",
+              )}
+            />
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-mono text-sm font-medium">{evt.type}</span>
+              <ActorBadge actor={evt.actor} />
+              <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                #{evt.seq} · {formatTime(evt.occurredAt)}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
