@@ -130,5 +130,39 @@ export function decisionsRoutes(deps: AppDeps) {
         );
         return c.json(result);
       },
-    );
+    )
+    .post(
+      "/:schemeId/decisions/:decisionId/vote",
+      requireSchemeMember(deps),
+      zv("json", z.object({ choice: z.enum(["approve", "decline"]), note: z.string().optional() })),
+      async (c) => {
+        const user = c.get("user");
+        const ctx = deps.serviceContext(userActor(user.id));
+        const { choice, note } = c.req.valid("json");
+        const result = await decisionsService.castDecisionVote(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("decisionId"),
+          user.id,
+          choice,
+          c.get("roles"),
+          note,
+        );
+        return c.json({
+          status: result.status,
+          votesFor: result.votesFor,
+          votesAgainst: result.votesAgainst,
+          eligible: result.eligible,
+        });
+      },
+    )
+    .get("/:schemeId/decisions/:decisionId/votes", requireSchemeMember(deps), async (c) => {
+      const ctx = deps.serviceContext(userActor(c.get("user").id));
+      const result = await decisionsService.listDecisionVotes(
+        ctx,
+        c.get("schemeId"),
+        c.req.param("decisionId"),
+      );
+      return c.json(result);
+    });
 }
