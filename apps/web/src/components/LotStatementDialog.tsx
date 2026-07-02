@@ -10,6 +10,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { formatMoney } from "@/components/ui/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -20,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api, unwrap } from "@/lib/api";
-import { dollars, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface LedgerEntry {
@@ -60,7 +63,7 @@ export function LotStatementDialog({
   triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { data, error } = useQuery({
+  const { data, error, refetch } = useQuery({
     queryKey: ["lot-statement", schemeId, lotId],
     enabled: open,
     queryFn: async () =>
@@ -78,6 +81,13 @@ export function LotStatementDialog({
     return { ...e, balanceCents: running };
   });
 
+  const balanceTone =
+    data && data.balanceCents > 0
+      ? "text-critical"
+      : data && data.balanceCents < 0
+        ? "text-positive"
+        : "text-muted-foreground";
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -90,22 +100,26 @@ export function LotStatementDialog({
           <ReceiptText className="size-4" /> Statement
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Lot {lotNumber} statement</DialogTitle>
           <DialogDescription>
             Every levy charge, payment and interest accrual on this lot.
           </DialogDescription>
         </DialogHeader>
-        {error && <p className="text-sm text-destructive">{error.message}</p>}
+        {error && (
+          <ErrorState message="We couldn't load this statement." onRetry={() => void refetch()} />
+        )}
         {!data && !error && <Skeleton className="h-32" />}
         {data && rows.length === 0 && (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No ledger entries yet — levies will appear here when issued.
-          </p>
+          <EmptyState
+            icon={ReceiptText}
+            title="No ledger entries yet"
+            description="Levies, payments and interest will appear here once they're issued."
+          />
         )}
         {data && rows.length > 0 && (
-          <div className="-mx-2 overflow-x-auto px-2">
+          <div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -127,27 +141,32 @@ export function LotStatementDialog({
                         <span className="block text-xs text-muted-foreground">{e.note}</span>
                       )}
                     </TableCell>
-                    <TableCell
-                      className={cn(
-                        "text-right tabular-nums",
-                        e.amountCents < 0 && "text-green-700",
-                      )}
-                    >
-                      {e.amountCents < 0 ? `−${dollars(-e.amountCents)}` : dollars(e.amountCents)}
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {/* A payment is a negative charge — show it as a credit, not an alarm. */}
+                      <span className={cn(e.amountCents < 0 && "text-positive")}>
+                        {formatMoney(e.amountCents)}
+                      </span>
                     </TableCell>
-                    <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                      {dollars(e.balanceCents)}
+                    <TableCell className="hidden text-right font-mono tabular-nums sm:table-cell">
+                      <span
+                        className={cn(
+                          e.balanceCents > 0 && "text-critical",
+                          e.balanceCents < 0 && "text-positive",
+                        )}
+                      >
+                        {formatMoney(e.balanceCents)}
+                      </span>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-3 flex items-center justify-between border-t pt-3 text-sm font-medium">
+            <div className="mt-3 flex items-center justify-between border-t pt-3 text-sm font-medium">
               <span>Outstanding balance</span>
-              <span className={cn("tabular-nums", data.balanceCents > 0 && "text-red-700")}>
-                {dollars(data.balanceCents)}
+              <span className={cn("font-mono tabular-nums", balanceTone)}>
+                {formatMoney(data.balanceCents)}
               </span>
-            </p>
+            </div>
           </div>
         )}
       </DialogContent>

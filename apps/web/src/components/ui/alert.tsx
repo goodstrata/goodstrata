@@ -12,6 +12,16 @@ const alertVariants = cva(
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current",
       },
+      /** Status tones (DESIGN.md §3.3): tinted panel, hairline tone border, toned icon. */
+      tone: {
+        positive: "border-positive/25 bg-positive/8 text-foreground [&>svg]:text-positive",
+        caution: "border-caution/25 bg-caution/8 text-foreground [&>svg]:text-caution",
+        critical: "border-critical/25 bg-critical/8 text-foreground [&>svg]:text-critical",
+        info: "border-info/25 bg-info/8 text-foreground [&>svg]:text-info",
+        agent: "border-agent/25 bg-agent/8 text-foreground [&>svg]:text-agent",
+        neutral:
+          "border-neutral-tone/25 bg-neutral-tone/8 text-foreground [&>svg]:text-neutral-tone",
+      },
     },
     defaultVariants: {
       variant: "default",
@@ -22,13 +32,17 @@ const alertVariants = cva(
 function Alert({
   className,
   variant,
+  tone,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
+  // A tone stands alone: skip the default variant unless one is explicit.
+  const appliedVariant = variant ?? (tone ? null : "default");
   return (
     <div
       data-slot="alert"
       role="alert"
-      className={cn(alertVariants({ variant }), className)}
+      data-tone={tone ?? undefined}
+      className={cn(alertVariants({ variant: appliedVariant, tone }), className)}
       {...props}
     />
   );

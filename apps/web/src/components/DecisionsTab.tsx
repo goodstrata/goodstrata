@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, CircleX, Users } from "lucide-react";
+import { CircleCheck, CircleX, Scale, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Markdown } from "@/components/Markdown";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { PageHeader } from "@/components/ui/page-header";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,51 +49,82 @@ async function fetchVotes(schemeId: string, decisionId: string): Promise<VoteTal
 
 export function DecisionsTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
-  const roles = useSchemeRoles(schemeId);
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["decisions", schemeId],
     queryFn: async () =>
       unwrap<{ decisions: Decision[] }>(
         await api.schemes[":schemeId"].decisions.$get({ param: { schemeId }, query: {} }),
       ),
+    refetchInterval: 5000,
   });
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["decisions", schemeId] });
     void queryClient.invalidateQueries({ queryKey: ["budgets", schemeId] });
   };
 
-  if (!data) return <Skeleton className="h-40 max-w-3xl" />;
+  return (
+    <div className="max-w-2xl space-y-8">
+      <PageHeader
+        as="h2"
+        title="Decisions"
+        description="Choices the agents have prepared and put to the people who hold the authority."
+      />
 
-  const pending = data.decisions.filter((d) => d.status === "pending");
-  const resolved = data.decisions.filter((d) => d.status !== "pending");
+      {isLoading && <Skeleton className="h-40" />}
+      {isError && <ErrorState message="Couldn't load decisions." onRetry={() => void refetch()} />}
+
+      {data && (
+        <DecisionLists schemeId={schemeId} decisions={data.decisions} onChange={invalidate} />
+      )}
+    </div>
+  );
+}
+
+function DecisionLists({
+  schemeId,
+  decisions,
+  onChange,
+}: {
+  schemeId: string;
+  decisions: Decision[];
+  onChange: () => void;
+}) {
+  const roles = useSchemeRoles(schemeId);
+  const pending = decisions.filter((d) => d.status === "pending");
+  const resolved = decisions.filter((d) => d.status !== "pending");
   const actionable = pending.some((d) => canDecide(roles, d.deciderRole));
 
   return (
-    <div className="max-w-3xl space-y-8">
+    <>
       <section>
-        <h3 className="text-base font-semibold">
-          {actionable || pending.length === 0 ? "Waiting on you" : "Pending decisions"}
-        </h3>
-        {pending.length === 0 && (
-          <p className="mt-3 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Nothing to decide — the agents have it covered.
-          </p>
+        {pending.length === 0 ? (
+          <EmptyState
+            icon={Scale}
+            title="Nothing to decide"
+            description="The agents have it covered — decisions that need a person appear here."
+          />
+        ) : (
+          <>
+            <h2 className="text-base font-semibold">
+              {actionable ? "Waiting on you" : "Pending decisions"}
+            </h2>
+            <div className="mt-3 space-y-4">
+              {pending.map((d) => (
+                <PendingDecisionCard
+                  key={d.id}
+                  schemeId={schemeId}
+                  decision={d}
+                  onChange={onChange}
+                />
+              ))}
+            </div>
+          </>
         )}
-        <div className="mt-3 space-y-4">
-          {pending.map((d) => (
-            <PendingDecisionCard
-              key={d.id}
-              schemeId={schemeId}
-              decision={d}
-              onChange={invalidate}
-            />
-          ))}
-        </div>
       </section>
 
       {resolved.length > 0 && (
         <section>
-          <h3 className="text-base font-semibold">History</h3>
+          <h2 className="text-base font-semibold">History</h2>
           <div className="mt-3 space-y-2">
             {resolved.map((d) => (
               <Card key={d.id} className="py-3">
@@ -103,7 +137,7 @@ export function DecisionsTab({ schemeId }: { schemeId: string }) {
           </div>
         </section>
       )}
-    </div>
+    </>
   );
 }
 
@@ -121,7 +155,10 @@ function PendingDecisionCard({
   const isCommitteeTier = decision.deciderRole.includes("committee");
 
   return (
-    <Card data-testid={`decision-${decision.kind}`} className="border-amber-200 bg-amber-50/50">
+    <Card
+      data-testid={`decision-${decision.kind}`}
+      className="border-l-4 border-l-caution bg-caution/5"
+    >
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0 space-y-1">
@@ -131,13 +168,11 @@ function PendingDecisionCard({
               {decision.dueAt ? ` · respond by ${formatDate(decision.dueAt)}` : ""}
             </CardDescription>
           </div>
-          <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-900">
-            {decision.kind.replace(/_/g, " ")}
-          </Badge>
+          <Badge tone="caution">{decision.kind.replace(/_/g, " ")}</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-lg border border-amber-100 bg-card p-4">
+        <div className="rounded-lg border bg-card p-4">
           <Markdown>{decision.summaryMd}</Markdown>
         </div>
         {!mayDecide ? (
@@ -177,16 +212,17 @@ function ResolveButtons({
       toast.success("Decision recorded");
       onChange();
     },
-    onError: (e) => toast.error(e.message),
   });
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {decision.options.map((o) => (
           <Button
             key={o.id}
+            className="w-full sm:w-auto"
             variant={o.id === "approve" ? "default" : "outline"}
+            pending={resolve.isPending && resolve.variables === o.id}
             disabled={resolve.isPending}
             onClick={() => resolve.mutate(o.id)}
           >
@@ -194,7 +230,11 @@ function ResolveButtons({
           </Button>
         ))}
       </div>
-      {resolve.error && <p className="mt-2 text-sm text-destructive">{resolve.error.message}</p>}
+      {resolve.isError && (
+        <p role="alert" className="mt-2 text-[13px] text-critical">
+          {resolve.error.message}
+        </p>
+      )}
     </div>
   );
 }
@@ -246,7 +286,6 @@ function CommitteeVotePanel({
       void queryClient.invalidateQueries({ queryKey: ["decision-votes", schemeId, decision.id] });
       onChange();
     },
-    onError: (e) => toast.error(e.message),
   });
 
   if (isLoading) return <Skeleton className="h-16" />;
@@ -257,19 +296,38 @@ function CommitteeVotePanel({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={vote.isPending} onClick={() => vote.mutate("approve")}>
-          <CircleCheck className="size-4" /> Vote for
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Button
+          className="w-full sm:w-auto"
+          pending={vote.isPending && vote.variables === "approve"}
+          disabled={vote.isPending}
+          onClick={() => vote.mutate("approve")}
+        >
+          <CircleCheck aria-hidden="true" className="size-4" /> Vote for
         </Button>
-        <Button variant="outline" disabled={vote.isPending} onClick={() => vote.mutate("decline")}>
-          <CircleX className="size-4" /> Vote against
+        <Button
+          variant="outline"
+          className="w-full sm:w-auto"
+          pending={vote.isPending && vote.variables === "decline"}
+          disabled={vote.isPending}
+          onClick={() => vote.mutate("decline")}
+        >
+          <CircleX aria-hidden="true" className="size-4" /> Vote against
         </Button>
-        <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Users className="size-3.5" />
-          {tally.votesFor} of {needed} needed · {tally.eligible} eligible
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge tone="positive">{tally.votesFor} for</Badge>
+        {tally.votesAgainst > 0 && <Badge tone="critical">{tally.votesAgainst} against</Badge>}
+        <span className="flex items-center gap-1 text-muted-foreground">
+          <Users aria-hidden="true" className="size-3.5" />
+          {needed} needed · {tally.eligible} eligible
         </span>
       </div>
-      <Progress value={(tally.votesFor / Math.max(needed, 1)) * 100} className="h-1.5" />
+      <Progress
+        value={(tally.votesFor / Math.max(needed, 1)) * 100}
+        aria-label={`${tally.votesFor} of ${needed} votes needed to carry`}
+        className="h-1.5"
+      />
       {tally.votes.length > 0 && (
         <>
           <Separator />
@@ -277,20 +335,16 @@ function CommitteeVotePanel({
             {tally.votes.map((v) => (
               <li key={v.userId} className="flex items-center justify-between gap-2">
                 <span className="min-w-0 truncate">{v.name}</span>
-                <Badge
-                  variant="outline"
-                  className={
-                    v.choice === "approve"
-                      ? "border-green-200 bg-green-50 text-green-700"
-                      : "border-red-200 bg-red-50 text-red-700"
-                  }
-                >
-                  {v.choice}
-                </Badge>
+                <Badge tone={v.choice === "approve" ? "positive" : "critical"}>{v.choice}</Badge>
               </li>
             ))}
           </ul>
         </>
+      )}
+      {vote.isError && (
+        <p role="alert" className="text-[13px] text-critical">
+          {vote.error.message}
+        </p>
       )}
     </div>
   );

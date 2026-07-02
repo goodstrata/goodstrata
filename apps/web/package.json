@@ -11,7 +11,11 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@fontsource-variable/newsreader": "catalog:",
+    "@fontsource-variable/public-sans": "catalog:",
+    "@fontsource/ibm-plex-mono": "catalog:",
     "@goodstrata/api": "workspace:*",
+    "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
     "better-auth": "catalog:",
@@ -25,7 +29,8 @@
     "react-dom": "catalog:",
     "react-markdown": "catalog:",
     "sonner": "catalog:",
-    "tailwind-merge": "catalog:"
+    "tailwind-merge": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",

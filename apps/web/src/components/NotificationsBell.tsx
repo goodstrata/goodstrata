@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, BellOff, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -84,7 +84,7 @@ export function NotificationsBell({ schemeId }: { schemeId: string }) {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 p-0">
+      <DropdownMenuContent align="end" className="w-[min(20rem,calc(100vw-1rem))] p-0">
         <div className="flex items-center justify-between px-3 py-2">
           <p className="text-sm font-semibold">Notifications</p>
           {unread.length > 0 && (
@@ -93,7 +93,7 @@ export function NotificationsBell({ schemeId }: { schemeId: string }) {
               size="sm"
               className="h-7 gap-1 text-xs text-muted-foreground"
               onClick={() => markRead.mutate({ all: true })}
-              disabled={markRead.isPending}
+              pending={markRead.isPending}
             >
               <CheckCheck className="size-3.5" /> Mark all read
             </Button>
@@ -101,9 +101,15 @@ export function NotificationsBell({ schemeId }: { schemeId: string }) {
         </div>
         <Separator />
         {data.length === 0 ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            Nothing yet — you're all caught up.
-          </p>
+          <div className="flex flex-col items-center gap-1.5 px-3 py-8 text-center">
+            <div className="flex size-9 items-center justify-center rounded-full bg-muted">
+              <BellOff aria-hidden="true" className="size-4 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium">You're all caught up</p>
+            <p className="text-xs text-muted-foreground">
+              New notices for this scheme will appear here.
+            </p>
+          </div>
         ) : (
           <ScrollArea className="max-h-80">
             <ul>
@@ -113,8 +119,8 @@ export function NotificationsBell({ schemeId }: { schemeId: string }) {
                     type="button"
                     onClick={() => isUnread(n) && markRead.mutate({ notificationId: n.id })}
                     className={cn(
-                      "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left hover:bg-accent",
-                      isUnread(n) ? "bg-brand-50/60" : "opacity-70",
+                      "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors hover:bg-accent/50",
+                      isUnread(n) && "bg-accent/40",
                     )}
                   >
                     <span className="flex items-start gap-2">

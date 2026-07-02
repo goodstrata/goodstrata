@@ -2,6 +2,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 import type * as React from "react";
 
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
@@ -11,7 +12,7 @@ const buttonVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
@@ -41,10 +42,15 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  pending = false,
+  disabled,
+  children,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
+    /** Shows a spinner, disables the button and sets aria-busy; children stay visible. */
+    pending?: boolean;
   }) {
   const Comp = asChild ? Slot.Root : "button";
 
@@ -54,8 +60,13 @@ function Button({
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
+      aria-busy={pending || undefined}
+      disabled={disabled || pending}
       {...props}
-    />
+    >
+      {pending && !asChild && <Spinner aria-hidden="true" />}
+      {children}
+    </Comp>
   );
 }
 

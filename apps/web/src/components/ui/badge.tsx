@@ -18,6 +18,15 @@ const badgeVariants = cva(
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
       },
+      /** Status tones (DESIGN.md §3.3) — dark-safe, tones brighten in .dark. */
+      tone: {
+        positive: "border-positive/20 bg-positive/10 text-positive",
+        caution: "border-caution/20 bg-caution/10 text-caution",
+        critical: "border-critical/20 bg-critical/10 text-critical",
+        info: "border-info/20 bg-info/10 text-info",
+        agent: "border-agent/20 bg-agent/10 text-agent",
+        neutral: "border-neutral-tone/20 bg-neutral-tone/10 text-neutral-tone",
+      },
     },
     defaultVariants: {
       variant: "default",
@@ -27,17 +36,22 @@ const badgeVariants = cva(
 
 function Badge({
   className,
-  variant = "default",
+  variant,
+  tone,
   asChild = false,
   ...props
 }: React.ComponentProps<"span"> & VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
   const Comp = asChild ? Slot.Root : "span";
+  // A tone stands alone: unless a variant is explicitly requested alongside,
+  // skip the default variant so tone colors aren't fighting bg-primary.
+  const appliedVariant = variant ?? (tone ? null : "default");
 
   return (
     <Comp
       data-slot="badge"
-      data-variant={variant}
-      className={cn(badgeVariants({ variant }), className)}
+      data-variant={appliedVariant ?? undefined}
+      data-tone={tone ?? undefined}
+      className={cn(badgeVariants({ variant: appliedVariant, tone }), className)}
       {...props}
     />
   );

@@ -1,14 +1,18 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Building2, CircleAlertIcon } from "lucide-react";
+import { useRef } from "react";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, unwrap } from "@/lib/api";
 import { signUp, useSession } from "@/lib/auth";
+import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 
 export const Route = createFileRoute("/join")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -17,23 +21,41 @@ export const Route = createFileRoute("/join")({
   component: JoinPage,
 });
 
+interface InvitePreview {
+  schemeName: string;
+  role: string;
+  email: string;
+}
+
+const joinSchema = z.object({
+  name: z.string(),
+  password: z.string().min(8, "Use at least 8 characters."),
+});
+
 function JoinPage() {
   const { token } = Route.useSearch();
   const { data: session, isPending } = useSession();
 
   if (!token) {
     return (
-      <div className="mx-auto mt-16 max-w-sm">
-        <Alert variant="destructive">
-          <AlertTitle>Missing invite token.</AlertTitle>
-        </Alert>
+      <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
+        <EmptyState
+          icon={Building2}
+          title="Missing invite token"
+          description="This link is incomplete. Open the invite link from your email again, or sign in to your existing account."
+          action={
+            <Button asChild variant="outline">
+              <Link to="/login">Go to sign in</Link>
+            </Button>
+          }
+        />
       </div>
     );
   }
   if (isPending) {
     return (
-      <div className="mx-auto mt-16 max-w-sm space-y-3">
-        <Skeleton className="h-8 w-2/3" />
+      <div className="mx-auto mt-8 w-full max-w-sm space-y-3 md:mt-16">
+        <Skeleton className="h-6 w-2/3" />
         <Skeleton className="h-40 w-full" />
       </div>
     );
@@ -53,7 +75,7 @@ function AcceptInvite({ token }: { token: string }) {
 
   return (
     <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
-      <Card className="text-center">
+      <Card>
         <CardHeader>
           <CardTitle className="text-lg">Accept your invite</CardTitle>
           <CardDescription>
@@ -61,9 +83,17 @@ function AcceptInvite({ token }: { token: string }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {accept.error && <p className="text-sm text-destructive">{accept.error.message}</p>}
-          <Button disabled={accept.isPending} onClick={() => accept.mutate()}>
-            {accept.isPending ? "Joining…" : "Accept invite"}
+          {accept.error && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-md border border-critical/25 bg-critical/8 px-3 py-2 text-[13px] text-critical"
+            >
+              <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+              <span>{accept.error.message}</span>
+            </div>
+          )}
+          <Button pending={accept.isPending} onClick={() => accept.mutate()}>
+            Accept invite
           </Button>
         </CardContent>
       </Card>
@@ -73,93 +103,123 @@ function AcceptInvite({ token }: { token: string }) {
 
 function SignupThenAccept({ token }: { token: string }) {
   const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const previewRef = useRef<InvitePreview | undefined>(undefined);
 
   // Unauthenticated preview via query param (public by design: token IS the secret).
-  const { data: preview } = useQuery({
+  const {
+    data: preview,
+    isPending,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ["invite-preview", token],
-    queryFn: async () => {
+    queryFn: async (): Promise<InvitePreview> => {
       const res = await fetch(`/api/invites/preview?token=${encodeURIComponent(token)}`);
-      if (!res.ok) throw new Error("This invite is invalid or has expired");
-      return (await res.json()) as { schemeName: string; role: string; email: string };
+      if (!res.ok) throw new Error("This invite is invalid or has expired.");
+      return (await res.json()) as InvitePreview;
     },
     retry: false,
   });
+  previewRef.current = preview;
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!preview) return;
-    setBusy(true);
-    setError(null);
-    const signup = await signUp.email({
-      email: preview.email,
-      password,
-      name: name || preview.email.split("@")[0]!,
-    });
-    if (signup.error) {
-      setBusy(false);
-      setError(signup.error.message ?? "Sign up failed");
-      return;
-    }
-    const res = await api.invites.accept.$post({ json: { token } });
-    setBusy(false);
-    if (!res.ok) {
-      let message = `Invite could not be accepted (${res.status})`;
-      try {
-        const body = (await res.json()) as { error?: { message?: string } };
-        message = body.error?.message ?? message;
-      } catch {
-        // keep the status-based message
-      }
-      setError(message);
-      return;
-    }
-    const data = (await res.json()) as { schemeId: string };
-    void navigate({ to: "/schemes/$schemeId", params: { schemeId: data.schemeId } });
+  const form = useAppForm({
+    schema: joinSchema,
+    defaultValues: { name: "", password: "" },
+    onSubmit: async ({ name, password }) => {
+      const current = previewRef.current;
+      if (!current) throw new Error("This invite is invalid or has expired.");
+      const signup = await signUp.email({
+        email: current.email,
+        password,
+        name: name || current.email.split("@")[0]!,
+      });
+      if (signup.error) throw new Error(signup.error.message ?? "Sign up failed.");
+      const data = await unwrap<{ schemeId: string }>(
+        await api.invites.accept.$post({ json: { token } }),
+      );
+      void navigate({ to: "/schemes/$schemeId", params: { schemeId: data.schemeId } });
+    },
+  });
+
+  if (isError) {
+    return (
+      <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
+        <ErrorState
+          title="Invite unavailable"
+          message={
+            error instanceof Error ? error.message : "This invite is invalid or has expired."
+          }
+          onRetry={() => void refetch()}
+        />
+      </div>
+    );
+  }
+  if (isPending || !preview) {
+    return (
+      <div className="mx-auto mt-8 w-full max-w-sm space-y-3 md:mt-16">
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Join {preview?.schemeName ?? "…"}</CardTitle>
+          <CardTitle className="text-lg">Join {preview.schemeName}</CardTitle>
           <CardDescription>
-            You've been invited as <b>{preview?.role.replace("_", " ")}</b>
-            {preview?.email ? ` (${preview.email})` : ""}. Create your account to join.
+            You've been invited as{" "}
+            <b className="font-medium text-foreground">{preview.role.replace(/_/g, " ")}</b>{" "}
+            <span className="break-all">({preview.email})</span>. Create your account to join.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={submit} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="join-name">Name</Label>
-              <Input
-                id="join-name"
-                placeholder="Your name"
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="join-password">Password</Label>
-              <Input
-                id="join-password"
-                placeholder="Choose a password"
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={busy || !preview}>
-              {busy ? "Joining…" : "Create account & join"}
-            </Button>
+          <form
+            id="join-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void form.handleSubmit();
+            }}
+            className="flex flex-col gap-4"
+          >
+            <form.Field name="name">
+              {(field) => (
+                <Field label="Name" htmlFor="join-name">
+                  <Input
+                    placeholder="Your name"
+                    autoComplete="name"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="password">
+              {(field) => (
+                <Field
+                  label="Password"
+                  htmlFor="join-password"
+                  required
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Input
+                    placeholder="Choose a password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <FormError form={form} />
+            <SubmitButton form={form} className="w-full">
+              Create account & join
+            </SubmitButton>
           </form>
         </CardContent>
       </Card>
