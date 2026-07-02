@@ -149,4 +149,25 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   const subjects = finalOutbox.emails.map((e: { subject: string }) => e.subject);
   expect(subjects.filter((s: string) => s.startsWith("Levy notice"))).toHaveLength(3);
   expect(subjects.some((s: string) => s.startsWith("Receipt"))).toBeTruthy();
+
+  // ======================= Maintenance =======================
+
+  await page.getByRole("button", { name: "maintenance" }).click();
+  await page.getByTestId("contractor-name").fill("Fitzroy Plumbing Co");
+  await page.getByTestId("contractor-email").fill("jobs@fitzroyplumbing.example");
+  await page.getByTestId("contractor-trades").fill("plumbing, roofing");
+  await page.getByRole("button", { name: "Add contractor" }).click();
+  await expect(page.getByText("Fitzroy Plumbing Co")).toBeVisible();
+
+  await page.getByTestId("mr-title").fill("Water stain on lot 9 ceiling");
+  await page.getByTestId("mr-description").fill("Brown stain spreading after heavy rain.");
+  await page.getByRole("button", { name: "Submit request" }).click();
+  await expect(page.getByTestId("mr-Water stain on lot 9 ceiling")).toBeVisible();
+
+  // The maintenance agent picked the event up (mock model: run completes
+  // without tool calls; real triage behaviour is covered by agent tests).
+  await page.getByRole("button", { name: "activity" }).click();
+  await expect(
+    page.getByTestId("event-feed").getByText("maintenance.request.created"),
+  ).toBeVisible();
 });

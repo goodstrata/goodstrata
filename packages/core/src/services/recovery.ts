@@ -3,7 +3,7 @@ import { publishEvent } from "@goodstrata/events";
 import { formatCents } from "@goodstrata/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { causationFields, type ServiceContext } from "../context.js";
+import { causationFields } from "../context.js";
 import { arrearsForScheme, levyRecipient } from "./arrears.js";
 import { sendEmail } from "./comms.js";
 import { registerDecisionAction } from "./decisions.js";

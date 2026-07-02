@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { DecisionsTab } from "../components/DecisionsTab";
 import { FinanceTab } from "../components/FinanceTab";
+import { MaintenanceTab } from "../components/MaintenanceTab";
 import { api, unwrap } from "../lib/api";
 
 export const Route = createFileRoute("/schemes/$schemeId")({
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/schemes/$schemeId")({
 const TABS = [
   "overview",
   "finance",
+  "maintenance",
   "decisions",
   "lots",
   "people",
@@ -74,6 +76,7 @@ function SchemePage() {
       <div className="pt-4">
         {tab === "overview" && <OverviewTab schemeId={schemeId} />}
         {tab === "finance" && <FinanceTab schemeId={schemeId} />}
+        {tab === "maintenance" && <MaintenanceTab schemeId={schemeId} />}
         {tab === "decisions" && <DecisionsTab schemeId={schemeId} />}
         {tab === "lots" && <LotsTab schemeId={schemeId} />}
         {tab === "people" && <PeopleTab schemeId={schemeId} />}

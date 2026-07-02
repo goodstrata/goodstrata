@@ -7,6 +7,7 @@ import { type AppEnv, requireAuth } from "./middleware.js";
 import { devRoutes } from "./routes/dev.js";
 import { eventsRoutes } from "./routes/events.js";
 import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
+import { maintenanceRoutes } from "./routes/maintenance.js";
 import {
   activationRoutes,
   committeeRoutes,
@@ -34,6 +35,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", activationRoutes(deps))
     .route("/schemes", financeRoutes(deps))
     .route("/schemes", decisionsRoutes(deps))
+    .route("/schemes", maintenanceRoutes(deps))
     .route("/invites", invitesRoutes(deps));
 
   const app = new Hono()

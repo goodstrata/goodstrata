@@ -15,6 +15,12 @@ export * as invitesService from "./services/invites.js";
 export * as leviesService from "./services/levies.js";
 export { createLevyScheduleInput } from "./services/levies.js";
 export * as lotsService from "./services/lots.js";
+export * as maintenanceService from "./services/maintenance.js";
+export {
+  createContractorInput,
+  createRequestInput,
+  triageInput,
+} from "./services/maintenance.js";
 export * as onboardingService from "./services/onboarding.js";
 export * as paymentsService from "./services/payments.js";
 export * as peopleService from "./services/people.js";

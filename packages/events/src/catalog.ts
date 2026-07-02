@@ -77,12 +77,27 @@ export const eventDefs = {
   "payout.executed": lax,
 
   // maintenance
-  "maintenance.request.created": lax,
-  "maintenance.request.triaged": lax,
+  "maintenance.request.created": z.object({
+    requestId: z.string(),
+    title: z.string(),
+    description: z.string(),
+    lotId: z.string().nullable(),
+  }),
+  "maintenance.request.triaged": z.object({
+    requestId: z.string(),
+    category: z.string(),
+    urgency: z.string(),
+    isCommonProperty: z.boolean(),
+  }),
   "quote.received": lax,
-  "work_order.created": lax,
-  "work_order.dispatched": lax,
-  "work_order.completed": lax,
+  "work_order.created": z.object({
+    workOrderId: z.string(),
+    requestId: z.string().nullable(),
+    contractorId: z.string(),
+    amountCents: z.number().int(),
+  }),
+  "work_order.dispatched": z.object({ workOrderId: z.string(), contractorId: z.string() }),
+  "work_order.completed": z.object({ workOrderId: z.string() }),
 
   // meetings / governance
   "meeting.scheduled": lax,

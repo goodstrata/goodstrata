@@ -202,7 +202,7 @@ export async function executeDecisionFollowUp(
   const decision = await ctx.db.query.decisions.findFirst({
     where: eq(decisions.id, decisionId),
   });
-  if (!decision || !decision.followUp) return { executed: null };
+  if (!decision?.followUp) return { executed: null };
   if (decision.status !== "approved") return { executed: null };
 
   const followUp = decision.followUp as DecisionFollowUp;
