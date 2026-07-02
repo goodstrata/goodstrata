@@ -4,7 +4,17 @@ import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import type { AppDeps } from "./deps.js";
 import { type AppEnv, requireAuth } from "./middleware.js";
+import { devRoutes } from "./routes/dev.js";
 import { eventsRoutes } from "./routes/events.js";
+import {
+  activationRoutes,
+  committeeRoutes,
+  documentsRoutes,
+  invitesRoutes,
+  lotsRoutes,
+  peopleRoutes,
+  publicInviteRoutes,
+} from "./routes/onboarding.js";
 import { schemesRoutes } from "./routes/schemes.js";
 import { type SseHub, sseRoutes } from "./sse.js";
 
@@ -14,13 +24,25 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .use("*", requireAuth(deps))
     .route("/schemes", schemesRoutes(deps))
     .route("/schemes", eventsRoutes(deps))
-    .route("/schemes", sseRoutes(deps, hub));
+    .route("/schemes", sseRoutes(deps, hub))
+    .route("/schemes", lotsRoutes(deps))
+    .route("/schemes", peopleRoutes(deps))
+    .route("/schemes", committeeRoutes(deps))
+    .route("/schemes", documentsRoutes(deps))
+    .route("/schemes", activationRoutes(deps))
+    .route("/invites", invitesRoutes(deps));
 
   const app = new Hono()
     .use("*", logger())
     .get("/api/health", (c) => c.json({ ok: true }))
     .on(["POST", "GET"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw))
+    .route("/api/invites", publicInviteRoutes(deps))
     .route("/api", api);
+
+  // Test/dev-only introspection; the memory provider only exists off-prod.
+  if (deps.integrations.email.name === "memory") {
+    app.route("/dev", devRoutes(deps));
+  }
 
   app.onError((err, c) => {
     if (err instanceof DomainError) {

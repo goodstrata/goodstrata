@@ -1,4 +1,11 @@
 export * from "./context.js";
 export * from "./errors.js";
+export * as committeeService from "./services/committee.js";
+export * as documentsService from "./services/documents.js";
+export * as invitesService from "./services/invites.js";
+export * as lotsService from "./services/lots.js";
+export * as onboardingService from "./services/onboarding.js";
+export * as peopleService from "./services/people.js";
+export { createPersonInput } from "./services/people.js";
 export * as schemesService from "./services/schemes.js";
 export { createSchemeInput } from "./services/schemes.js";

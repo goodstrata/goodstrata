@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'no unit tests (covered by e2e)'"
+    "test": "echo 'no unit tests (covered by e2e)'",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@goodstrata/api": "workspace:*",
@@ -19,6 +20,7 @@
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/router-plugin": "catalog:",
     "@types/react": "catalog:",
