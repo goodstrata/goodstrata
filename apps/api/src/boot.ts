@@ -4,7 +4,7 @@ import {
   type RuntimeDeps,
   registerAgentWorkers,
 } from "@goodstrata/agents";
-import { arrearsService, decisionsService } from "@goodstrata/core";
+import { arrearsService, decisionsService, notifierService } from "@goodstrata/core";
 import { schemes } from "@goodstrata/db";
 import {
   type DispatchJobData,
@@ -18,6 +18,7 @@ import { PgBoss } from "pg-boss";
 import type { AppDeps } from "./deps.js";
 
 const DECISION_EXECUTE_QUEUE = "decision.execute";
+const NOTIFY_QUEUE = "notify";
 const CRON_ARREARS = "cron.arrears.daily";
 
 export interface BackgroundServices {
@@ -43,11 +44,19 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
     types: ["decision.resolved"],
   };
 
+  // The notifier consumes domain events and writes in-app notifications
+  // (plus email/SMS for decision requests). Pure code, never an LLM.
+  const notifierSubscription: Subscription = {
+    name: "notifier",
+    queue: NOTIFY_QUEUE,
+    types: notifierService.NOTIFIER_EVENT_TYPES,
+  };
+
   const dispatcher = new EventDispatcher({
     db: deps.db,
     boss,
     connectionString: deps.env.DATABASE_URL,
-    subscriptions: [...agentSubscriptions(allAgents), executorSubscription],
+    subscriptions: [...agentSubscriptions(allAgents), executorSubscription, notifierSubscription],
   });
   await dispatcher.start();
 
@@ -76,6 +85,24 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
       const result = await decisionsService.executeDecisionFollowUp(ctx, payload.decisionId);
       if (result.executed) {
         console.log(`[decisions] executed ${result.executed} for ${payload.decisionId}`);
+      }
+    }
+  });
+
+  // Notifier worker: fan events out to in-app notifications (+ email/SMS).
+  await boss.work(NOTIFY_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      const data = job.data as DispatchJobData;
+      const event = await loadEvent(deps.db, data.eventId);
+      if (!event) continue;
+      const ctx = deps.serviceContext(systemActor("notifier"), {
+        correlationId: event.correlationId,
+        causationId: event.id,
+        causationDepth: event.causationDepth + 1,
+      });
+      const { created } = await notifierService.handleEventForNotifications(ctx, event);
+      if (created > 0) {
+        console.log(`[notifier] ${event.type} → ${created} notification(s)`);
       }
     }
   });

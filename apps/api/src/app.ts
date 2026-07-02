@@ -10,6 +10,7 @@ import { eventsRoutes } from "./routes/events.js";
 import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
 import { maintenanceRoutes } from "./routes/maintenance.js";
 import { meetingsRoutes } from "./routes/meetings.js";
+import { notificationsRoutes } from "./routes/notifications.js";
 import {
   activationRoutes,
   committeeRoutes,
@@ -39,6 +40,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", decisionsRoutes(deps))
     .route("/schemes", maintenanceRoutes(deps))
     .route("/schemes", meetingsRoutes(deps))
+    .route("/schemes", notificationsRoutes(deps))
     .route("/schemes", agentRunsRoutes(deps))
     .route("/invites", invitesRoutes(deps));
 
