@@ -209,7 +209,7 @@ function CommitteeVotePanel({
   });
 
   const vote = useMutation({
-    mutationFn: async (choice: "for" | "against") => {
+    mutationFn: async (choice: "approve" | "decline") => {
       const res = await fetch(`/api/schemes/${schemeId}/decisions/${decision.id}/vote`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -246,10 +246,10 @@ function CommitteeVotePanel({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={vote.isPending} onClick={() => vote.mutate("for")}>
+        <Button disabled={vote.isPending} onClick={() => vote.mutate("approve")}>
           <CircleCheck className="size-4" /> Vote for
         </Button>
-        <Button variant="outline" disabled={vote.isPending} onClick={() => vote.mutate("against")}>
+        <Button variant="outline" disabled={vote.isPending} onClick={() => vote.mutate("decline")}>
           <CircleX className="size-4" /> Vote against
         </Button>
         <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -268,7 +268,7 @@ function CommitteeVotePanel({
                 <Badge
                   variant="outline"
                   className={
-                    v.choice === "for"
+                    v.choice === "approve"
                       ? "border-green-200 bg-green-50 text-green-700"
                       : "border-red-200 bg-red-50 text-red-700"
                   }
