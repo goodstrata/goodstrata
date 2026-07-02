@@ -34,8 +34,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Launch site → Cloudflare Pages (goodstrata-site.pages.dev / goodstrata.com.au).
-  # Requires repo secrets CLOUDFLARE_API_TOKEN (Pages:Edit) and
+  # Launch site → Workers static assets (goodstrata.com.au / www).
+  # Requires repo secrets CLOUDFLARE_API_TOKEN (Workers Scripts:Edit) and
   # CLOUDFLARE_ACCOUNT_ID; the job skips gracefully until they exist.
   site:
     runs-on: ubuntu-latest
@@ -49,6 +49,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site --project-name goodstrata-site --branch main
+          workingDirectory: deploy/site-worker
+          command: deploy
       - if: env.HAS_CF_TOKEN != 'true'
         run: echo "CLOUDFLARE_API_TOKEN secret not set — skipping site deploy."

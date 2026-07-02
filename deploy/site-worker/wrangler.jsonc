@@ -1,0 +1,8 @@
+{
+  "name": "goodstrata-www",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "../../site",
+    "html_handling": "auto-trailing-slash"
+  }
+}

@@ -147,6 +147,23 @@ async function main() {
   }
   console.log(`✓ scheme + ${LOT_SPECS.length} lots + owners`);
 
+  // --- Second demo login: Alex Chen, owner of lot 2 ---
+  const ownerSignup = await auth.api.signUpEmail({
+    body: { email: "alex@demo.goodstrata.local", password: DEMO_PASSWORD, name: "Alex Chen" },
+  });
+  const { eq: eqOp } = await import("drizzle-orm");
+  await db
+    .update(people)
+    .set({ userId: ownerSignup.user.id })
+    .where(eqOp(people.email, "alex@demo.goodstrata.local"));
+  await db.insert(memberships).values({
+    schemeId,
+    userId: ownerSignup.user.id,
+    role: "owner",
+    startedOn: toDateOnly(t330),
+  });
+  console.log("✓ owner login (alex@demo.goodstrata.local)");
+
   // --- Insurance certificate on file ---
   await documentsService.uploadDocument(manager(t330), schemeId, {
     filename: "certificate-of-currency-2026.pdf",

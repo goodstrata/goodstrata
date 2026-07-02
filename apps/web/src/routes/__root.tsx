@@ -18,8 +18,7 @@ function RootLayout() {
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
           <Link to="/" className="flex items-center gap-2 font-semibold text-brand-700">
-            <img src="/icon.svg" alt="" className="h-7 w-7" />
-            GoodStrata
+            <img src="/logo-on-light.svg" alt="GoodStrata" className="h-8 w-auto" />
           </Link>
           {session?.user ? (
             <div className="flex items-center gap-3 text-sm">

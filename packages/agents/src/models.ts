@@ -43,8 +43,14 @@ export function createModelResolver(env: AiEnv, mockModel?: () => LanguageModel)
         return { model: anthropic(modelName), modelId: key };
       }
       case "local": {
-        const baseURL = `${env.OLLAMA_BASE_URL ?? "http://localhost:11434"}/v1`;
-        const local = createOpenAICompatible({ name: "ollama", baseURL });
+        // Any OpenAI-compatible endpoint: Ollama, vLLM, OpenRouter, Workers AI…
+        const base = env.OPENAI_COMPAT_BASE_URL ?? env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+        const apiKey = env.OPENAI_COMPAT_API_KEY ?? env.OLLAMA_API_KEY;
+        const local = createOpenAICompatible({
+          name: "openai-compatible",
+          baseURL: `${base.replace(/\/$/, "")}/v1`,
+          ...(apiKey ? { apiKey } : {}),
+        });
         return { model: local(modelName), modelId: key };
       }
       case "mock": {

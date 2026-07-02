@@ -6,67 +6,65 @@
   <title>GoodStrata — your owners corporation, run by AI agents. Humans decide.</title>
   <meta name="description" content="Free, open-source strata management for Australia. AI agents issue levies, reconcile payments, chase arrears, dispatch contractors, and draft minutes — committee members only approve, vote, or escalate. Every action audited." />
   <meta property="og:title" content="GoodStrata — strata management, run by agents" />
-  <meta property="og:description" content="Free for owners corporations. Open source. Runs on your own hardware with local AI, or hosted at goodstrata.com.au." />
-  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <meta property="og:description" content="Free for owners corporations. Open source. Try the live demo." />
+  <link rel="icon" href="/favicon.ico" sizes="32x32" />
+  <link rel="icon" href="/icon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
 
+<div class="wrap">
+  <header class="site">
+    <a class="logo" href="/">
+      <img src="/logo-on-light.svg" alt="GoodStrata" style="height:38px;width:auto" />
+    </a>
+    <nav>
+      <a href="https://demo.goodstrata.com.au">Demo</a>
+      <a href="/blog/announcing-goodstrata/">Blog</a>
+      <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+    </nav>
+  </header>
+</div>
+
 <div class="hero">
   <div class="wrap">
-    <header class="site">
-      <a class="logo" href="/" style="color:#fff">
-        <img src="/icon.svg" alt="" width="30" height="30" /> GoodStrata
-      </a>
-      <nav>
-        <a href="/blog/announcing-goodstrata/" style="color:#cbd5e1">The launch post</a>
-        <a href="https://github.com/goodstrata/goodstrata" style="color:#cbd5e1">GitHub</a>
-      </nav>
-    </header>
-
     <h1>Your owners corporation, run by AI agents.<br /><em>Humans only decide.</em></h1>
     <p class="sub">
-      Levies issued, payments reconciled, arrears chased, contractors dispatched, AGMs
+      Levies issued, payments reconciled, arrears followed up, contractors dispatched, meetings
       noticed and minuted — automatically, on an audit trail you can read line by line.
       Committee members approve, vote, or escalate. That's the whole job now.
     </p>
     <div class="cta-row">
-      <a class="btn primary" href="/blog/announcing-goodstrata/">Read the launch post →</a>
-      <a class="btn ghost" href="https://github.com/goodstrata/goodstrata">Self-host it (Apache-2.0)</a>
+      <a class="btn primary" href="https://demo.goodstrata.com.au">Try the live demo</a>
+      <a class="btn ghost" href="/blog/announcing-goodstrata/">Read the launch post</a>
     </div>
-    <p class="fine">Free for owners corporations — we earn from payment processing and contractor commissions, never from you.</p>
+    <p class="fine">
+      Free for owners corporations — we earn from payment processing and contractor commissions, never from you.
+      The demo resets itself; click anything.
+    </p>
   </div>
 </div>
 
 <section>
   <div class="wrap">
-    <p class="kicker">Why it's different</p>
-    <h2>The manager works for the building. Provably.</h2>
-    <p class="lede">
-      Traditional strata managers earn commissions you never see, on decisions you never made.
-      GoodStrata inverts it: agents execute, humans decide, and everything — every levy, every
-      email, every model tool-call — lands on an append-only event log.
-    </p>
-    <div class="pillars">
-      <div class="pillar">
-        <span class="glyph">🤖</span>
+    <p class="kicker">How it works</p>
+    <h2>Agents do the work. You keep the decisions.</h2>
+    <div class="points">
+      <div class="point">
+        <div class="rule"></div>
         <h3>Agents execute</h3>
-        <p>Finance, maintenance, and meetings agents watch the event bus and do the work the moment it appears — with full transcripts.</p>
+        <p>Finance, maintenance, and meetings agents watch the event bus and act the moment something happens — with a full transcript of every step.</p>
       </div>
-      <div class="pillar">
-        <span class="glyph">🗳️</span>
+      <div class="point">
+        <div class="rule"></div>
         <h3>Humans decide</h3>
-        <p>Budgets, over-threshold works, debt recovery: agents can only propose, with evidence. One tap approves; code executes exactly what was approved.</p>
+        <p>Budgets, over-threshold works, debt recovery: agents can only propose, with evidence attached. One tap approves; code executes exactly what was approved.</p>
       </div>
-      <div class="pillar">
-        <span class="glyph">🧮</span>
+      <div class="point">
+        <div class="rule"></div>
         <h3>Money is never AI</h3>
-        <p>Levy apportionment, penalty interest, reconciliation, and vote weighting are deterministic, exhaustively-tested code. The model writes prose, not numbers.</p>
-      </div>
-      <div class="pillar">
-        <span class="glyph">🔓</span>
-        <h3>Open &amp; yours</h3>
-        <p>Apache-2.0. Self-host with just Postgres and one Node process — local AI via Ollama included. Or let us run it at goodstrata.com.au.</p>
+        <p>Levy apportionment, penalty interest, reconciliation, and vote weighting are deterministic, tested code. The model writes words, not numbers.</p>
       </div>
     </div>
   </div>
@@ -74,80 +72,30 @@
 
 <section class="alt">
   <div class="wrap">
-    <p class="kicker">We tested it the hard way</p>
-    <h2>One MacBook. One local model. A whole building.</h2>
+    <p class="kicker">Proven the hard way</p>
+    <h2>We ran a whole building on one laptop, with a local model.</h2>
     <p class="lede">
-      We seeded a real-shaped 12-lot Fitzroy walk-up — budget adopted, levies issued, one owner
-      47 days in arrears, a fresh roof-leak report — and ran the agents on Qwen3-30B in Ollama.
-      No cloud, no API key. This is what happened:
+      A seeded 12-lot Fitzroy walk-up: arrears chased with correct-to-the-cent figures, a roof
+      leak triaged and dispatched, minutes drafted without inventing a word, and one committee
+      approval for the only thing that needed a human.
+      <a href="/blog/announcing-goodstrata/">The full story, with transcripts →</a>
     </p>
-
-    <div class="timeline">
-      <div class="tick">
-        <span class="t">T+0:00</span>
-        <h3>Boot. The dispatcher replays the event log; three agents wake.</h3>
-      </div>
-      <div class="tick">
-        <span class="t">T+1:38</span>
-        <h3>Minutes drafted — with nothing invented</h3>
-        <p>Last year's AGM had no recorded attendance, so the meetings agent wrote the truth:</p>
-        <blockquote><b>Quorum:</b> Not achieved (0/130 entitlements represented). <b>Business transacted:</b> None.</blockquote>
-      </div>
-      <div class="tick">
-        <span class="t">T+2:21</span>
-        <h3>Arrears final notice sent — correct to the cent</h3>
-        <blockquote>"…your levy payments for Lot 7 are <b>$1,153.85</b> overdue (47 days), plus <b>$14.86</b> penalty interest… contact us to arrange payment or discuss a hardship plan."</blockquote>
-        <p>Figures are computed and appended by code on every money email — hallucination-proof.</p>
-      </div>
-      <div class="tick">
-        <span class="t">T+9:32</span>
-        <h3>Roof leak triaged, contractor dispatched</h3>
-        <blockquote>"Water stain caused by roof leakage (<b>common property</b>) beneath roofline… not internal fittings or owner's lot issue."</blockquote>
-        <p>The $350 job was under the auto-approve threshold, so the platform dispatched Rapid Roofing with a spend cap. Over-threshold work goes to the committee instead — that routing is code, never the model.</p>
-      </div>
-      <div class="tick human">
-        <span class="t">DAY 61</span>
-        <h3>The machine stops and asks the humans</h3>
-        <p>Lot 7 crossed the day-60 line. The finance agent opened a committee decision — <i>"$1,153.85 levies and $19.28 penalty interest. Recommend committee approval to commence recovery"</i> — and halted, <code>awaiting_decision</code>. A committee member tapped <b>Approve</b>. Code sent the formal demand: $1,173.13, 14 days, hardship option stated.</p>
-      </div>
-      <div class="tick">
-        <span class="t">FINALE</span>
-        <h3>The payment reconciles itself</h3>
-        <p>Pat paid by the notice's unique reference. Signature-verified, matched, posted to the lot ledger, split across funds to the cent, receipted, emailed. <b>Status: paid.</b></p>
-      </div>
+    <div class="stats">
+      <div class="stat"><b>110</b><span>audited events</span></div>
+      <div class="stat"><b>4</b><span>agent runs</span></div>
+      <div class="stat"><b>1</b><span>human decision</span></div>
+      <div class="stat"><b>$0.00</b><span>money computed by an LLM</span></div>
     </div>
-
-    <table class="score">
-      <tr><td>Events on the audit log</td><td>110</td></tr>
-      <tr><td>Agent runs (all with full transcripts)</td><td>4</td></tr>
-      <tr><td>Model tokens, total</td><td>~21,000</td></tr>
-      <tr><td>Emails drafted &amp; sent</td><td>4</td></tr>
-      <tr class="hot"><td>Human decisions required</td><td>1</td></tr>
-      <tr class="hot"><td>Money computed by an LLM</td><td>$0.00</td></tr>
-    </table>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <p class="kicker">Built for scrutiny</p>
-    <h2>Trust the architecture, not the AI</h2>
-    <ul class="trust">
-      <li><b>Append-only event log</b>, enforced by a database trigger — every action carries its actor and a causation chain back to what triggered it.</li>
-      <li><b>Decision gates</b> on anything consequential — approval executes exactly the proposed action, via code, never a second model call.</li>
-      <li><b>Statute as code</b> — 14-day notice rules, entitlement-weighted voting, 75% special resolutions, the s 89 arrears bar: unit-tested functions, not prompt text.</li>
-      <li><b>Deterministic money</b> — levies sum to the budget exactly, by construction, model or no model.</li>
-    </ul>
   </div>
 </section>
 
 <section class="closer">
   <div class="wrap">
     <h2>Strata management that costs your building nothing.</h2>
-    <p>Open source today. Managed service with real NPP/PayID payments — coming to Australian buildings soon.</p>
+    <p>Open source (Apache-2.0). Self-host with Postgres and one process — or let us run it.</p>
     <div class="cta-row">
-      <a class="btn primary" href="/blog/announcing-goodstrata/">Read how it works</a>
-      <a class="btn ghost" href="https://github.com/goodstrata/goodstrata">Star it on GitHub</a>
+      <a class="btn primary" href="https://demo.goodstrata.com.au">Open the live demo</a>
+      <a class="btn ghost" href="https://github.com/goodstrata/goodstrata">View the source</a>
     </div>
   </div>
 </section>
@@ -155,7 +103,7 @@
 <footer>
   <div class="wrap">
     <span>© 2026 GoodStrata · Apache-2.0</span>
-    <span><a href="/blog/announcing-goodstrata/">Launch post</a> · <a href="https://github.com/goodstrata/goodstrata">GitHub</a></span>
+    <span><a href="https://demo.goodstrata.com.au">Demo</a> · <a href="/blog/announcing-goodstrata/">Blog</a> · <a href="https://github.com/goodstrata/goodstrata">GitHub</a></span>
   </div>
 </footer>
 

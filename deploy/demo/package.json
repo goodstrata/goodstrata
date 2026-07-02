@@ -1,0 +1,8 @@
+{
+  "name": "goodstrata-demo-worker",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
+  }
+}

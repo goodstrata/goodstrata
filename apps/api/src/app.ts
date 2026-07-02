@@ -45,6 +45,29 @@ export function createApp(deps: AppDeps, hub: SseHub) {
   const app = new Hono()
     .use("*", logger())
     .get("/api/health", (c) => c.json({ ok: true }))
+    // Public sandbox descriptor: the login page renders one-click demo entry
+    // buttons from this. Only ever populated when DEMO_MODE=1.
+    .get("/api/demo-info", (c) =>
+      c.json(
+        deps.env.DEMO_MODE === "1"
+          ? {
+              demo: true,
+              accounts: [
+                {
+                  label: "Committee (chair & treasurer)",
+                  email: "demo@goodstrata.local",
+                  password: "goodstrata-demo",
+                },
+                {
+                  label: "Lot owner (Alex, lot 2)",
+                  email: "alex@demo.goodstrata.local",
+                  password: "goodstrata-demo",
+                },
+              ],
+            }
+          : { demo: false, accounts: [] },
+      ),
+    )
     .on(["POST", "GET"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw))
     .route("/api/invites", publicInviteRoutes(deps))
     .route("/webhooks", paymentWebhookRoutes(deps))

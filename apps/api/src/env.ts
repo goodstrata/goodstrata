@@ -22,6 +22,9 @@ const envSchema = z.object({
 
   /** Serve the built web app from this directory (production single-image mode). */
   WEB_DIST: z.string().optional(),
+
+  /** Public sandbox mode: exposes one-click demo logins on the sign-in page. */
+  DEMO_MODE: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
