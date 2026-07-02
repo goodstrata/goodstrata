@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, Bot, ChevronDown, ChevronRight, Cpu, Zap } from "lucide-react";
 import { useState } from "react";
-import { api, unwrap } from "../lib/api";
+import { Markdown } from "@/components/Markdown";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api, unwrap } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 
 interface RunSummary {
   id: string;
@@ -27,13 +35,6 @@ interface RunDetail extends RunSummary {
   output: { text: string } | null;
 }
 
-const STATUS_COLOURS: Record<string, string> = {
-  succeeded: "bg-green-100 text-green-800",
-  awaiting_decision: "bg-amber-100 text-amber-800",
-  running: "bg-blue-100 text-blue-800",
-  failed: "bg-red-100 text-red-800",
-};
-
 /**
  * The agent console: every run the agents have made for this scheme, with the
  * full tool-call transcript. This is the "show your work" surface that makes
@@ -58,38 +59,88 @@ export function AgentsTab({ schemeId }: { schemeId: string }) {
   }
 
   return (
-    <div>
-      <p className="text-sm text-gray-500">
+    <div className="max-w-3xl">
+      <h3 className="text-base font-semibold">Agent runs</h3>
+      <p className="mt-1 text-sm text-muted-foreground">
         Every action an agent takes is a recorded run with a full tool-call transcript.
       </p>
-      <div className="mt-3 space-y-2" data-testid="agent-runs">
+      <div className="mt-4 space-y-2.5" data-testid="agent-runs">
+        {!data && <Skeleton className="h-24" />}
         {data?.runs.length === 0 && (
-          <p className="text-sm text-gray-400">No agent runs yet — they appear as events arrive.</p>
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No agent runs yet — they appear as events arrive.
+          </p>
         )}
         {data?.runs.map((run) => (
           <button
             key={run.id}
             type="button"
             onClick={() => setSelected(run.id)}
-            className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left hover:border-brand-600"
+            className="group flex w-full items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3.5 text-left shadow-sm transition-colors hover:border-brand-600/60"
           >
-            <div>
-              <p className="text-sm font-medium">🤖 {run.agent}</p>
-              <p className="text-xs text-gray-500">
-                {run.model} · {run.inputTokens + run.outputTokens} tokens ·{" "}
-                {new Date(run.startedAt).toLocaleString()}
-              </p>
-              {run.error && <p className="text-xs text-red-600">{run.error}</p>}
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-700">
+                <Bot className="size-4.5" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{run.agent}</p>
+                <p className="truncate font-mono text-xs text-muted-foreground">
+                  {run.model} · {(run.inputTokens + run.outputTokens).toLocaleString()} tok ·{" "}
+                  {formatDateTime(run.startedAt)}
+                </p>
+                {run.error && <p className="truncate text-xs text-destructive">{run.error}</p>}
+              </div>
             </div>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLOURS[run.status] ?? "bg-gray-100 text-gray-700"}`}
-            >
-              {run.status.replace("_", " ")}
+            <span className="flex shrink-0 items-center gap-2">
+              <StatusBadge status={run.status} />
+              <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
             </span>
           </button>
         ))}
       </div>
     </div>
+  );
+}
+
+function ToolCallBlock({
+  call,
+  result,
+}: {
+  call: { toolName: string; input: unknown };
+  result: { toolName: string; output: unknown } | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 font-mono text-xs">
+        <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-neutral-100 hover:bg-neutral-900">
+          <ChevronDown
+            className={`size-3.5 shrink-0 text-neutral-500 transition-transform ${open ? "" : "-rotate-90"}`}
+          />
+          <Zap className="size-3.5 shrink-0 text-amber-400" />
+          <span className="truncate text-purple-300">{call.toolName}</span>
+          <span className="ml-auto shrink-0 text-neutral-600">{open ? "hide" : "show"} io</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="space-y-2 border-t border-neutral-800 px-3 py-2.5">
+            <div>
+              <p className="mb-1 text-[10px] uppercase tracking-wider text-neutral-500">input</p>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all text-green-300/90">
+                {JSON.stringify(call.input, null, 2)}
+              </pre>
+            </div>
+            {result && (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-wider text-neutral-500">output</p>
+                <pre className="overflow-x-auto whitespace-pre-wrap break-all text-neutral-300">
+                  {JSON.stringify(result.output, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
   );
 }
 
@@ -112,65 +163,80 @@ function RunDetailView({
       ),
   });
 
-  if (!data) return <p className="text-gray-500">Loading…</p>;
+  if (!data) return <Skeleton className="h-64 max-w-3xl" />;
   const run = data.run;
 
   return (
-    <div className="space-y-3">
-      <button type="button" onClick={onBack} className="text-sm text-brand-700 hover:underline">
-        ← All runs
-      </button>
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">🤖 {run.agent}</h2>
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLOURS[run.status] ?? "bg-gray-100"}`}
-          >
-            {run.status.replace("_", " ")}
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-gray-500">
-          {run.model} · triggered by {run.input?.eventType ?? "?"} · in {run.inputTokens} / out{" "}
-          {run.outputTokens} tokens
-        </p>
+    <div className="max-w-3xl space-y-4">
+      <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
+        <ArrowLeft className="size-4" /> All runs
+      </Button>
 
-        {run.input?.context && (
-          <details className="mt-3">
-            <summary className="cursor-pointer text-sm font-medium text-gray-700">
-              Context given to the model
-            </summary>
-            <pre className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3 text-xs text-gray-700">
-              {run.input.context}
-            </pre>
-          </details>
-        )}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <CardTitle className="flex items-center gap-2.5 text-base">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-purple-50 text-purple-700">
+                <Bot className="size-4.5" />
+              </span>
+              {run.agent}
+            </CardTitle>
+            <StatusBadge status={run.status} />
+          </div>
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 font-mono text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Cpu className="size-3.5" /> {run.model}
+            </span>
+            <span>triggered by {run.input?.eventType ?? "?"}</span>
+            <span>
+              in {run.inputTokens.toLocaleString()} / out {run.outputTokens.toLocaleString()} tok
+            </span>
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {run.input?.context && (
+            <Collapsible>
+              <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+                <ChevronRight className="size-4 transition-transform [[data-state=open]>&]:rotate-90" />
+                Context given to the model
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg border bg-muted/50 p-3 font-mono text-xs text-muted-foreground">
+                  {run.input.context}
+                </pre>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
 
-        <div className="mt-3 space-y-2">
-          {run.steps.map((step) => (
-            <div key={step.index} className="rounded border border-gray-100 bg-gray-50 p-3">
-              <p className="text-xs font-medium text-gray-500">Step {step.index + 1}</p>
-              {step.text && <p className="mt-1 text-sm">{step.text}</p>}
-              {step.toolCalls.map((call, i) => (
-                <div key={`${step.index}-${call.toolName}-${i}`} className="mt-2">
-                  <p className="font-mono text-xs text-purple-700">→ {call.toolName}</p>
-                  <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap rounded bg-white p-2 text-xs text-gray-600">
-                    {JSON.stringify(call.input, null, 2)}
-                  </pre>
-                  {step.toolResults[i] && (
-                    <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap rounded bg-white p-2 text-xs text-gray-500">
-                      {JSON.stringify(step.toolResults[i]!.output, null, 2)}
-                    </pre>
-                  )}
-                </div>
+          {run.steps.length > 0 && (
+            <ol className="relative space-y-4 border-l border-border pl-5">
+              {run.steps.map((step) => (
+                <li key={step.index} className="relative">
+                  <span className="absolute top-1 -left-[27px] flex size-4 items-center justify-center rounded-full bg-muted font-mono text-[9px] text-muted-foreground ring-4 ring-background">
+                    {step.index + 1}
+                  </span>
+                  {step.text && <p className="mb-2 text-sm">{step.text}</p>}
+                  <div className="space-y-1.5">
+                    {step.toolCalls.map((call, i) => (
+                      <ToolCallBlock
+                        key={`${step.index}-${call.toolName}-${i}`}
+                        call={call}
+                        result={step.toolResults[i]}
+                      />
+                    ))}
+                  </div>
+                </li>
               ))}
-            </div>
-          ))}
-        </div>
+            </ol>
+          )}
 
-        {run.output?.text && (
-          <p className="mt-3 rounded bg-brand-50 p-3 text-sm text-gray-800">{run.output.text}</p>
-        )}
-      </div>
+          {run.output?.text && (
+            <div className="rounded-lg border border-brand-100 bg-brand-50/60 p-4">
+              <Markdown>{run.output.text}</Markdown>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

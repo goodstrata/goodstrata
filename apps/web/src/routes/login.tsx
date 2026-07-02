@@ -1,7 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { Building2 } from "lucide-react";
 import { useState } from "react";
-import { signIn, signUp } from "../lib/auth";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { signIn, signUp } from "@/lib/auth";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -58,79 +64,104 @@ function LoginPage() {
   }
 
   return (
-    <div className="mx-auto mt-12 max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
       {demoInfo?.demo && (
-        <div className="mb-6">
-          <h1 className="text-lg font-semibold">Explore the demo building</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            48 Rose St, Fitzroy — 12 lots, live agents, resets itself. Jump in as:
-          </p>
-          <div className="mt-3 space-y-2">
+        <Card className="mb-6 border-brand-100 bg-gradient-to-b from-brand-50/70 to-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Building2 className="size-5 text-brand-700" />
+              Explore the demo building
+            </CardTitle>
+            <CardDescription>
+              48 Rose St, Fitzroy — 12 lots, live agents, resets itself. Jump in as:
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
             {demoInfo.accounts.map((account) => (
-              <button
+              <Button
                 key={account.email}
-                type="button"
+                size="lg"
                 disabled={busy}
                 onClick={() => void enterDemo(account)}
-                className="w-full rounded-md bg-brand-700 px-3 py-2.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
               >
                 Enter as {account.label}
-              </button>
+              </Button>
             ))}
-          </div>
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-          <div className="mt-6 border-t border-gray-200 pt-4 text-xs text-gray-400">
-            or use a regular account below
-          </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {demoInfo?.demo && (
+        <div className="relative my-6">
+          <Separator />
+          <span className="absolute inset-x-0 -top-2.5 mx-auto w-fit bg-background px-3 text-xs text-muted-foreground">
+            or use a regular account
+          </span>
         </div>
       )}
-      <h1
-        className={demoInfo?.demo ? "text-sm font-semibold text-gray-600" : "text-lg font-semibold"}
-      >
-        {mode === "signin" ? "Sign in" : "Create your account"}
-      </h1>
-      <form onSubmit={submit} className="mt-4 space-y-3">
-        {mode === "signup" && (
-          <input
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            placeholder="Your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        )}
-        <input
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          placeholder="Email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          placeholder="Password"
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded-md bg-brand-700 px-3 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
-        >
-          {busy ? "…" : mode === "signin" ? "Sign in" : "Sign up"}
-        </button>
-      </form>
-      <button
-        type="button"
-        className="mt-4 text-sm text-brand-700 hover:underline"
-        onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-      >
-        {mode === "signin" ? "New here? Create an account" : "Have an account? Sign in"}
-      </button>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">
+            {mode === "signin" ? "Sign in" : "Create your account"}
+          </CardTitle>
+          <CardDescription>
+            {mode === "signin"
+              ? "Welcome back to your owners corporation."
+              : "Set up your GoodStrata account."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            {mode === "signup" && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="login-name">Name</Label>
+                <Input
+                  id="login-name"
+                  placeholder="Your name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="login-email">Email</Label>
+              <Input
+                id="login-email"
+                placeholder="Email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="login-password">Password</Label>
+              <Input
+                id="login-password"
+                placeholder="Password"
+                type="password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button type="submit" disabled={busy}>
+              {busy ? "…" : mode === "signin" ? "Sign in" : "Sign up"}
+            </Button>
+          </form>
+          <Button
+            type="button"
+            variant="link"
+            className="mt-3 h-auto p-0 text-sm"
+            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+          >
+            {mode === "signin" ? "New here? Create an account" : "Have an account? Sign in"}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

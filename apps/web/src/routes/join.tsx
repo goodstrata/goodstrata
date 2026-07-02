@@ -1,8 +1,14 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { api, unwrap } from "../lib/api";
-import { signUp, useSession } from "../lib/auth";
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api, unwrap } from "@/lib/api";
+import { signUp, useSession } from "@/lib/auth";
 
 export const Route = createFileRoute("/join")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -15,8 +21,23 @@ function JoinPage() {
   const { token } = Route.useSearch();
   const { data: session, isPending } = useSession();
 
-  if (!token) return <p className="text-red-600">Missing invite token.</p>;
-  if (isPending) return <p className="text-gray-500">Loading…</p>;
+  if (!token) {
+    return (
+      <div className="mx-auto mt-16 max-w-sm">
+        <Alert variant="destructive">
+          <AlertTitle>Missing invite token.</AlertTitle>
+        </Alert>
+      </div>
+    );
+  }
+  if (isPending) {
+    return (
+      <div className="mx-auto mt-16 max-w-sm space-y-3">
+        <Skeleton className="h-8 w-2/3" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
 
   return session?.user ? <AcceptInvite token={token} /> : <SignupThenAccept token={token} />;
 }
@@ -31,20 +52,21 @@ function AcceptInvite({ token }: { token: string }) {
   });
 
   return (
-    <div className="mx-auto mt-12 max-w-sm rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm">
-      <h1 className="text-lg font-semibold">Accept your invite</h1>
-      <p className="mt-2 text-sm text-gray-500">
-        You're signed in — accept to join the owners corporation.
-      </p>
-      {accept.error && <p className="mt-2 text-sm text-red-600">{accept.error.message}</p>}
-      <button
-        type="button"
-        disabled={accept.isPending}
-        onClick={() => accept.mutate()}
-        className="mt-4 w-full rounded-md bg-brand-700 px-3 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
-      >
-        {accept.isPending ? "Joining…" : "Accept invite"}
-      </button>
+    <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
+      <Card className="text-center">
+        <CardHeader>
+          <CardTitle className="text-lg">Accept your invite</CardTitle>
+          <CardDescription>
+            You're signed in — accept to join the owners corporation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {accept.error && <p className="text-sm text-destructive">{accept.error.message}</p>}
+          <Button disabled={accept.isPending} onClick={() => accept.mutate()}>
+            {accept.isPending ? "Joining…" : "Accept invite"}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -100,37 +122,45 @@ function SignupThenAccept({ token }: { token: string }) {
   }
 
   return (
-    <div className="mx-auto mt-12 max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h1 className="text-lg font-semibold">Join {preview?.schemeName ?? "…"}</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        You've been invited as <b>{preview?.role.replace("_", " ")}</b>
-        {preview?.email ? ` (${preview.email})` : ""}. Create your account to join.
-      </p>
-      <form onSubmit={submit} className="mt-4 space-y-3">
-        <input
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          placeholder="Your name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          placeholder="Choose a password"
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy || !preview}
-          className="w-full rounded-md bg-brand-700 px-3 py-2 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
-        >
-          {busy ? "…" : "Create account & join"}
-        </button>
-      </form>
+    <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Join {preview?.schemeName ?? "…"}</CardTitle>
+          <CardDescription>
+            You've been invited as <b>{preview?.role.replace("_", " ")}</b>
+            {preview?.email ? ` (${preview.email})` : ""}. Create your account to join.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="join-name">Name</Label>
+              <Input
+                id="join-name"
+                placeholder="Your name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="join-password">Password</Label>
+              <Input
+                id="join-password"
+                placeholder="Choose a password"
+                type="password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button type="submit" disabled={busy || !preview}>
+              {busy ? "…" : "Create account & join"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
