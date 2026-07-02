@@ -102,6 +102,36 @@ export function meetingsRoutes(deps: AppDeps) {
       },
     )
     .post(
+      "/:schemeId/meetings/:meetingId/video/start",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const result = await meetingsService.startVideoMeeting(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("meetingId"),
+        );
+        return c.json({ url: result.url });
+      },
+    )
+    .post("/:schemeId/meetings/:meetingId/video/join", requireSchemeMember(deps), async (c) => {
+      const user = c.get("user");
+      const roles = c.get("roles");
+      const isOwner =
+        roles.includes("manager_admin") ||
+        roles.some((r) => r === "chair" || r === "secretary" || r === "treasurer");
+      const ctx = deps.serviceContext(userActor(user.id));
+      const result = await meetingsService.joinVideoMeeting(
+        ctx,
+        c.get("schemeId"),
+        c.req.param("meetingId"),
+        user.name,
+        isOwner,
+      );
+      return c.json({ url: result.url, token: result.token });
+    })
+    .post(
       "/:schemeId/motions",
       requireSchemeMember(deps),
       officerOrAdmin,

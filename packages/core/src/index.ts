@@ -28,6 +28,8 @@ export {
   createMeetingInput,
   submitProxyInput,
 } from "./services/meetings.js";
+export * as notificationsService from "./services/notifications.js";
+export * as notifierService from "./services/notifier.js";
 export * as onboardingService from "./services/onboarding.js";
 export * as paymentsService from "./services/payments.js";
 export * as peopleService from "./services/people.js";

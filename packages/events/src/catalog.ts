@@ -132,6 +132,7 @@ export const eventDefs = {
     abstainWeight: z.number().int(),
   }),
   "minutes.drafted": z.object({ meetingId: z.string(), documentId: z.string() }),
+  "meeting.video.started": z.object({ meetingId: z.string(), url: z.string() }),
 
   // documents / compliance / comms
   "document.uploaded": lax,
@@ -145,6 +146,12 @@ export const eventDefs = {
     template: z.string().nullable(),
   }),
   "announcement.published": lax,
+  "notification.created": z.object({
+    notificationId: z.string(),
+    userId: z.string(),
+    title: z.string(),
+    category: z.string(),
+  }),
 
   // decisions (the human gate)
   "decision.requested": z.object({
@@ -152,6 +159,13 @@ export const eventDefs = {
     kind: z.string(),
     title: z.string(),
     deciderRole: z.string(),
+  }),
+  "decision.vote.cast": z.object({
+    decisionId: z.string(),
+    choice: z.enum(["approve", "decline"]),
+    votesFor: z.number().int(),
+    votesAgainst: z.number().int(),
+    eligible: z.number().int(),
   }),
   "decision.resolved": z.object({
     decisionId: z.string(),

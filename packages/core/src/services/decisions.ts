@@ -1,4 +1,4 @@
-import { decisions } from "@goodstrata/db";
+import { type DbHandle, decisions, decisionVotes, memberships, users } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import {
   COMMITTEE_ROLES,
@@ -6,7 +6,7 @@ import {
   type DecisionKind,
   type MembershipRole,
 } from "@goodstrata/shared";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError, notFound } from "../errors.js";
@@ -99,19 +99,90 @@ export function rolesAllowedToDecide(deciderRole: DeciderRole): readonly Members
   }
 }
 
-export async function resolveDecision(
+/**
+ * Finalize a pending decision inside the caller's transaction: status flip +
+ * decision.resolved event. The single write path for every resolution route
+ * (direct treasurer resolve, committee majority, decline lock-out).
+ */
+async function finalizeDecision(
+  tx: DbHandle,
+  ctx: ServiceContext,
+  decision: { id: string; schemeId: string },
+  optionId: string,
+  userId: string,
+  note?: string,
+) {
+  const status = optionId === "decline" ? ("declined" as const) : ("approved" as const);
+  await tx
+    .update(decisions)
+    .set({
+      status,
+      decidedByUserId: userId,
+      resolution: { optionId },
+      decisionNote: note ?? null,
+      resolvedAt: ctx.clock.now(),
+    })
+    .where(eq(decisions.id, decision.id));
+
+  await publishEvent(tx, {
+    schemeId: decision.schemeId,
+    stream: `decision:${decision.id}`,
+    type: "decision.resolved",
+    payload: { decisionId: decision.id, optionId, resolvedBy: userId },
+    actor: ctx.actor,
+    ...causationFields(ctx),
+  });
+
+  return { decisionId: decision.id, status, optionId };
+}
+
+/** Distinct users currently eligible to vote on a decision of this tier. */
+async function countEligibleVoters(
+  tx: DbHandle,
+  schemeId: string,
+  deciderRole: DeciderRole,
+): Promise<number> {
+  const allowed = rolesAllowedToDecide(deciderRole);
+  const rows = await tx
+    .selectDistinct({ userId: memberships.userId })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.schemeId, schemeId),
+        inArray(memberships.role, [...allowed]),
+        isNull(memberships.endedOn),
+      ),
+    );
+  return rows.length;
+}
+
+export type DecisionVoteChoice = "approve" | "decline";
+
+export interface CastVoteResult {
+  decisionId: string;
+  status: "pending" | "approved" | "declined";
+  votesFor: number;
+  votesAgainst: number;
+  eligible: number;
+}
+
+/**
+ * Record a committee member's vote and tally.
+ *
+ * - "treasurer"-tier decisions: a single eligible vote resolves immediately.
+ * - "committee"/"all_owners" tiers: simple majority of eligible voters.
+ *   Approvals win once they exceed half the eligible count; the decision is
+ *   declined as soon as approvals can no longer reach a majority.
+ */
+export async function castDecisionVote(
   ctx: ServiceContext,
   schemeId: string,
   decisionId: string,
-  optionId: string,
+  userId: string,
+  choice: DecisionVoteChoice,
   deciderRoles: MembershipRole[],
   note?: string,
-) {
-  if (ctx.actor.kind !== "user") {
-    throw new DomainError("FORBIDDEN", "Only a user can resolve a decision", 403);
-  }
-  const userId = ctx.actor.id;
-
+): Promise<CastVoteResult> {
   return await ctx.db.transaction(async (tx) => {
     const decision = await tx.query.decisions.findFirst({
       where: and(eq(decisions.id, decisionId), eq(decisions.schemeId, schemeId)),
@@ -130,35 +201,103 @@ export async function resolveDecision(
       );
     }
 
-    const options = decision.options as DecisionOption[];
-    const option = options.find((o) => o.id === optionId);
-    if (!option) {
-      throw new DomainError("INVALID_OPTION", `Unknown option: ${optionId}`, 422);
+    const inserted = await tx
+      .insert(decisionVotes)
+      .values({ decisionId, userId, choice, note: note ?? null })
+      .onConflictDoNothing({ target: [decisionVotes.decisionId, decisionVotes.userId] })
+      .returning();
+    if (inserted.length === 0) {
+      throw new DomainError("ALREADY_VOTED", "You have already voted on this decision", 409);
     }
 
-    const status = optionId === "decline" ? "declined" : "approved";
-    await tx
-      .update(decisions)
-      .set({
-        status,
-        decidedByUserId: userId,
-        resolution: { optionId },
-        decisionNote: note ?? null,
-        resolvedAt: ctx.clock.now(),
-      })
-      .where(eq(decisions.id, decisionId));
+    const allVotes = await tx.query.decisionVotes.findMany({
+      where: eq(decisionVotes.decisionId, decisionId),
+    });
+    const votesFor = allVotes.filter((v) => v.choice === "approve").length;
+    const votesAgainst = allVotes.filter((v) => v.choice === "decline").length;
+    const eligible = await countEligibleVoters(tx, schemeId, decision.deciderRole);
+
+    let status: CastVoteResult["status"] = "pending";
+    if (decision.deciderRole === "treasurer") {
+      // Single-officer tier: one eligible vote resolves immediately (as before).
+      status = (await finalizeDecision(tx, ctx, decision, choice, userId, note)).status;
+    } else if (votesFor > eligible / 2) {
+      status = (await finalizeDecision(tx, ctx, decision, "approve", userId, note)).status;
+    } else if (votesAgainst >= eligible / 2) {
+      // Approvals can no longer reach a majority.
+      status = (await finalizeDecision(tx, ctx, decision, "decline", userId, note)).status;
+    }
 
     await publishEvent(tx, {
       schemeId,
       stream: `decision:${decisionId}`,
-      type: "decision.resolved",
-      payload: { decisionId, optionId, resolvedBy: userId },
+      type: "decision.vote.cast",
+      payload: { decisionId, choice, votesFor, votesAgainst, eligible },
       actor: ctx.actor,
       ...causationFields(ctx),
     });
 
-    return { decisionId, status, optionId };
+    return { decisionId, status, votesFor, votesAgainst, eligible };
   });
+}
+
+/** Votes with voter names, plus the running tally and eligible-voter count. */
+export async function listDecisionVotes(ctx: ServiceContext, schemeId: string, decisionId: string) {
+  const decision = await ctx.db.query.decisions.findFirst({
+    where: and(eq(decisions.id, decisionId), eq(decisions.schemeId, schemeId)),
+  });
+  if (!decision) throw notFound("Decision");
+
+  const votes = await ctx.db
+    .select({
+      userId: decisionVotes.userId,
+      name: users.name,
+      choice: decisionVotes.choice,
+      note: decisionVotes.note,
+      createdAt: decisionVotes.createdAt,
+    })
+    .from(decisionVotes)
+    .innerJoin(users, eq(decisionVotes.userId, users.id))
+    .where(eq(decisionVotes.decisionId, decisionId))
+    .orderBy(asc(decisionVotes.createdAt));
+
+  return {
+    votes,
+    votesFor: votes.filter((v) => v.choice === "approve").length,
+    votesAgainst: votes.filter((v) => v.choice === "decline").length,
+    eligible: await countEligibleVoters(ctx.db, schemeId, decision.deciderRole),
+  };
+}
+
+/**
+ * Backwards-compatible resolve: casts the caller's vote and lets the tally
+ * decide. Treasurer-tier decisions still resolve instantly on one eligible
+ * vote; committee tiers may stay "pending" until a majority forms.
+ */
+export async function resolveDecision(
+  ctx: ServiceContext,
+  schemeId: string,
+  decisionId: string,
+  optionId: string,
+  deciderRoles: MembershipRole[],
+  note?: string,
+) {
+  if (ctx.actor.kind !== "user") {
+    throw new DomainError("FORBIDDEN", "Only a user can resolve a decision", 403);
+  }
+  if (optionId !== "approve" && optionId !== "decline") {
+    throw new DomainError("INVALID_OPTION", `Unknown option: ${optionId}`, 422);
+  }
+  const result = await castDecisionVote(
+    ctx,
+    schemeId,
+    decisionId,
+    ctx.actor.id,
+    optionId,
+    deciderRoles,
+    note,
+  );
+  return { decisionId, status: result.status, optionId };
 }
 
 export async function listDecisions(

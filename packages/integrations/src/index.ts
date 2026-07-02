@@ -2,21 +2,34 @@ export * from "./email.js";
 export * from "./payments.js";
 export * from "./sms.js";
 export * from "./storage.js";
+export * from "./video.js";
 
-import { consoleEmailProvider, type EmailProvider, memoryEmailProvider } from "./email.js";
+import {
+  consoleEmailProvider,
+  type EmailProvider,
+  memoryEmailProvider,
+  sesEmailProvider,
+} from "./email.js";
 import { mockPaymentsProvider, type PaymentsProvider } from "./payments.js";
-import { consoleSmsProvider, memorySmsProvider, type SmsProvider } from "./sms.js";
+import {
+  consoleSmsProvider,
+  memorySmsProvider,
+  type SmsProvider,
+  twilioSmsProvider,
+} from "./sms.js";
 import {
   localDiskStorageProvider,
   memoryStorageProvider,
   type StorageProvider,
 } from "./storage.js";
+import { consoleVideoProvider, dailyVideoProvider, type VideoProvider } from "./video.js";
 
 export interface Integrations {
   email: EmailProvider;
   sms: SmsProvider;
   storage: StorageProvider;
   payments: PaymentsProvider;
+  video: VideoProvider;
 }
 
 export interface IntegrationsEnv {
@@ -24,14 +37,32 @@ export interface IntegrationsEnv {
   SMS_PROVIDER?: string;
   STORAGE_PROVIDER?: string;
   PAYMENTS_PROVIDER?: string;
+  VIDEO_PROVIDER?: string;
   DATA_DIR?: string;
   MOCK_PAYMENTS_SECRET?: string;
+  // AWS SES (EMAIL_PROVIDER=ses)
+  AWS_ACCESS_KEY_ID?: string;
+  AWS_SECRET_ACCESS_KEY?: string;
+  AWS_REGION?: string;
+  AWS_SES_FROM_EMAIL?: string;
+  // Twilio (SMS_PROVIDER=twilio)
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+  TWILIO_PHONE_NUMBER?: string;
+  // Daily.co (VIDEO_PROVIDER=daily)
+  DAILY_API_KEY?: string;
+}
+
+function required(env: IntegrationsEnv, key: keyof IntegrationsEnv, provider: string): string {
+  const value = env[key];
+  if (!value) throw new Error(`integrations: ${provider} requires ${key}`);
+  return value;
 }
 
 /**
  * Build the integration set from env. Every default is a zero-dependency
  * offline driver — a bare `docker compose up` works with no accounts.
- * SES / Twilio / S3 / Monoova drivers slot in here as they land.
+ * SES / Twilio / Daily / S3 / Monoova drivers slot in here as they land.
  */
 export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
   const dataDir = env.DATA_DIR ?? "./data";
@@ -40,6 +71,13 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
     switch (env.EMAIL_PROVIDER ?? "console") {
       case "memory":
         return memoryEmailProvider();
+      case "ses":
+        return sesEmailProvider({
+          region: required(env, "AWS_REGION", "ses"),
+          accessKeyId: required(env, "AWS_ACCESS_KEY_ID", "ses"),
+          secretAccessKey: required(env, "AWS_SECRET_ACCESS_KEY", "ses"),
+          from: required(env, "AWS_SES_FROM_EMAIL", "ses"),
+        });
       default:
         return consoleEmailProvider();
     }
@@ -49,6 +87,12 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
     switch (env.SMS_PROVIDER ?? "console") {
       case "memory":
         return memorySmsProvider();
+      case "twilio":
+        return twilioSmsProvider({
+          accountSid: required(env, "TWILIO_ACCOUNT_SID", "twilio"),
+          authToken: required(env, "TWILIO_AUTH_TOKEN", "twilio"),
+          from: required(env, "TWILIO_PHONE_NUMBER", "twilio"),
+        });
       default:
         return consoleSmsProvider();
     }
@@ -65,5 +109,14 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
 
   const payments = mockPaymentsProvider(env.MOCK_PAYMENTS_SECRET);
 
-  return { email, sms, storage, payments };
+  const video = (() => {
+    switch (env.VIDEO_PROVIDER ?? "console") {
+      case "daily":
+        return dailyVideoProvider(required(env, "DAILY_API_KEY", "daily"));
+      default:
+        return consoleVideoProvider();
+    }
+  })();
+
+  return { email, sms, storage, payments, video };
 }

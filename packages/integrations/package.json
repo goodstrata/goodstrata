@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
