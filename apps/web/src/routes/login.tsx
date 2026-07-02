@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Building2 } from "lucide-react";
-import { useState } from "react";
+import { Building2, CircleAlertIcon } from "lucide-react";
+import { useRef, useState } from "react";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { signIn, signUp } from "@/lib/auth";
+import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -18,13 +20,18 @@ interface DemoInfo {
   accounts: { label: string; email: string; password: string }[];
 }
 
+const authSchema = z.object({
+  name: z.string(),
+  email: z.email("Enter a valid email address."),
+  password: z.string().min(8, "Use at least 8 characters."),
+});
+
 function LoginPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [entering, setEntering] = useState<string | null>(null);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const { data: demoInfo } = useQuery({
     queryKey: ["demo-info"],
@@ -33,43 +40,67 @@ function LoginPage() {
     retry: false,
   });
 
-  async function enterDemo(account: { email: string; password: string }) {
-    setBusy(true);
-    setError(null);
-    const result = await signIn.email(account);
-    setBusy(false);
-    if (result.error) {
-      setError(result.error.message ?? "Demo sign-in failed");
-      return;
+  const form = useAppForm({
+    schema: authSchema,
+    defaultValues: { name: "", email: "", password: "" },
+    onSubmit: async ({ name, email, password }) => {
+      const result =
+        modeRef.current === "signin"
+          ? await signIn.email({ email, password })
+          : await signUp.email({ email, password, name: name || email.split("@")[0]! });
+      if (result.error) {
+        throw new Error(result.error.message ?? "Something went wrong. Try again.");
+      }
+      // Full navigation: the session store re-initialises from the cookie, so
+      // the home page can't race a stale null session back to /login.
+      window.location.href = "/";
+    },
+  });
+
+  async function enterDemo(account: { label: string; email: string; password: string }) {
+    setEntering(account.email);
+    setDemoError(null);
+    try {
+      const result = await signIn.email({ email: account.email, password: account.password });
+      if (result.error) {
+        setDemoError(result.error.message ?? "Demo sign-in failed.");
+        setEntering(null);
+        return;
+      }
+      window.location.href = "/";
+    } catch (error) {
+      setDemoError(error instanceof Error ? error.message : "Demo sign-in failed.");
+      setEntering(null);
     }
-    window.location.href = "/";
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const result =
-      mode === "signin"
-        ? await signIn.email({ email, password })
-        : await signUp.email({ email, password, name: name || email.split("@")[0]! });
-    setBusy(false);
-    if (result.error) {
-      setError(result.error.message ?? "Something went wrong");
-      return;
-    }
-    // Full navigation: the session store re-initialises from the cookie, so
-    // the home page can't race a stale null session back to /login.
-    window.location.href = "/";
-  }
+  const hasDemo = Boolean(demoInfo?.demo && demoInfo.accounts.length > 0);
 
   return (
-    <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
-      {demoInfo?.demo && (
-        <Card className="mb-6 border-brand-100 bg-gradient-to-b from-brand-50/70 to-card">
+    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 py-2 md:py-10">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <img
+          src="/logo-on-light.svg"
+          alt=""
+          aria-hidden="true"
+          className="h-8 w-auto dark:hidden"
+        />
+        <img
+          src="/logo-on-dark.svg"
+          alt=""
+          aria-hidden="true"
+          className="hidden h-8 w-auto dark:block"
+        />
+        <h1 className="text-balance font-display text-2xl font-medium tracking-tight md:text-[1.75rem]">
+          The building runs itself. You stay in charge.
+        </h1>
+      </div>
+
+      {hasDemo && (
+        <Card className="border-primary/20 bg-accent/40">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Building2 className="size-5 text-brand-700" />
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="size-5 text-primary" aria-hidden="true" />
               Explore the demo building
             </CardTitle>
             <CardDescription>
@@ -77,11 +108,21 @@ function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            {demoInfo.accounts.map((account) => (
+            {demoError && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md border border-critical/25 bg-critical/8 px-3 py-2 text-[13px] text-critical"
+              >
+                <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                <span>{demoError}</span>
+              </div>
+            )}
+            {demoInfo?.accounts.map((account) => (
               <Button
                 key={account.email}
                 size="lg"
-                disabled={busy}
+                pending={entering === account.email}
+                disabled={entering !== null}
                 onClick={() => void enterDemo(account)}
               >
                 Enter as {account.label}
@@ -91,8 +132,8 @@ function LoginPage() {
         </Card>
       )}
 
-      {demoInfo?.demo && (
-        <div className="relative my-6">
+      {hasDemo && (
+        <div className="relative">
           <Separator />
           <span className="absolute inset-x-0 -top-2.5 mx-auto w-fit bg-background px-3 text-xs text-muted-foreground">
             or use a regular account
@@ -112,54 +153,72 @@ function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={submit} className="flex flex-col gap-4">
+          <form
+            id="auth-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void form.handleSubmit();
+            }}
+            className="flex flex-col gap-4"
+          >
             {mode === "signup" && (
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="login-name">Name</Label>
-                <Input
-                  id="login-name"
-                  placeholder="Your name"
-                  autoComplete="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
+              <form.Field name="name">
+                {(field) => (
+                  <Field label="Name" htmlFor="login-name">
+                    <Input
+                      placeholder="Your name"
+                      autoComplete="name"
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                    />
+                  </Field>
+                )}
+              </form.Field>
             )}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="login-email">Email</Label>
-              <Input
-                id="login-email"
-                placeholder="Email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="login-password">Password</Label>
-              <Input
-                id="login-password"
-                placeholder="Password"
-                type="password"
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                required
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={busy}>
-              {busy
-                ? mode === "signin"
-                  ? "Signing in…"
-                  : "Creating account…"
-                : mode === "signin"
-                  ? "Sign in"
-                  : "Sign up"}
-            </Button>
+            <form.Field name="email">
+              {(field) => (
+                <Field
+                  label="Email"
+                  htmlFor="login-email"
+                  required
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Input
+                    placeholder="Email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="password">
+              {(field) => (
+                <Field
+                  label="Password"
+                  htmlFor="login-password"
+                  required
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Input
+                    placeholder="Password"
+                    type="password"
+                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                  />
+                </Field>
+              )}
+            </form.Field>
+            <FormError form={form} />
+            <SubmitButton form={form} className="w-full">
+              {mode === "signin" ? "Sign in" : "Sign up"}
+            </SubmitButton>
           </form>
           <Button
             type="button"

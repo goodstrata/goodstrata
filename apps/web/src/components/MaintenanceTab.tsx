@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Plus, Wrench } from "lucide-react";
+import { Bot, ClipboardCheck, HardHat, Plus, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -14,12 +16,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Money } from "@/components/ui/money";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
-import { dollars } from "@/lib/format";
+import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { useIsOfficer } from "@/lib/roles";
 
 interface Request {
@@ -46,6 +53,9 @@ interface Contractor {
   email: string | null;
 }
 
+/** Officer statuses where a work order can still be marked completed. */
+const COMPLETABLE_STATUSES = ["dispatched", "accepted", "scheduled", "in_progress"];
+
 export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
@@ -56,41 +66,53 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   };
 
   return (
-    <div className="space-y-6">
-      <RequestList schemeId={schemeId} onChange={invalidate} />
+    <div className="space-y-8">
+      <PageHeader
+        as="h2"
+        title="Maintenance"
+        description="Report issues, follow the agent's triage, and track work through to completion."
+        actions={<ReportIssueDialog schemeId={schemeId} onChange={invalidate} />}
+      />
+      <RequestList schemeId={schemeId} />
       <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       {isOfficer && <ContractorSection schemeId={schemeId} onChange={invalidate} />}
     </div>
   );
 }
 
+const reportSchema = z.object({
+  title: z.string().trim().min(1, "Give the issue a short title."),
+  description: z.string().trim().min(1, "Describe the issue so the agent can triage it."),
+});
+
 function ReportIssueDialog({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const create = useMutation({
-    mutationFn: async () =>
+    mutationFn: async (values: { title: string; description: string }) =>
       unwrap(
         await api.schemes[":schemeId"].maintenance.$post({
           param: { schemeId },
-          json: { title, description },
+          json: { title: values.title, description: values.description },
         }),
       ),
     onSuccess: () => {
       setOpen(false);
-      setTitle("");
-      setDescription("");
+      form.reset();
       toast.success("Request submitted — the maintenance agent will triage it");
       onChange();
     },
-    onError: (e) => toast.error(e.message),
+  });
+  const form = useAppForm({
+    schema: reportSchema,
+    defaultValues: { title: "", description: "" },
+    onSubmit: (values) => create.mutateAsync(values),
   });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm">
-          <Plus className="size-4" /> Report issue
+          <Plus aria-hidden="true" className="size-4" /> Report issue
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -105,46 +127,57 @@ function ReportIssueDialog({ schemeId, onChange }: { schemeId: string; onChange:
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            create.mutate();
+            e.stopPropagation();
+            void form.handleSubmit();
           }}
         >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mr-title">Title</Label>
-            <Input
-              id="mr-title"
-              data-testid="mr-title"
-              placeholder="What's the problem? (e.g. Water stain on ceiling)"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="mr-description">Description</Label>
-            <Textarea
-              id="mr-description"
-              data-testid="mr-description"
-              className="h-24"
-              placeholder="Describe it — where, since when, how bad."
-              required
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          {create.error && <p className="text-sm text-destructive">{create.error.message}</p>}
+          <form.Field name="title">
+            {(field) => (
+              <Field label="Title" required error={fieldError(field.state.meta.errors)}>
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    data-testid="mr-title"
+                    placeholder="What's the problem? (e.g. Water stain on ceiling)"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="description">
+            {(field) => (
+              <Field label="Description" required error={fieldError(field.state.meta.errors)}>
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    data-testid="mr-description"
+                    className="min-h-28"
+                    placeholder="Describe it — where, since when, how bad."
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <FormError form={form} />
         </form>
         <DialogFooter>
-          <Button type="submit" form="mr-form" disabled={create.isPending}>
+          <SubmitButton form={form} formId="mr-form">
             Submit request
-          </Button>
+          </SubmitButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function RequestList({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
-  const { data } = useQuery({
+function RequestList({ schemeId }: { schemeId: string }) {
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["maintenance", schemeId],
     queryFn: async () =>
       unwrap<{ requests: Request[] }>(
@@ -155,21 +188,24 @@ function RequestList({ schemeId, onChange }: { schemeId: string; onChange: () =>
 
   return (
     <section>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold">Requests</h3>
-          <p className="text-sm text-muted-foreground">
-            Maintenance reports from residents and owners.
-          </p>
-        </div>
-        <ReportIssueDialog schemeId={schemeId} onChange={onChange} />
-      </div>
+      <h2 className="text-base font-semibold">Requests</h2>
+      <p className="text-sm text-muted-foreground">
+        Maintenance reports from residents and owners.
+      </p>
       <div className="mt-4 space-y-2.5">
-        {!data && <Skeleton className="h-24" />}
+        {isLoading && <Skeleton className="h-24" />}
+        {isError && (
+          <ErrorState
+            message="Couldn't load maintenance requests."
+            onRetry={() => void refetch()}
+          />
+        )}
         {data?.requests.length === 0 && (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No maintenance requests yet.
-          </p>
+          <EmptyState
+            icon={Wrench}
+            title="No maintenance requests yet"
+            description="Report an issue and the maintenance agent triages it automatically."
+          />
         )}
         {data?.requests.map((r) => (
           <Card key={r.id} data-testid={`mr-${r.title}`} className="py-4">
@@ -178,12 +214,17 @@ function RequestList({ schemeId, onChange }: { schemeId: string; onChange: () =>
                 <p className="text-sm font-medium">{r.title}</p>
                 <StatusBadge status={r.status} />
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">{r.description}</p>
+              <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>
               {r.category && (
-                <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                  <Bot className="size-3.5 text-purple-600" />
-                  triaged: <b className="text-foreground">{r.category}</b> · {r.urgency} ·{" "}
-                  {r.isCommonProperty ? "common property" : "lot responsibility"}
+                <p className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 text-agent">
+                    <Bot aria-hidden="true" className="size-3.5" />
+                    triaged
+                  </span>
+                  <Eyebrow>{r.category}</Eyebrow>
+                  <span>
+                    {r.urgency} · {r.isCommonProperty ? "common property" : "lot responsibility"}
+                  </span>
                 </p>
               )}
             </CardContent>
@@ -203,7 +244,7 @@ function WorkOrderList({
   isOfficer: boolean;
   onChange: () => void;
 }) {
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["work-orders", schemeId],
     queryFn: async () =>
       unwrap<{ workOrders: WorkOrder[] }>(
@@ -222,49 +263,76 @@ function WorkOrderList({
       toast.success("Work order completed");
       onChange();
     },
-    onError: (e) => toast.error(e.message),
   });
 
-  if (!data || data.workOrders.length === 0) return null;
   return (
     <section>
-      <h3 className="flex items-center gap-2 text-base font-semibold">
-        <Wrench className="size-4 text-muted-foreground" /> Work orders
-      </h3>
+      <h2 className="flex items-center gap-2 text-base font-semibold">
+        <Wrench aria-hidden="true" className="size-4 text-muted-foreground" /> Work orders
+      </h2>
       <div className="mt-3 space-y-2.5">
-        {data.workOrders.map((wo) => (
-          <Card key={wo.id} className="py-3">
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4 text-sm">
-              <div className="min-w-0">
-                <p>{wo.scope}</p>
-                <p className="text-xs text-muted-foreground tabular-nums">
-                  {dollars(wo.approvedAmountCents)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <StatusBadge status={wo.status} />
-                {isOfficer &&
-                  ["dispatched", "accepted", "scheduled", "in_progress"].includes(wo.status) && (
+        {isLoading && <Skeleton className="h-16" />}
+        {isError && (
+          <ErrorState message="Couldn't load work orders." onRetry={() => void refetch()} />
+        )}
+        {data?.workOrders.length === 0 && (
+          <EmptyState
+            icon={ClipboardCheck}
+            title="No work orders yet"
+            description="A work order is raised once a quote is approved for a triaged request."
+          />
+        )}
+        {data?.workOrders.map((wo) => {
+          const completing = complete.isPending && complete.variables === wo.id;
+          return (
+            <Card key={wo.id} className="py-3">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4 text-sm">
+                <div className="min-w-0">
+                  <p>{wo.scope}</p>
+                  <Money cents={wo.approvedAmountCents} className="text-xs text-muted-foreground" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={wo.status} />
+                  {isOfficer && COMPLETABLE_STATUSES.includes(wo.status) && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => complete.mutate(wo.id)}
+                      pending={completing}
                       disabled={complete.isPending}
                     >
                       Mark completed
                     </Button>
                   )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                </div>
+                {complete.isError && complete.variables === wo.id && (
+                  <p role="alert" className="w-full text-[13px] text-critical">
+                    {complete.error.message}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </section>
   );
 }
 
+const contractorSchema = z.object({
+  businessName: z.string().trim().min(1, "Enter the business name."),
+  email: z.union([z.literal(""), z.email("Enter a valid email, like trades@example.com.")]),
+  trades: z
+    .string()
+    .trim()
+    .refine(
+      (v) => v.split(",").some((t) => t.trim().length > 0),
+      "List at least one trade, separated by commas.",
+    ),
+});
+
 function ContractorSection({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["contractors", schemeId],
     queryFn: async () =>
       unwrap<{ contractors: Contractor[] }>(
@@ -272,18 +340,15 @@ function ContractorSection({ schemeId, onChange }: { schemeId: string; onChange:
       ),
   });
   const [open, setOpen] = useState(false);
-  const [businessName, setBusinessName] = useState("");
-  const [email, setEmail] = useState("");
-  const [trades, setTrades] = useState("");
   const create = useMutation({
-    mutationFn: async () =>
+    mutationFn: async (values: { businessName: string; email: string; trades: string }) =>
       unwrap(
         await api.schemes[":schemeId"].contractors.$post({
           param: { schemeId },
           json: {
-            businessName,
-            email: email || undefined,
-            tradeCategories: trades
+            businessName: values.businessName,
+            email: values.email || undefined,
+            tradeCategories: values.trades
               .split(",")
               .map((t) => t.trim())
               .filter(Boolean),
@@ -292,27 +357,29 @@ function ContractorSection({ schemeId, onChange }: { schemeId: string; onChange:
       ),
     onSuccess: () => {
       setOpen(false);
-      setBusinessName("");
-      setEmail("");
-      setTrades("");
+      form.reset();
       toast.success("Contractor added to the pool");
       onChange();
     },
-    onError: (e) => toast.error(e.message),
+  });
+  const form = useAppForm({
+    schema: contractorSchema,
+    defaultValues: { businessName: "", email: "", trades: "" },
+    onSubmit: (values) => create.mutateAsync(values),
   });
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1.5">
             <CardTitle>Contractor pool</CardTitle>
             <CardDescription>The dispatch agent quotes jobs against these trades.</CardDescription>
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline">
-                <Plus className="size-4" /> New contractor
+              <Button size="sm" variant="outline" className="shrink-0">
+                <Plus aria-hidden="true" className="size-4" /> New contractor
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-sm">
@@ -325,66 +392,119 @@ function ContractorSection({ schemeId, onChange }: { schemeId: string; onChange:
                 className="flex flex-col gap-4"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  create.mutate();
+                  e.stopPropagation();
+                  void form.handleSubmit();
                 }}
               >
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="contractor-name">Business name</Label>
-                  <Input
-                    id="contractor-name"
-                    data-testid="contractor-name"
-                    placeholder="Business name"
-                    required
-                    value={businessName}
-                    onChange={(e) => setBusinessName(e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="contractor-email">Email</Label>
-                  <Input
-                    id="contractor-email"
-                    data-testid="contractor-email"
-                    placeholder="Email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="contractor-trades">Trades</Label>
-                  <Input
-                    id="contractor-trades"
-                    data-testid="contractor-trades"
-                    placeholder="Trades (comma-separated)"
-                    required
-                    value={trades}
-                    onChange={(e) => setTrades(e.target.value)}
-                  />
-                </div>
-                {create.error && <p className="text-sm text-destructive">{create.error.message}</p>}
+                <form.Field name="businessName">
+                  {(field) => (
+                    <Field
+                      label="Business name"
+                      required
+                      error={fieldError(field.state.meta.errors)}
+                    >
+                      {(controlProps) => (
+                        <Input
+                          {...controlProps}
+                          data-testid="contractor-name"
+                          placeholder="e.g. Northcote Plumbing"
+                          value={field.state.value}
+                          onBlur={field.handleBlur}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                  )}
+                </form.Field>
+                <form.Field name="email">
+                  {(field) => (
+                    <Field
+                      label="Email"
+                      hint="Optional — used to send quote requests."
+                      error={fieldError(field.state.meta.errors)}
+                    >
+                      {(controlProps) => (
+                        <Input
+                          {...controlProps}
+                          data-testid="contractor-email"
+                          type="email"
+                          inputMode="email"
+                          autoComplete="email"
+                          placeholder="trades@example.com"
+                          value={field.state.value}
+                          onBlur={field.handleBlur}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                  )}
+                </form.Field>
+                <form.Field name="trades">
+                  {(field) => (
+                    <Field
+                      label="Trades"
+                      required
+                      hint="Comma-separated, e.g. plumbing, drainage."
+                      error={fieldError(field.state.meta.errors)}
+                    >
+                      {(controlProps) => (
+                        <Input
+                          {...controlProps}
+                          data-testid="contractor-trades"
+                          placeholder="plumbing, drainage"
+                          value={field.state.value}
+                          onBlur={field.handleBlur}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                  )}
+                </form.Field>
+                <FormError form={form} />
               </form>
               <DialogFooter>
-                <Button type="submit" form="contractor-form" disabled={create.isPending}>
+                <SubmitButton form={form} formId="contractor-form">
                   Add contractor
-                </Button>
+                </SubmitButton>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </CardHeader>
       <CardContent>
-        {!data && <Skeleton className="h-10" />}
-        <ul className="space-y-2.5 text-sm">
-          {data?.contractors.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">{c.businessName}</span>
-              <span className="text-muted-foreground">{c.tradeCategories.join(", ")}</span>
-            </li>
-          ))}
-          {data?.contractors.length === 0 && (
-            <li className="text-muted-foreground">No contractors yet — add your regulars.</li>
-          )}
-        </ul>
+        {isLoading && <Skeleton className="h-10" />}
+        {isError && (
+          <ErrorState message="Couldn't load the contractor pool." onRetry={() => void refetch()} />
+        )}
+        {data?.contractors.length === 0 && (
+          <EmptyState
+            icon={HardHat}
+            title="No contractors yet"
+            description="Add your regular trades so the dispatch agent can request quotes."
+          />
+        )}
+        {data && data.contractors.length > 0 && (
+          <ul className="divide-y">
+            {data.contractors.map((c) => (
+              <li
+                key={c.id}
+                className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{c.businessName}</p>
+                  {c.email && <p className="truncate text-xs text-muted-foreground">{c.email}</p>}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {c.tradeCategories.map((trade) => (
+                    <Badge key={trade} tone="info">
+                      {trade}
+                    </Badge>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );

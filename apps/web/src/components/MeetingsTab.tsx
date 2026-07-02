@@ -1,22 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bot, CalendarDays, ChevronRight, Plus, Video } from "lucide-react";
+import { getRouteApi } from "@tanstack/react-router";
+import {
+  Bot,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Gavel,
+  Plus,
+  Video,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
 import { Markdown } from "@/components/Markdown";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Field, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -25,11 +32,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
+import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { formatDateTime, formatTime } from "@/lib/format";
 import { useIsOfficer } from "@/lib/roles";
+import { useIsMobile } from "@/lib/use-mobile";
+import { cn } from "@/lib/utils";
 
 interface Meeting {
   id: string;
@@ -65,133 +83,226 @@ interface MeetingDetail {
   transcriptionStarted?: boolean;
 }
 
+const MEETING_KINDS = ["agm", "sgm", "committee"] as const;
+type MeetingKind = (typeof MEETING_KINDS)[number];
+
+const RESOLUTION_TYPES = ["ordinary", "special"] as const;
+type ResolutionType = (typeof RESOLUTION_TYPES)[number];
+
+/** Short type label for the meeting eyebrow (AGM / SGM / Committee). */
+function kindLabel(kind: string): string {
+  if (kind === "agm") return "AGM";
+  if (kind === "sgm") return "SGM";
+  if (kind === "committee") return "Committee";
+  return kind;
+}
+
+const scheduleMeetingSchema = z.object({
+  kind: z.enum(MEETING_KINDS),
+  title: z.string().min(3, "Give the meeting a title of at least 3 characters."),
+  when: z
+    .string()
+    .refine((v) => v.length > 0 && !Number.isNaN(Date.parse(v)), "Choose a valid date and time."),
+  agenda: z.string(),
+});
+type ScheduleMeetingValues = z.infer<typeof scheduleMeetingSchema>;
+
+const addMotionSchema = z.object({
+  title: z.string().min(3, "Give the motion a title of at least 3 characters."),
+  text: z.string().min(3, "Describe the motion in at least 3 characters."),
+  resolutionType: z.enum(RESOLUTION_TYPES),
+});
+type AddMotionValues = z.infer<typeof addMotionSchema>;
+
+const routeApi = getRouteApi("/schemes/$schemeId");
+
 export function MeetingsTab({ schemeId }: { schemeId: string }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  return selected ? (
-    <MeetingDetailView schemeId={schemeId} meetingId={selected} onBack={() => setSelected(null)} />
+  // Selection lives in the URL (?meeting=…) so deep links and the browser
+  // back button work (DESIGN.md §6.1).
+  const { meeting } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
+  const openMeeting = (id: string) =>
+    void navigate({ search: (prev) => ({ ...prev, meeting: id }) });
+  const back = () => void navigate({ search: (prev) => ({ ...prev, meeting: undefined }) });
+
+  return meeting ? (
+    <MeetingDetailView schemeId={schemeId} meetingId={meeting} onBack={back} />
   ) : (
-    <MeetingList schemeId={schemeId} onOpen={setSelected} />
+    <MeetingList schemeId={schemeId} onOpen={openMeeting} />
   );
 }
 
-function ScheduleMeetingDialog({ schemeId }: { schemeId: string }) {
+/** Side sheet on desktop, bottom sheet on mobile (DESIGN.md §7.2, > 2 fields). */
+function useSheetSide() {
+  const isMobile = useIsMobile();
+  return {
+    side: isMobile ? ("bottom" as const) : ("right" as const),
+    className: cn(
+      "overflow-y-auto",
+      isMobile ? "max-h-[85dvh] rounded-t-xl" : "w-full sm:max-w-md",
+    ),
+  };
+}
+
+function ScheduleMeetingSheet({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<"agm" | "sgm" | "committee">("agm");
-  const [title, setTitle] = useState("");
-  const [when, setWhen] = useState("");
-  const [agenda, setAgenda] = useState("");
-  const create = useMutation({
-    mutationFn: async () =>
-      unwrap(
+  const sheet = useSheetSide();
+
+  const form = useAppForm({
+    schema: scheduleMeetingSchema,
+    defaultValues: { kind: "agm", title: "", when: "", agenda: "" } as ScheduleMeetingValues,
+    onSubmit: async (values) => {
+      await unwrap(
         await api.schemes[":schemeId"].meetings.$post({
           param: { schemeId },
           json: {
-            kind,
-            title,
-            scheduledAt: new Date(when).toISOString(),
-            agenda: agenda
+            kind: values.kind,
+            title: values.title,
+            scheduledAt: new Date(values.when).toISOString(),
+            agenda: values.agenda
               .split("\n")
               .map((t) => t.trim())
               .filter(Boolean)
               .map((t) => ({ title: t })),
           },
         }),
-      ),
-    onSuccess: () => {
-      setOpen(false);
-      setTitle("");
-      setWhen("");
-      setAgenda("");
+      );
       toast.success("Meeting scheduled");
       void queryClient.invalidateQueries({ queryKey: ["meetings", schemeId] });
+      setOpen(false);
+      form.reset();
     },
-    onError: (e) => toast.error(e.message),
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
         <Button size="sm">
           <Plus className="size-4" /> New meeting
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Schedule a meeting</DialogTitle>
-          <DialogDescription>
+      </SheetTrigger>
+      <SheetContent side={sheet.side} className={sheet.className}>
+        <SheetHeader>
+          <SheetTitle>Schedule a meeting</SheetTitle>
+          <SheetDescription>
             Notices go out to every member with the agenda attached.
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
         <form
           id="meeting-form"
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-5 px-4 pb-4"
           onSubmit={(e) => {
             e.preventDefault();
-            create.mutate();
+            e.stopPropagation();
+            void form.handleSubmit();
           }}
         >
-          <div className="flex flex-col gap-1.5">
-            <Label>Kind</Label>
-            <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
-              <SelectTrigger className="w-full" data-testid="meeting-kind">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="agm">Annual general meeting</SelectItem>
-                <SelectItem value="sgm">Special general meeting</SelectItem>
-                <SelectItem value="committee">Committee meeting</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="meeting-title">Title</Label>
-            <Input
-              id="meeting-title"
-              data-testid="meeting-title"
-              placeholder="Title (e.g. 2026 Annual General Meeting)"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="meeting-when">When</Label>
-            <Input
-              id="meeting-when"
-              data-testid="meeting-when"
-              type="datetime-local"
-              required
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="meeting-agenda">Agenda (one item per line)</Label>
-            <Textarea
-              id="meeting-agenda"
-              data-testid="meeting-agenda"
-              className="h-24"
-              placeholder={"Financial statements\nBudget adoption\nCommittee election"}
-              value={agenda}
-              onChange={(e) => setAgenda(e.target.value)}
-            />
-          </div>
-          {create.error && <p className="text-sm text-destructive">{create.error.message}</p>}
-        </form>
-        <DialogFooter>
-          <Button type="submit" form="meeting-form" disabled={create.isPending}>
+          <FieldGroup>
+            <form.Field name="kind">
+              {(field) => (
+                <Field
+                  label="Kind"
+                  htmlFor="meeting-kind"
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  {(control) => (
+                    <Select
+                      value={field.state.value}
+                      onValueChange={(v) => field.handleChange(v as MeetingKind)}
+                    >
+                      <SelectTrigger
+                        id={control.id}
+                        aria-invalid={control["aria-invalid"]}
+                        aria-describedby={control["aria-describedby"]}
+                        data-testid="meeting-kind"
+                        className="w-full"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="agm">Annual general meeting</SelectItem>
+                        <SelectItem value="sgm">Special general meeting</SelectItem>
+                        <SelectItem value="committee">Committee meeting</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+
+            <form.Field name="title">
+              {(field) => (
+                <Field
+                  label="Title"
+                  required
+                  htmlFor="meeting-title"
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Input
+                    data-testid="meeting-title"
+                    placeholder="e.g. 2026 annual general meeting"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                </Field>
+              )}
+            </form.Field>
+
+            <form.Field name="when">
+              {(field) => (
+                <Field
+                  label="When"
+                  required
+                  htmlFor="meeting-when"
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Input
+                    type="datetime-local"
+                    data-testid="meeting-when"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                </Field>
+              )}
+            </form.Field>
+
+            <form.Field name="agenda">
+              {(field) => (
+                <Field
+                  label="Agenda"
+                  htmlFor="meeting-agenda"
+                  hint="One item per line."
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Textarea
+                    data-testid="meeting-agenda"
+                    className="min-h-24"
+                    placeholder={"Financial statements\nBudget adoption\nCommittee election"}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                </Field>
+              )}
+            </form.Field>
+          </FieldGroup>
+
+          <FormError form={form} />
+          <SubmitButton form={form} className="w-full">
             Schedule meeting
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </SubmitButton>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }
 
 function MeetingList({ schemeId, onOpen }: { schemeId: string; onOpen: (id: string) => void }) {
   const isOfficer = useIsOfficer(schemeId);
-  const { data } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["meetings", schemeId],
     queryFn: async () =>
       unwrap<{ meetings: Meeting[] }>(
@@ -200,51 +311,60 @@ function MeetingList({ schemeId, onOpen }: { schemeId: string; onOpen: (id: stri
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold">Meetings</h3>
-          <p className="text-sm text-muted-foreground">
-            AGMs, special general meetings and committee meetings.
-          </p>
-        </div>
-        {isOfficer && <ScheduleMeetingDialog schemeId={schemeId} />}
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        as="h2"
+        title="Meetings"
+        description="AGMs, special general meetings and committee meetings."
+        actions={isOfficer ? <ScheduleMeetingSheet schemeId={schemeId} /> : undefined}
+      />
 
-      <div className="space-y-2.5">
-        {!data && <Skeleton className="h-24" />}
-        {data?.meetings.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            onClick={() => onOpen(m.id)}
-            className="group flex w-full items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3.5 text-left shadow-sm transition-colors hover:border-brand-600/60"
-          >
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
+      {isPending ? (
+        <div className="space-y-2.5">
+          <Skeleton className="h-16 rounded-xl" />
+          <Skeleton className="h-16 rounded-xl" />
+          <Skeleton className="h-16 rounded-xl" />
+        </div>
+      ) : isError ? (
+        <ErrorState
+          message="We couldn't load the meetings for this scheme."
+          onRetry={() => void refetch()}
+        />
+      ) : data.meetings.length === 0 ? (
+        <EmptyState
+          icon={CalendarDays}
+          title="No meetings yet"
+          description={
+            isOfficer
+              ? "Schedule the AGM to start the scheme's governance calendar."
+              : "You'll be notified when a meeting is scheduled."
+          }
+        />
+      ) : (
+        <div className="space-y-2.5">
+          {data.meetings.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => onOpen(m.id)}
+              className="group flex w-full items-center gap-3 rounded-xl border bg-card px-4 py-3.5 text-left shadow-sm outline-none transition-colors hover:border-primary/40 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                 <CalendarDays className="size-4.5" />
               </span>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{m.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {m.kind.toUpperCase()} · {formatDateTime(m.scheduledAt)}
-                </p>
+              <div className="min-w-0 flex-1">
+                <Eyebrow>{kindLabel(m.kind)}</Eyebrow>
+                <p className="truncate font-medium">{m.title}</p>
+                <p className="text-xs text-muted-foreground">{formatDateTime(m.scheduledAt)}</p>
               </div>
-            </div>
-            <span className="flex shrink-0 items-center gap-2">
-              <StatusBadge status={m.status} />
-              <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-            </span>
-          </button>
-        ))}
-        {data?.meetings.length === 0 && (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            {isOfficer
-              ? "No meetings yet — schedule the AGM."
-              : "No meetings yet — you'll be notified when one is scheduled."}
-          </p>
-        )}
-      </div>
+              <span className="flex shrink-0 items-center gap-2">
+                <StatusBadge status={m.status} />
+                <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -300,21 +420,27 @@ function VideoCallButtons({
   if (unavailable) return null;
 
   return (
-    <>
+    <div className="flex flex-col gap-2 sm:flex-row">
       {isOfficer && (
         <Button
           variant="outline"
           size="sm"
+          className="w-full sm:w-auto"
           onClick={() => start.mutate()}
-          disabled={start.isPending}
+          pending={start.isPending}
         >
           <Video className="size-4" /> Start video meeting
         </Button>
       )}
-      <Button size="sm" onClick={() => join.mutate()} disabled={join.isPending}>
+      <Button
+        size="sm"
+        className="w-full sm:w-auto"
+        onClick={() => join.mutate()}
+        pending={join.isPending}
+      >
         <Video className="size-4" /> Join video call
       </Button>
-    </>
+    </div>
   );
 }
 
@@ -334,16 +460,16 @@ function ChairLogCard({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-purple-50 text-purple-700">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-agent/10 text-agent">
             <Bot className="size-4" />
           </span>
           AI Chair
         </CardTitle>
         {transcriptionStarted && (
-          <CardDescription className="flex items-center gap-2">
+          <CardDescription aria-live="polite" className="flex items-center gap-2 text-critical">
             <span className="relative flex size-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex size-2 rounded-full bg-red-500" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-critical opacity-75 motion-reduce:animate-none" />
+              <span className="relative inline-flex size-2 rounded-full bg-critical" />
             </span>
             Transcribing the meeting
           </CardDescription>
@@ -351,20 +477,25 @@ function ChairLogCard({
       </CardHeader>
       {chairLog.length > 0 && (
         <CardContent>
-          <ol className="relative space-y-3 border-l border-border pl-5">
+          <ol aria-live="polite" className="relative space-y-4 border-l border-border pl-5">
             {chairLog.map((entry, i) => (
-              <li key={`${entry.at}-${i}`} className="relative">
-                <span className="absolute top-1.5 -left-[23px] size-2 rounded-full bg-purple-400 ring-4 ring-background" />
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <StatusBadge
-                    status={entry.kind}
-                    className="border-purple-200 bg-purple-50 text-purple-700"
-                  />
-                  <span className="text-sm">{entry.note}</span>
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+              <li key={`${entry.at}-${i}`} className="relative space-y-1">
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1 -left-[23px] size-2 rounded-full bg-agent ring-4 ring-card"
+                />
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <Badge tone="agent" className="capitalize">
+                    {entry.kind.replace(/_/g, " ")}
+                  </Badge>
+                  <time
+                    dateTime={entry.at}
+                    className="font-mono text-xs text-muted-foreground tabular-nums"
+                  >
                     {formatTime(entry.at)}
-                  </span>
+                  </time>
                 </div>
+                <Markdown className="text-sm prose-p:my-0">{entry.note}</Markdown>
               </li>
             ))}
           </ol>
@@ -374,9 +505,9 @@ function ChairLogCard({
   );
 }
 
-/** Minutes rendering: probes for a content endpoint and hides when absent. */
+/** Minutes rendering: probes for a content endpoint and shows a designed state. */
 function MinutesSection({ schemeId, documentId }: { schemeId: string; documentId: string }) {
-  const { data } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["document-content", schemeId, documentId],
     retry: false,
     queryFn: async (): Promise<string | null> => {
@@ -393,18 +524,37 @@ function MinutesSection({ schemeId, documentId }: { schemeId: string; documentId
         };
         return body.document?.contentMd ?? body.document?.content ?? null;
       }
-      return null;
+      if (docRes.status === 403 || docRes.status === 404) return null;
+      throw new Error("We couldn't load the minutes.");
     },
   });
 
-  if (!data) return null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Minutes</CardTitle>
+        <CardTitle className="text-base">Minutes</CardTitle>
       </CardHeader>
       <CardContent>
-        <Markdown>{data}</Markdown>
+        {isPending ? (
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        ) : isError ? (
+          <ErrorState
+            message="We couldn't load the minutes for this meeting."
+            onRetry={() => void refetch()}
+          />
+        ) : data ? (
+          <Markdown>{data}</Markdown>
+        ) : (
+          <EmptyState
+            icon={FileText}
+            title="Minutes unavailable"
+            description="They may still be in preparation, or you may not have access to them."
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -423,7 +573,7 @@ function MeetingDetailView({
   const isOfficer = useIsOfficer(schemeId);
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ["meeting", schemeId, meetingId] });
-  const { data } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["meeting", schemeId, meetingId],
     queryFn: async () =>
       unwrap<MeetingDetail>(
@@ -431,7 +581,12 @@ function MeetingDetailView({
           param: { schemeId, meetingId },
         }),
       ),
-    refetchInterval: 3000,
+    // Poll for live quorum / chair log while the meeting is active; stop once
+    // it's closed and nothing changes any more.
+    refetchInterval: (query) => {
+      const status = query.state.data?.meeting.status;
+      return status === "closed" || status === "minutes_distributed" ? false : 3000;
+    },
   });
 
   const sendNotice = useMutation({
@@ -475,7 +630,29 @@ function MeetingDetailView({
     onError: (e) => toast.error(e.message),
   });
 
-  if (!data) return <Skeleton className="h-64" />;
+  const backButton = (
+    <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
+      <ChevronLeft className="size-4" /> All meetings
+    </Button>
+  );
+
+  if (isPending) {
+    return (
+      <div className="space-y-5">
+        {backButton}
+        <Skeleton className="h-64 rounded-xl" />
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <div className="space-y-5">
+        {backButton}
+        <ErrorState message="We couldn't load this meeting." onRetry={() => void refetch()} />
+      </div>
+    );
+  }
+
   const m = data.meeting;
   const quorumPct =
     data.quorum.totalEntitlement > 0
@@ -485,30 +662,44 @@ function MeetingDetailView({
   const videoEligible =
     (m.kind === "committee" || m.kind === "agm") &&
     (m.status === "notice_sent" || m.status === "in_progress");
+  const quorumStatus = meetingOver
+    ? data.quorum.quorate
+      ? "quorate"
+      : "quorum was not reached"
+    : data.quorum.quorate
+      ? "quorate"
+      : "not yet quorate";
+  const quorumTone = meetingOver
+    ? "text-muted-foreground"
+    : data.quorum.quorate
+      ? "text-positive"
+      : "text-caution";
 
   return (
     <div className="space-y-5">
-      <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
-        <ArrowLeft className="size-4" /> All meetings
-      </Button>
+      {backButton}
 
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
-              <CardTitle className="text-lg">{m.title}</CardTitle>
-              <CardDescription>
-                {m.kind.toUpperCase()} · {formatDateTime(m.scheduledAt)}
-              </CardDescription>
+              <Eyebrow>{kindLabel(m.kind)}</Eyebrow>
+              <CardTitle className="font-display text-xl">{m.title}</CardTitle>
+              <CardDescription>{formatDateTime(m.scheduledAt)}</CardDescription>
             </div>
             <StatusBadge status={m.status} />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {m.status === "draft" && isOfficer && (
-              <Button size="sm" onClick={() => sendNotice.mutate()} disabled={sendNotice.isPending}>
-                {sendNotice.isPending ? "Sending…" : "Send notice"}
+              <Button
+                size="sm"
+                className="w-full sm:w-auto"
+                onClick={() => sendNotice.mutate()}
+                pending={sendNotice.isPending}
+              >
+                Send notice
               </Button>
             )}
             {m.status === "draft" && !isOfficer && (
@@ -521,59 +712,64 @@ function MeetingDetailView({
                 <Button
                   variant="outline"
                   size="sm"
+                  className="w-full sm:w-auto"
                   onClick={() => attend.mutate()}
-                  disabled={attend.isPending}
+                  pending={attend.isPending}
                 >
                   I'm attending
                 </Button>
-                {videoEligible && (
-                  <VideoCallButtons
-                    schemeId={schemeId}
-                    meetingId={meetingId}
-                    isOfficer={isOfficer}
-                  />
-                )}
                 {isOfficer && (
                   <Button
                     variant="outline"
                     size="sm"
+                    className="w-full sm:w-auto"
                     onClick={() => closeMeeting.mutate()}
-                    disabled={closeMeeting.isPending}
+                    pending={closeMeeting.isPending}
                   >
-                    {closeMeeting.isPending ? "Closing…" : "Close meeting"}
+                    Close meeting
                   </Button>
                 )}
               </>
             )}
           </div>
 
-          <div data-testid="quorum" className="space-y-1.5">
-            <p
-              className={`text-sm ${
-                meetingOver
-                  ? "text-muted-foreground"
-                  : data.quorum.quorate
-                    ? "text-green-700"
-                    : "text-amber-700"
-              }`}
-            >
-              {meetingOver ? "Final quorum" : "Quorum"}: {data.quorum.representedEntitlement}/
-              {data.quorum.totalEntitlement} entitlements represented
-              {meetingOver
-                ? data.quorum.quorate
-                  ? " — quorate"
-                  : " — quorum was not reached"
-                : data.quorum.quorate
-                  ? " — quorate"
-                  : " — not yet quorate"}
+          {videoEligible && (
+            <div className="space-y-2.5 rounded-lg border bg-muted/40 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Video className="size-4 text-muted-foreground" /> Video call
+                </span>
+                <Badge tone="agent">
+                  <Bot className="size-3" /> AI Chair
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The AI Chair joins the call to guide the agenda and take the minutes.
+              </p>
+              <VideoCallButtons schemeId={schemeId} meetingId={meetingId} isOfficer={isOfficer} />
+            </div>
+          )}
+
+          <div data-testid="quorum" className="space-y-1.5 rounded-lg border p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <Eyebrow>{meetingOver ? "Final quorum" : "Quorum"}</Eyebrow>
+              <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                {quorumPct}%
+              </span>
+            </div>
+            <p className={cn("text-sm", quorumTone)}>
+              <span className="font-mono tabular-nums">
+                {data.quorum.representedEntitlement}/{data.quorum.totalEntitlement}
+              </span>{" "}
+              entitlements represented — {quorumStatus}
             </p>
-            <Progress value={quorumPct} className="h-1.5 max-w-sm" />
+            <Progress value={quorumPct} aria-label={`Quorum ${quorumPct}%`} className="h-1.5" />
           </div>
 
           {data.agenda.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium">Agenda</h4>
-              <ol className="mt-1.5 list-inside list-decimal space-y-1 text-sm text-muted-foreground">
+            <div className="space-y-1.5">
+              <Eyebrow>Agenda</Eyebrow>
+              <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
                 {data.agenda.map((a) => (
                   <li key={a.id}>{a.title}</li>
                 ))}
@@ -592,35 +788,42 @@ function MeetingDetailView({
         <MinutesSection schemeId={schemeId} documentId={m.minutesDocumentId} />
       )}
 
-      <section>
+      <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-base font-semibold">Motions</h3>
+          <h2 className="font-display text-lg font-medium">Motions</h2>
           {isOfficer && !meetingOver && (
-            <AddMotionDialog schemeId={schemeId} meetingId={meetingId} onChange={invalidate} />
+            <AddMotionSheet schemeId={schemeId} meetingId={meetingId} onChange={invalidate} />
           )}
         </div>
-        <div className="mt-3 space-y-2.5">
-          {data.motions.length === 0 && (
-            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No motions yet.
-            </p>
-          )}
-          {data.motions.map((motion) => (
-            <MotionCard
-              key={motion.id}
-              schemeId={schemeId}
-              motion={motion}
-              isOfficer={isOfficer}
-              onChange={invalidate}
-            />
-          ))}
-        </div>
+        {data.motions.length === 0 ? (
+          <EmptyState
+            icon={Gavel}
+            title="No motions yet"
+            description={
+              isOfficer
+                ? "Add the first motion for members to vote on."
+                : "Motions appear here once the officers add them."
+            }
+          />
+        ) : (
+          <div className="space-y-2.5">
+            {data.motions.map((motion) => (
+              <MotionCard
+                key={motion.id}
+                schemeId={schemeId}
+                motion={motion}
+                isOfficer={isOfficer}
+                onChange={invalidate}
+              />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
 }
 
-function AddMotionDialog({
+function AddMotionSheet({
   schemeId,
   meetingId,
   onChange,
@@ -630,94 +833,129 @@ function AddMotionDialog({
   onChange: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [motionTitle, setMotionTitle] = useState("");
-  const [motionText, setMotionText] = useState("");
-  const [resolutionType, setResolutionType] = useState<"ordinary" | "special">("ordinary");
-  const addMotion = useMutation({
-    mutationFn: async () =>
-      unwrap(
+  const sheet = useSheetSide();
+
+  const form = useAppForm({
+    schema: addMotionSchema,
+    defaultValues: { title: "", text: "", resolutionType: "ordinary" } as AddMotionValues,
+    onSubmit: async (values) => {
+      await unwrap(
         await api.schemes[":schemeId"].motions.$post({
           param: { schemeId },
-          json: { meetingId, title: motionTitle, text: motionText, resolutionType },
+          json: {
+            meetingId,
+            title: values.title,
+            text: values.text,
+            resolutionType: values.resolutionType,
+          },
         }),
-      ),
-    onSuccess: () => {
-      setOpen(false);
-      setMotionTitle("");
-      setMotionText("");
+      );
       toast.success("Motion added");
+      setOpen(false);
+      form.reset();
       onChange();
     },
-    onError: (e) => toast.error(e.message),
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
         <Button size="sm" variant="outline">
           <Plus className="size-4" /> New motion
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add a motion</DialogTitle>
-          <DialogDescription>Motions are voted on by lot entitlement.</DialogDescription>
-        </DialogHeader>
+      </SheetTrigger>
+      <SheetContent side={sheet.side} className={sheet.className}>
+        <SheetHeader>
+          <SheetTitle>Add a motion</SheetTitle>
+          <SheetDescription>Motions are voted on by lot entitlement.</SheetDescription>
+        </SheetHeader>
         <form
           id="motion-form"
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-5 px-4 pb-4"
           onSubmit={(e) => {
             e.preventDefault();
-            addMotion.mutate();
+            e.stopPropagation();
+            void form.handleSubmit();
           }}
         >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="motion-title">Title</Label>
-            <Input
-              id="motion-title"
-              data-testid="motion-title"
-              placeholder="Motion title"
-              required
-              value={motionTitle}
-              onChange={(e) => setMotionTitle(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="motion-text">Text</Label>
-            <Textarea
-              id="motion-text"
-              data-testid="motion-text"
-              className="h-20"
-              placeholder="That the owners corporation resolves to…"
-              required
-              value={motionText}
-              onChange={(e) => setMotionText(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Resolution type</Label>
-            <Select
-              value={resolutionType}
-              onValueChange={(v) => setResolutionType(v as "ordinary" | "special")}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ordinary">Ordinary resolution</SelectItem>
-                <SelectItem value="special">Special resolution (75%)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {addMotion.error && <p className="text-sm text-destructive">{addMotion.error.message}</p>}
-        </form>
-        <DialogFooter>
-          <Button type="submit" form="motion-form" disabled={addMotion.isPending}>
+          <FieldGroup>
+            <form.Field name="title">
+              {(field) => (
+                <Field
+                  label="Title"
+                  required
+                  htmlFor="motion-title"
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Input
+                    data-testid="motion-title"
+                    placeholder="Motion title"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                </Field>
+              )}
+            </form.Field>
+
+            <form.Field name="text">
+              {(field) => (
+                <Field
+                  label="Text"
+                  required
+                  htmlFor="motion-text"
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Textarea
+                    data-testid="motion-text"
+                    className="min-h-24"
+                    placeholder="That the owners corporation resolves to…"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                </Field>
+              )}
+            </form.Field>
+
+            <form.Field name="resolutionType">
+              {(field) => (
+                <Field
+                  label="Resolution type"
+                  htmlFor="motion-resolution-type"
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  {(control) => (
+                    <Select
+                      value={field.state.value}
+                      onValueChange={(v) => field.handleChange(v as ResolutionType)}
+                    >
+                      <SelectTrigger
+                        id={control.id}
+                        aria-invalid={control["aria-invalid"]}
+                        aria-describedby={control["aria-describedby"]}
+                        className="w-full"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ordinary">Ordinary resolution</SelectItem>
+                        <SelectItem value="special">Special resolution (75%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+          </FieldGroup>
+
+          <FormError form={form} />
+          <SubmitButton form={form} className="w-full">
             Add motion
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </SubmitButton>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -733,6 +971,8 @@ function MotionCard({
   onChange: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [lotId, setLotId] = useState("");
+
   const open = useMutation({
     mutationFn: async () =>
       unwrap(
@@ -740,6 +980,7 @@ function MotionCard({
           param: { schemeId, motionId: motion.id },
         }),
       ),
+    onMutate: () => setError(null),
     onSuccess: () => {
       toast.success("Voting opened");
       onChange();
@@ -753,6 +994,7 @@ function MotionCard({
           param: { schemeId, motionId: motion.id },
         }),
       ),
+    onMutate: () => setError(null),
     onSuccess: () => {
       toast.success("Motion tallied");
       onChange();
@@ -769,7 +1011,6 @@ function MotionCard({
         await api.schemes[":schemeId"].lots.$get({ param: { schemeId } }),
       ),
   });
-  const [lotId, setLotId] = useState("");
   const vote = useMutation({
     mutationFn: async (choice: "for" | "against" | "abstain") =>
       unwrap(
@@ -778,8 +1019,8 @@ function MotionCard({
           json: { motionId: motion.id, lotId, choice },
         }),
       ),
+    onMutate: () => setError(null),
     onSuccess: () => {
-      setError(null);
       toast.success("Vote recorded");
       onChange();
     },
@@ -787,34 +1028,42 @@ function MotionCard({
   });
 
   return (
-    <Card className="py-4" data-testid={`motion-${motion.title}`}>
-      <CardContent className="px-4">
+    <Card data-testid={`motion-${motion.title}`}>
+      <CardContent className="space-y-3">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-sm font-medium">{motion.title}</p>
+          <div className="min-w-0 space-y-0.5">
+            <p className="font-medium">{motion.title}</p>
+            <Eyebrow>{motion.resolutionType} resolution</Eyebrow>
+          </div>
           <StatusBadge status={motion.status} />
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {motion.text} <i>({motion.resolutionType})</i>
-        </p>
+        <p className="text-sm text-muted-foreground">{motion.text}</p>
         {motion.result && (
-          <p className="mt-1.5 text-xs text-muted-foreground tabular-nums">
+          <p className="font-mono text-xs text-muted-foreground tabular-nums">
             For {motion.result.forWeight} · Against {motion.result.againstWeight} · Abstain{" "}
             {motion.result.abstainWeight}
           </p>
         )}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {motion.status === "draft" && isOfficer && (
-            <Button size="sm" onClick={() => open.mutate()} disabled={open.isPending}>
-              {open.isPending ? "Opening…" : "Open voting"}
+
+        {motion.status === "draft" &&
+          (isOfficer ? (
+            <Button size="sm" onClick={() => open.mutate()} pending={open.isPending}>
+              Open voting
             </Button>
-          )}
-          {motion.status === "draft" && !isOfficer && (
+          ) : (
             <p className="text-sm text-muted-foreground">Voting hasn't opened yet.</p>
-          )}
-          {motion.status === "open" && (
-            <>
+          ))}
+
+        {motion.status === "open" && (
+          <div className="space-y-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <Select value={lotId} onValueChange={setLotId}>
-                <SelectTrigger size="sm" data-testid="vote-lot" className="min-w-28">
+                <SelectTrigger
+                  size="sm"
+                  data-testid="vote-lot"
+                  aria-label="Choose your lot"
+                  className="w-full sm:w-40"
+                >
                   <SelectValue placeholder="My lot…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -825,33 +1074,44 @@ function MotionCard({
                   ))}
                 </SelectContent>
               </Select>
-              {(["for", "against", "abstain"] as const).map((choice) => (
-                <Button
-                  key={choice}
-                  variant="outline"
-                  size="sm"
-                  className="capitalize"
-                  disabled={!lotId || vote.isPending}
-                  onClick={() => vote.mutate(choice)}
-                >
-                  {choice}
-                </Button>
-              ))}
+              <div className="flex gap-2">
+                {(["for", "against", "abstain"] as const).map((choice) => (
+                  <Button
+                    key={choice}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 sm:flex-none"
+                    disabled={!lotId || vote.isPending}
+                    pending={vote.isPending && vote.variables === choice}
+                    onClick={() => vote.mutate(choice)}
+                  >
+                    {choice}
+                  </Button>
+                ))}
+              </div>
               {isOfficer && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="ml-auto"
+                  className="w-full sm:ml-auto sm:w-auto"
                   onClick={() => close.mutate()}
-                  disabled={close.isPending}
+                  pending={close.isPending}
                 >
                   Close &amp; tally
                 </Button>
               )}
-            </>
-          )}
-        </div>
-        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+            </div>
+            {!lotId && (
+              <p className="text-xs text-muted-foreground">Choose your lot to record a vote.</p>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <p role="alert" className="text-sm text-critical">
+            {error}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

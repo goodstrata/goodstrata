@@ -1,69 +1,74 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type Tone = "green" | "amber" | "red" | "blue" | "purple" | "gray";
+type Tone = "positive" | "caution" | "critical" | "info" | "agent" | "neutral";
 
-const TONE_CLASSES: Record<Tone, string> = {
-  green: "border-green-200 bg-green-50 text-green-700",
-  amber: "border-amber-200 bg-amber-50 text-amber-700",
-  red: "border-red-200 bg-red-50 text-red-700",
-  blue: "border-blue-200 bg-blue-50 text-blue-700",
-  purple: "border-purple-200 bg-purple-50 text-purple-700",
-  gray: "border-border bg-muted text-muted-foreground",
-};
-
+/**
+ * The single source of truth mapping every domain status to a tone
+ * (DESIGN.md §3.3, §7.2). New statuses must be added here — unmapped
+ * statuses render neutral and warn in dev.
+ */
 const STATUS_TONES: Record<string, Tone> = {
-  // schemes / general
-  active: "green",
-  onboarding: "amber",
+  // schemes
+  registered: "caution",
+  setup: "caution",
+  onboarding: "caution",
+  active: "positive",
+  // people & invites
+  pending: "caution",
+  invited: "caution",
+  joined: "positive",
   // budgets & decisions
-  adopted: "green",
-  committee_review: "amber",
-  pending: "amber",
-  approved: "green",
-  declined: "gray",
-  expired: "gray",
+  draft: "caution",
+  committee_review: "caution",
+  awaiting_decision: "caution",
+  adopted: "positive",
+  approved: "positive",
+  rejected: "critical",
+  declined: "neutral",
+  expired: "neutral",
+  executed: "positive",
   // levy notices
-  paid: "green",
-  issued: "blue",
-  overdue: "red",
-  cancelled: "gray",
+  issued: "info",
+  paid: "positive",
+  overdue: "critical",
+  cancelled: "critical",
   // maintenance
-  open: "blue",
-  triaged: "purple",
-  quoting: "amber",
-  dispatched: "blue",
-  accepted: "blue",
-  scheduled: "blue",
-  in_progress: "blue",
-  completed: "green",
-  rejected: "gray",
-  draft: "gray",
-  // meetings
-  notice_sent: "blue",
-  closed: "gray",
-  minutes_distributed: "green",
-  // motions
-  carried: "green",
-  lost: "red",
+  open: "info",
+  triaged: "agent",
+  quoting: "caution",
+  quote_requested: "caution",
+  quoted: "caution",
+  dispatched: "info",
+  accepted: "info",
+  scheduled: "info",
+  work_ordered: "info",
+  in_progress: "info",
+  completed: "positive",
+  // meetings & motions
+  notice_sent: "info",
+  closed: "positive",
+  minutes_distributed: "positive",
+  carried: "positive",
+  lost: "critical",
   // agent runs
-  succeeded: "green",
-  awaiting_decision: "amber",
-  running: "blue",
-  failed: "red",
-  // people
-  joined: "green",
-  invited: "amber",
+  running: "info",
+  succeeded: "positive",
+  failed: "critical",
 };
 
 /**
- * A consistent status pill: any snake_case domain status renders with a
- * sensible tone and human spacing (e.g. "notice_sent" → "notice sent").
+ * A consistent status pill: the raw lowercase domain word stays in the DOM
+ * (the e2e suite asserts it) with underscores humanised ("notice_sent" →
+ * "notice sent"); capitalisation is visual only, via CSS.
  */
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
-  const tone = STATUS_TONES[status] ?? "gray";
+  const tone = STATUS_TONES[status];
+  if (import.meta.env.DEV && tone === undefined) {
+    console.warn(`StatusBadge: unmapped status "${status}" rendered as neutral`);
+  }
   return (
-    <Badge variant="outline" className={cn("shrink-0 font-medium", TONE_CLASSES[tone], className)}>
+    <Badge tone={tone ?? "neutral"} className={cn("shrink-0 font-medium capitalize", className)}>
       {status.replace(/_/g, " ")}
     </Badge>
   );
