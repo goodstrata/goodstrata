@@ -138,6 +138,7 @@ function SignupThenAccept({ token }: { token: string }) {
               <Input
                 id="join-name"
                 placeholder="Your name"
+                autoComplete="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
@@ -148,6 +149,7 @@ function SignupThenAccept({ token }: { token: string }) {
                 id="join-password"
                 placeholder="Choose a password"
                 type="password"
+                autoComplete="new-password"
                 required
                 minLength={8}
                 value={password}
@@ -156,7 +158,7 @@ function SignupThenAccept({ token }: { token: string }) {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={busy || !preview}>
-              {busy ? "…" : "Create account & join"}
+              {busy ? "Joining…" : "Create account & join"}
             </Button>
           </form>
         </CardContent>

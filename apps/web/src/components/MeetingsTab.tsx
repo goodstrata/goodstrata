@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CalendarDays, ChevronRight, Plus, Video } from "lucide-react";
+import { ArrowLeft, Bot, CalendarDays, ChevronRight, Plus, Video } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Markdown } from "@/components/Markdown";
@@ -28,7 +28,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatTime } from "@/lib/format";
+import { useIsOfficer } from "@/lib/roles";
 
 interface Meeting {
   id: string;
@@ -47,11 +48,21 @@ interface Motion {
   status: string;
   result: { forWeight: number; againstWeight: number; abstainWeight: number } | null;
 }
+/** AI Chair timeline entry — the backend adds these as the feature lands. */
+interface ChairLogEntry {
+  at: string;
+  kind: string;
+  note: string;
+}
+
 interface MeetingDetail {
   meeting: Meeting;
   agenda: { id: string; order: number; title: string }[];
   motions: Motion[];
   quorum: { representedEntitlement: number; totalEntitlement: number; quorate: boolean };
+  /** Optional until the AI Chair backend ships — render gracefully when absent. */
+  chairLog?: ChairLogEntry[] | null;
+  transcriptionStarted?: boolean;
 }
 
 export function MeetingsTab({ schemeId }: { schemeId: string }) {
@@ -179,6 +190,7 @@ function ScheduleMeetingDialog({ schemeId }: { schemeId: string }) {
 }
 
 function MeetingList({ schemeId, onOpen }: { schemeId: string; onOpen: (id: string) => void }) {
+  const isOfficer = useIsOfficer(schemeId);
   const { data } = useQuery({
     queryKey: ["meetings", schemeId],
     queryFn: async () =>
@@ -196,7 +208,7 @@ function MeetingList({ schemeId, onOpen }: { schemeId: string; onOpen: (id: stri
             AGMs, special general meetings and committee meetings.
           </p>
         </div>
-        <ScheduleMeetingDialog schemeId={schemeId} />
+        {isOfficer && <ScheduleMeetingDialog schemeId={schemeId} />}
       </div>
 
       <div className="space-y-2.5">
@@ -227,7 +239,9 @@ function MeetingList({ schemeId, onOpen }: { schemeId: string; onOpen: (id: stri
         ))}
         {data?.meetings.length === 0 && (
           <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No meetings yet — schedule the AGM.
+            {isOfficer
+              ? "No meetings yet — schedule the AGM."
+              : "No meetings yet — you'll be notified when one is scheduled."}
           </p>
         )}
       </div>
@@ -236,7 +250,15 @@ function MeetingList({ schemeId, onOpen }: { schemeId: string; onOpen: (id: stri
 }
 
 /** Video calls: contract-first UI; hides itself if the API doesn't support it yet. */
-function VideoCallButtons({ schemeId, meetingId }: { schemeId: string; meetingId: string }) {
+function VideoCallButtons({
+  schemeId,
+  meetingId,
+  isOfficer,
+}: {
+  schemeId: string;
+  meetingId: string;
+  isOfficer: boolean;
+}) {
   const [unavailable, setUnavailable] = useState(false);
 
   const start = useMutation({
@@ -279,13 +301,76 @@ function VideoCallButtons({ schemeId, meetingId }: { schemeId: string; meetingId
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => start.mutate()} disabled={start.isPending}>
-        <Video className="size-4" /> Start video meeting
-      </Button>
+      {isOfficer && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => start.mutate()}
+          disabled={start.isPending}
+        >
+          <Video className="size-4" /> Start video meeting
+        </Button>
+      )}
       <Button size="sm" onClick={() => join.mutate()} disabled={join.isPending}>
         <Video className="size-4" /> Join video call
       </Button>
     </>
+  );
+}
+
+/**
+ * The AI Chair's live timeline: what it observed and did during the meeting.
+ * Renders nothing until the backend starts sending chairLog entries.
+ */
+function ChairLogCard({
+  chairLog,
+  transcriptionStarted,
+}: {
+  chairLog: ChairLogEntry[];
+  transcriptionStarted: boolean;
+}) {
+  if (chairLog.length === 0 && !transcriptionStarted) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-purple-50 text-purple-700">
+            <Bot className="size-4" />
+          </span>
+          AI Chair
+        </CardTitle>
+        {transcriptionStarted && (
+          <CardDescription className="flex items-center gap-2">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-red-500" />
+            </span>
+            Transcribing the meeting
+          </CardDescription>
+        )}
+      </CardHeader>
+      {chairLog.length > 0 && (
+        <CardContent>
+          <ol className="relative space-y-3 border-l border-border pl-5">
+            {chairLog.map((entry, i) => (
+              <li key={`${entry.at}-${i}`} className="relative">
+                <span className="absolute top-1.5 -left-[23px] size-2 rounded-full bg-purple-400 ring-4 ring-background" />
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <StatusBadge
+                    status={entry.kind}
+                    className="border-purple-200 bg-purple-50 text-purple-700"
+                  />
+                  <span className="text-sm">{entry.note}</span>
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {formatTime(entry.at)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </CardContent>
+      )}
+    </Card>
   );
 }
 
@@ -335,6 +420,7 @@ function MeetingDetailView({
   onBack: () => void;
 }) {
   const queryClient = useQueryClient();
+  const isOfficer = useIsOfficer(schemeId);
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ["meeting", schemeId, meetingId] });
   const { data } = useQuery({
@@ -395,6 +481,7 @@ function MeetingDetailView({
     data.quorum.totalEntitlement > 0
       ? Math.round((data.quorum.representedEntitlement / data.quorum.totalEntitlement) * 100)
       : 0;
+  const meetingOver = m.status === "closed" || m.status === "minutes_distributed";
   const videoEligible =
     (m.kind === "committee" || m.kind === "agm") &&
     (m.status === "notice_sent" || m.status === "in_progress");
@@ -419,28 +506,66 @@ function MeetingDetailView({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            {m.status === "draft" && (
-              <Button size="sm" onClick={() => sendNotice.mutate()}>
-                Send notice
+            {m.status === "draft" && isOfficer && (
+              <Button size="sm" onClick={() => sendNotice.mutate()} disabled={sendNotice.isPending}>
+                {sendNotice.isPending ? "Sending…" : "Send notice"}
               </Button>
+            )}
+            {m.status === "draft" && !isOfficer && (
+              <p className="text-sm text-muted-foreground">
+                This meeting is still a draft — the notice hasn't gone out yet.
+              </p>
             )}
             {(m.status === "notice_sent" || m.status === "in_progress") && (
               <>
-                <Button variant="outline" size="sm" onClick={() => attend.mutate()}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => attend.mutate()}
+                  disabled={attend.isPending}
+                >
                   I'm attending
                 </Button>
-                {videoEligible && <VideoCallButtons schemeId={schemeId} meetingId={meetingId} />}
-                <Button variant="outline" size="sm" onClick={() => closeMeeting.mutate()}>
-                  Close meeting
-                </Button>
+                {videoEligible && (
+                  <VideoCallButtons
+                    schemeId={schemeId}
+                    meetingId={meetingId}
+                    isOfficer={isOfficer}
+                  />
+                )}
+                {isOfficer && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => closeMeeting.mutate()}
+                    disabled={closeMeeting.isPending}
+                  >
+                    {closeMeeting.isPending ? "Closing…" : "Close meeting"}
+                  </Button>
+                )}
               </>
             )}
           </div>
 
           <div data-testid="quorum" className="space-y-1.5">
-            <p className={`text-sm ${data.quorum.quorate ? "text-green-700" : "text-amber-700"}`}>
-              Quorum: {data.quorum.representedEntitlement}/{data.quorum.totalEntitlement}{" "}
-              entitlements represented — {data.quorum.quorate ? "quorate" : "not yet quorate"}
+            <p
+              className={`text-sm ${
+                meetingOver
+                  ? "text-muted-foreground"
+                  : data.quorum.quorate
+                    ? "text-green-700"
+                    : "text-amber-700"
+              }`}
+            >
+              {meetingOver ? "Final quorum" : "Quorum"}: {data.quorum.representedEntitlement}/
+              {data.quorum.totalEntitlement} entitlements represented
+              {meetingOver
+                ? data.quorum.quorate
+                  ? " — quorate"
+                  : " — quorum was not reached"
+                : data.quorum.quorate
+                  ? " — quorate"
+                  : " — not yet quorate"}
             </p>
             <Progress value={quorumPct} className="h-1.5 max-w-sm" />
           </div>
@@ -458,6 +583,11 @@ function MeetingDetailView({
         </CardContent>
       </Card>
 
+      <ChairLogCard
+        chairLog={data.chairLog ?? []}
+        transcriptionStarted={data.transcriptionStarted ?? false}
+      />
+
       {m.minutesDocumentId && (
         <MinutesSection schemeId={schemeId} documentId={m.minutesDocumentId} />
       )}
@@ -465,7 +595,7 @@ function MeetingDetailView({
       <section>
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-base font-semibold">Motions</h3>
-          {m.status !== "closed" && m.status !== "minutes_distributed" && (
+          {isOfficer && !meetingOver && (
             <AddMotionDialog schemeId={schemeId} meetingId={meetingId} onChange={invalidate} />
           )}
         </div>
@@ -476,7 +606,13 @@ function MeetingDetailView({
             </p>
           )}
           {data.motions.map((motion) => (
-            <MotionCard key={motion.id} schemeId={schemeId} motion={motion} onChange={invalidate} />
+            <MotionCard
+              key={motion.id}
+              schemeId={schemeId}
+              motion={motion}
+              isOfficer={isOfficer}
+              onChange={invalidate}
+            />
           ))}
         </div>
       </section>
@@ -588,10 +724,12 @@ function AddMotionDialog({
 function MotionCard({
   schemeId,
   motion,
+  isOfficer,
   onChange,
 }: {
   schemeId: string;
   motion: Motion;
+  isOfficer: boolean;
   onChange: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -665,10 +803,13 @@ function MotionCard({
           </p>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {motion.status === "draft" && (
-            <Button size="sm" onClick={() => open.mutate()}>
-              Open voting
+          {motion.status === "draft" && isOfficer && (
+            <Button size="sm" onClick={() => open.mutate()} disabled={open.isPending}>
+              {open.isPending ? "Opening…" : "Open voting"}
             </Button>
+          )}
+          {motion.status === "draft" && !isOfficer && (
+            <p className="text-sm text-muted-foreground">Voting hasn't opened yet.</p>
           )}
           {motion.status === "open" && (
             <>
@@ -696,14 +837,17 @@ function MotionCard({
                   {choice}
                 </Button>
               ))}
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-auto"
-                onClick={() => close.mutate()}
-              >
-                Close &amp; tally
-              </Button>
+              {isOfficer && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => close.mutate()}
+                  disabled={close.isPending}
+                >
+                  Close &amp; tally
+                </Button>
+              )}
             </>
           )}
         </div>

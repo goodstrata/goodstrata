@@ -1,10 +1,13 @@
 import ReactMarkdown from "react-markdown";
+import { stripAgentTags } from "@/lib/agent-text";
 import { cn } from "@/lib/utils";
 
 /**
  * Renders trusted-ish markdown (agent output, decision summaries, minutes)
  * with typography defaults. Raw HTML is never rendered — react-markdown
  * escapes it by default, which is the safe behaviour we want here.
+ * Pseudo-XML scaffolding that models sometimes emit (<summary>, <thinking>)
+ * is stripped before rendering.
  */
 export function Markdown({ children, className }: { children: string; className?: string }) {
   return (
@@ -18,7 +21,7 @@ export function Markdown({ children, className }: { children: string; className?
         className,
       )}
     >
-      <ReactMarkdown>{children}</ReactMarkdown>
+      <ReactMarkdown>{stripAgentTags(children)}</ReactMarkdown>
     </div>
   );
 }

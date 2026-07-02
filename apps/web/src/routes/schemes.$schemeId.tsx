@@ -1,17 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bot, Check, CircleCheck, FileText, User } from "lucide-react";
+import { Bot, Check, CircleCheck, Eye, FileText, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AgentsTab } from "@/components/AgentsTab";
 import { DecisionsTab } from "@/components/DecisionsTab";
 import { FinanceTab } from "@/components/FinanceTab";
+import { LotStatementDialog } from "@/components/LotStatementDialog";
 import { MaintenanceTab } from "@/components/MaintenanceTab";
+import { Markdown } from "@/components/Markdown";
 import { MeetingsTab } from "@/components/MeetingsTab";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -33,7 +42,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
-import { formatDate, formatTime } from "@/lib/format";
+import { formatBytes, formatDate, formatTime } from "@/lib/format";
+import { schemeQueryOptions, useIsOfficer } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/schemes/$schemeId")({
@@ -72,14 +82,7 @@ const TAB_LABELS: Record<Tab, string> = {
 function SchemePage() {
   const { schemeId } = Route.useParams();
   const [tab, setTab] = useState<Tab>("overview");
-  const { data } = useQuery({
-    queryKey: ["scheme", schemeId],
-    queryFn: async () =>
-      unwrap<{
-        scheme: { name: string; planOfSubdivision: string; status: string; tier: number };
-        roles: string[];
-      }>(await api.schemes[":schemeId"].$get({ param: { schemeId } })),
-  });
+  const { data } = useQuery(schemeQueryOptions(schemeId));
 
   return (
     <div className="space-y-5">
@@ -154,6 +157,7 @@ function SchemePage() {
 
 function OverviewTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
+  const isOfficer = useIsOfficer(schemeId);
   const { data } = useQuery({
     queryKey: ["onboarding", schemeId],
     queryFn: async () =>
@@ -202,14 +206,19 @@ function OverviewTab({ schemeId }: { schemeId: string }) {
           {item(data.hasLots, "Lots imported from plan of subdivision")}
           {item(data.hasInsurance, "Insurance certificate of currency uploaded")}
         </ul>
-        {data.status !== "active" && (
+        {data.status !== "active" && isOfficer && (
           <Button
             className="mt-6"
             disabled={!data.ready || activate.isPending}
             onClick={() => activate.mutate()}
           >
-            Activate scheme
+            {activate.isPending ? "Activating…" : "Activate scheme"}
           </Button>
+        )}
+        {data.status !== "active" && !isOfficer && (
+          <p className="mt-6 text-sm text-muted-foreground">
+            An office holder will activate the scheme once the checklist is complete.
+          </p>
         )}
         {activate.error && (
           <p className="mt-2 text-sm text-destructive">{activate.error.message}</p>
@@ -248,6 +257,7 @@ const SAMPLE_CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_e
 
 function LotsTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
+  const isOfficer = useIsOfficer(schemeId);
   const { data } = useQuery({
     queryKey: ["lots", schemeId],
     queryFn: async () =>
@@ -284,6 +294,7 @@ function LotsTab({ schemeId }: { schemeId: string }) {
                   <TableHead className="text-right">Entitlement</TableHead>
                   <TableHead className="text-right">Liability</TableHead>
                   <TableHead>Owner</TableHead>
+                  <TableHead className="text-right" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -304,6 +315,15 @@ function LotsTab({ schemeId }: { schemeId: string }) {
                           )
                           .join(", ") || "—"}
                       </TableCell>
+                      <TableCell className="text-right">
+                        <LotStatementDialog
+                          schemeId={schemeId}
+                          lotId={lot.id}
+                          lotNumber={lot.lotNumber}
+                          triggerVariant="ghost"
+                          triggerClassName="text-muted-foreground"
+                        />
+                      </TableCell>
                     </TableRow>
                   ))}
               </TableBody>
@@ -312,40 +332,44 @@ function LotsTab({ schemeId }: { schemeId: string }) {
         </Card>
       ) : (
         data && (
-          <p className="text-sm text-muted-foreground">
-            No lots yet — import the plan of subdivision.
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            {isOfficer
+              ? "No lots yet — import the plan of subdivision below."
+              : "No lots yet — an office holder will import the plan of subdivision."}
           </p>
         )
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Import lots (CSV)</CardTitle>
-          <CardDescription>
-            Columns: lot_number, entitlement, liability[, lot_type, unit_number, owner_name,
-            owner_email]
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            data-testid="csv-input"
-            className="h-36 font-mono text-xs"
-            placeholder={SAMPLE_CSV}
-            value={csv}
-            onChange={(e) => setCsv(e.target.value)}
-          />
-          {importMutation.error && (
-            <p className="mt-2 text-sm text-destructive">{importMutation.error.message}</p>
-          )}
-          <Button
-            className="mt-4"
-            disabled={!csv || importMutation.isPending}
-            onClick={() => importMutation.mutate()}
-          >
-            {importMutation.isPending ? "Importing…" : "Import lots"}
-          </Button>
-        </CardContent>
-      </Card>
+      {isOfficer && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Import lots (CSV)</CardTitle>
+            <CardDescription>
+              Columns: lot_number, entitlement, liability[, lot_type, unit_number, owner_name,
+              owner_email]
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Textarea
+              data-testid="csv-input"
+              className="h-36 font-mono text-xs"
+              placeholder={SAMPLE_CSV}
+              value={csv}
+              onChange={(e) => setCsv(e.target.value)}
+            />
+            {importMutation.error && (
+              <p className="mt-2 text-sm text-destructive">{importMutation.error.message}</p>
+            )}
+            <Button
+              className="mt-4"
+              disabled={!csv || importMutation.isPending}
+              onClick={() => importMutation.mutate()}
+            >
+              {importMutation.isPending ? "Importing…" : "Import lots"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -363,6 +387,7 @@ interface PersonRow {
 
 function PeopleTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
+  const isOfficer = useIsOfficer(schemeId);
   const { data } = useQuery({
     queryKey: ["people", schemeId],
     queryFn: async () =>
@@ -390,8 +415,8 @@ function PeopleTab({ schemeId }: { schemeId: string }) {
   return (
     <div className="max-w-2xl space-y-2">
       {data.people.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No people yet — owners appear here when you import lots.
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          No people yet — owners appear here when lots are imported.
         </p>
       )}
       {data.people.map((p) => (
@@ -407,16 +432,17 @@ function PeopleTab({ schemeId }: { schemeId: string }) {
               <StatusBadge status="joined" />
             ) : p.pendingInvite ? (
               <StatusBadge status="invited" />
-            ) : (
+            ) : isOfficer ? (
               <Button
                 variant="outline"
                 size="sm"
                 disabled={!p.email || invite.isPending}
+                title={p.email ? undefined : "Add an email address to invite this person"}
                 onClick={() => invite.mutate(p.id)}
               >
                 Invite
               </Button>
-            )}
+            ) : null}
           </CardContent>
         </Card>
       ))}
@@ -429,6 +455,7 @@ function PeopleTab({ schemeId }: { schemeId: string }) {
 
 function CommitteeTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
+  const isOfficer = useIsOfficer(schemeId);
   const { data: committee } = useQuery({
     queryKey: ["committee", schemeId],
     queryFn: async () =>
@@ -463,8 +490,12 @@ function CommitteeTab({ schemeId }: { schemeId: string }) {
   });
 
   const nameFor = (id: string) => members?.members.find((m) => m.userId === id)?.name ?? id;
-  const officers =
-    committee?.committee.filter((m) => m.role !== "owner" && m.role !== "tenant") ?? [];
+  // One row per person, with all of their office-holder roles.
+  const officers = new Map<string, string[]>();
+  for (const m of committee?.committee ?? []) {
+    if (m.role === "owner" || m.role === "tenant") continue;
+    officers.set(m.userId, [...(officers.get(m.userId) ?? []), m.role]);
+  }
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -475,79 +506,187 @@ function CommitteeTab({ schemeId }: { schemeId: string }) {
         </CardHeader>
         <CardContent>
           <ul className="space-y-2.5 text-sm" data-testid="committee-list">
-            {officers.length === 0 && (
+            {officers.size === 0 && (
               <li className="text-muted-foreground">No committee roles assigned yet.</li>
             )}
-            {officers.map((m) => (
-              <li key={`${m.userId}-${m.role}`} className="flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <User className="size-4 text-muted-foreground" />
-                  {nameFor(m.userId)}
+            {[...officers].map(([memberId, roles]) => (
+              <li key={memberId} className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <User className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{nameFor(memberId)}</span>
                 </span>
-                <Badge variant="secondary" className="bg-brand-50 text-brand-800">
-                  {m.role.replace("_", " ")}
-                </Badge>
+                <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                  {roles.map((r) => (
+                    <Badge key={r} variant="secondary" className="bg-brand-50 text-brand-800">
+                      {r.replace("_", " ")}
+                    </Badge>
+                  ))}
+                </span>
               </li>
             ))}
           </ul>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Assign role</CardTitle>
-          <CardDescription>Appoint a member as an office holder.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label>Member</Label>
-              <Select value={userId} onValueChange={setUserId}>
-                <SelectTrigger className="w-full" data-testid="committee-member">
-                  <SelectValue placeholder="Select member…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {members?.members.map((m) => (
-                    <SelectItem key={m.userId} value={m.userId}>
-                      {m.name} ({m.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      {isOfficer && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Assign role</CardTitle>
+            <CardDescription>Appoint a member as an office holder.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Label>Member</Label>
+                <Select value={userId} onValueChange={setUserId}>
+                  <SelectTrigger className="w-full" data-testid="committee-member">
+                    <SelectValue placeholder="Select member…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members?.members.map((m) => (
+                      <SelectItem key={m.userId} value={m.userId}>
+                        {m.name} ({m.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Role</Label>
+                <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
+                  <SelectTrigger className="w-full sm:w-48" data-testid="committee-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="chair">Chair</SelectItem>
+                    <SelectItem value="secretary">Secretary</SelectItem>
+                    <SelectItem value="treasurer">Treasurer</SelectItem>
+                    <SelectItem value="committee_member">Committee member</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button disabled={!userId || assign.isPending} onClick={() => assign.mutate()}>
+                {assign.isPending ? "Assigning…" : "Assign"}
+              </Button>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
-                <SelectTrigger className="w-full sm:w-48" data-testid="committee-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="chair">Chair</SelectItem>
-                  <SelectItem value="secretary">Secretary</SelectItem>
-                  <SelectItem value="treasurer">Treasurer</SelectItem>
-                  <SelectItem value="committee_member">Committee member</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button disabled={!userId || assign.isPending} onClick={() => assign.mutate()}>
-              Assign
-            </Button>
-          </div>
-          {assign.error && <p className="mt-2 text-sm text-destructive">{assign.error.message}</p>}
-        </CardContent>
-      </Card>
+            {assign.error && (
+              <p className="mt-2 text-sm text-destructive">{assign.error.message}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
 
+interface DocumentRow {
+  id: string;
+  title: string;
+  category: string;
+  mime: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+/**
+ * Probe for document content: a dedicated content endpoint first, then an
+ * inline-content detail route. Returns what we can actually show.
+ */
+async function fetchDocumentContent(
+  schemeId: string,
+  doc: DocumentRow,
+): Promise<
+  | { kind: "text"; text: string }
+  | { kind: "blob"; url: string; mime: string }
+  | { kind: "unavailable" }
+> {
+  const contentRes = await fetch(`/api/schemes/${schemeId}/documents/${doc.id}/content`, {
+    credentials: "include",
+  });
+  if (contentRes.ok) {
+    const mime = contentRes.headers.get("content-type") ?? doc.mime;
+    if (/^text\/|markdown|json/.test(mime)) {
+      return { kind: "text", text: await contentRes.text() };
+    }
+    return { kind: "blob", url: URL.createObjectURL(await contentRes.blob()), mime };
+  }
+  const docRes = await fetch(`/api/schemes/${schemeId}/documents/${doc.id}`, {
+    credentials: "include",
+  });
+  if (docRes.ok) {
+    const body = (await docRes.json()) as {
+      document?: { content?: string; contentMd?: string };
+    };
+    const text = body.document?.contentMd ?? body.document?.content;
+    if (text) return { kind: "text", text };
+  }
+  return { kind: "unavailable" };
+}
+
+function DocumentViewerDialog({
+  schemeId,
+  doc,
+  onClose,
+}: {
+  schemeId: string;
+  doc: DocumentRow;
+  onClose: () => void;
+}) {
+  const { data } = useQuery({
+    queryKey: ["document-view", schemeId, doc.id],
+    queryFn: () => fetchDocumentContent(schemeId, doc),
+    retry: false,
+  });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 truncate">{doc.title}</span>
+          </DialogTitle>
+          <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Badge variant="secondary">{doc.category.replace(/_/g, " ")}</Badge>
+            <span>{formatBytes(doc.sizeBytes)}</span>
+            <span>·</span>
+            <span>{formatDate(doc.createdAt)}</span>
+          </DialogDescription>
+        </DialogHeader>
+        {!data && <Skeleton className="h-24" />}
+        {data?.kind === "text" && (
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <Markdown>{data.text}</Markdown>
+          </div>
+        )}
+        {data?.kind === "blob" && (
+          <Button asChild className="w-fit">
+            <a href={data.url} download={doc.title}>
+              Download {doc.title}
+            </a>
+          </Button>
+        )}
+        {data?.kind === "unavailable" && (
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            Preview and download aren't available for this document yet — the file is stored safely
+            and downloads are coming soon.
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DocumentsTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
+  const isOfficer = useIsOfficer(schemeId);
+  const [viewing, setViewing] = useState<DocumentRow | null>(null);
   const { data } = useQuery({
     queryKey: ["documents", schemeId],
     queryFn: async () =>
-      unwrap<{ documents: { id: string; title: string; category: string; createdAt: string }[] }>(
+      unwrap<{ documents: DocumentRow[] }>(
         await api.schemes[":schemeId"].documents.$get({ param: { schemeId }, query: {} }),
       ),
   });
@@ -578,36 +717,40 @@ function DocumentsTab({ schemeId }: { schemeId: string }) {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Upload document</CardTitle>
-          <CardDescription>
-            Insurance certificates, plans, rules and minutes live here.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Input ref={fileRef} type="file" data-testid="doc-file" className="sm:flex-1" />
-            <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger className="w-full sm:w-52" data-testid="doc-category">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="insurance">Insurance</SelectItem>
-                <SelectItem value="plan_of_subdivision">Plan of subdivision</SelectItem>
-                <SelectItem value="rules">Rules</SelectItem>
-                <SelectItem value="financial">Financial</SelectItem>
-                <SelectItem value="minutes">Minutes</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button disabled={upload.isPending} onClick={() => upload.mutate()}>
-              Upload
-            </Button>
-          </div>
-          {upload.error && <p className="mt-2 text-sm text-destructive">{upload.error.message}</p>}
-        </CardContent>
-      </Card>
+      {isOfficer && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload document</CardTitle>
+            <CardDescription>
+              Insurance certificates, plans, rules and minutes live here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Input ref={fileRef} type="file" data-testid="doc-file" className="sm:flex-1" />
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="w-full sm:w-52" data-testid="doc-category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="insurance">Insurance</SelectItem>
+                  <SelectItem value="plan_of_subdivision">Plan of subdivision</SelectItem>
+                  <SelectItem value="rules">Rules</SelectItem>
+                  <SelectItem value="financial">Financial</SelectItem>
+                  <SelectItem value="minutes">Minutes</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button disabled={upload.isPending} onClick={() => upload.mutate()}>
+                {upload.isPending ? "Uploading…" : "Upload"}
+              </Button>
+            </div>
+            {upload.error && (
+              <p className="mt-2 text-sm text-destructive">{upload.error.message}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!data && <Skeleton className="h-24" />}
       {data && data.documents.length > 0 && (
@@ -617,13 +760,26 @@ function DocumentsTab({ schemeId }: { schemeId: string }) {
               <CardContent className="flex items-center justify-between gap-3 px-4">
                 <span className="flex min-w-0 items-center gap-2.5 text-sm">
                   <FileText className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">{d.title}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-3">
-                  <Badge variant="secondary">{d.category.replace(/_/g, " ")}</Badge>
-                  <span className="hidden text-xs text-muted-foreground sm:inline">
-                    {formatDate(d.createdAt)}
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{d.title}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {formatBytes(d.sizeBytes)} · {formatDate(d.createdAt)}
+                    </span>
                   </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <Badge variant="secondary" className="hidden sm:inline-flex">
+                    {d.category.replace(/_/g, " ")}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={() => setViewing(d)}
+                    aria-label={`View ${d.title}`}
+                  >
+                    <Eye className="size-4" /> View
+                  </Button>
                 </span>
               </CardContent>
             </Card>
@@ -631,7 +787,12 @@ function DocumentsTab({ schemeId }: { schemeId: string }) {
         </div>
       )}
       {data && data.documents.length === 0 && (
-        <p className="text-sm text-muted-foreground">No documents yet.</p>
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          No documents yet.
+        </p>
+      )}
+      {viewing && (
+        <DocumentViewerDialog schemeId={schemeId} doc={viewing} onClose={() => setViewing(null)} />
       )}
     </div>
   );

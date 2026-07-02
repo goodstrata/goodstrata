@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { dollars } from "@/lib/format";
+import { useIsOfficer } from "@/lib/roles";
 
 interface Request {
   id: string;
@@ -47,6 +48,7 @@ interface Contractor {
 
 export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
+  const isOfficer = useIsOfficer(schemeId);
   const invalidate = () => {
     for (const key of ["maintenance", "work-orders", "contractors", "decisions"]) {
       void queryClient.invalidateQueries({ queryKey: [key, schemeId] });
@@ -56,8 +58,8 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   return (
     <div className="space-y-6">
       <RequestList schemeId={schemeId} onChange={invalidate} />
-      <WorkOrderList schemeId={schemeId} onChange={invalidate} />
-      <ContractorSection schemeId={schemeId} onChange={invalidate} />
+      <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
+      {isOfficer && <ContractorSection schemeId={schemeId} onChange={invalidate} />}
     </div>
   );
 }
@@ -192,7 +194,15 @@ function RequestList({ schemeId, onChange }: { schemeId: string; onChange: () =>
   );
 }
 
-function WorkOrderList({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
+function WorkOrderList({
+  schemeId,
+  isOfficer,
+  onChange,
+}: {
+  schemeId: string;
+  isOfficer: boolean;
+  onChange: () => void;
+}) {
   const { data } = useQuery({
     queryKey: ["work-orders", schemeId],
     queryFn: async () =>
@@ -233,11 +243,17 @@ function WorkOrderList({ schemeId, onChange }: { schemeId: string; onChange: () 
               </div>
               <div className="flex items-center gap-2">
                 <StatusBadge status={wo.status} />
-                {["dispatched", "accepted", "scheduled", "in_progress"].includes(wo.status) && (
-                  <Button variant="outline" size="sm" onClick={() => complete.mutate(wo.id)}>
-                    Mark completed
-                  </Button>
-                )}
+                {isOfficer &&
+                  ["dispatched", "accepted", "scheduled", "in_progress"].includes(wo.status) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => complete.mutate(wo.id)}
+                      disabled={complete.isPending}
+                    >
+                      Mark completed
+                    </Button>
+                  )}
               </div>
             </CardContent>
           </Card>

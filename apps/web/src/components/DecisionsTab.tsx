@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, unwrap } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { canDecide, useSchemeRoles } from "@/lib/roles";
 
 interface Decision {
   id: string;
@@ -45,6 +46,7 @@ async function fetchVotes(schemeId: string, decisionId: string): Promise<VoteTal
 
 export function DecisionsTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
+  const roles = useSchemeRoles(schemeId);
   const { data } = useQuery({
     queryKey: ["decisions", schemeId],
     queryFn: async () =>
@@ -61,11 +63,14 @@ export function DecisionsTab({ schemeId }: { schemeId: string }) {
 
   const pending = data.decisions.filter((d) => d.status === "pending");
   const resolved = data.decisions.filter((d) => d.status !== "pending");
+  const actionable = pending.some((d) => canDecide(roles, d.deciderRole));
 
   return (
     <div className="max-w-3xl space-y-8">
       <section>
-        <h3 className="text-base font-semibold">Waiting on you</h3>
+        <h3 className="text-base font-semibold">
+          {actionable || pending.length === 0 ? "Waiting on you" : "Pending decisions"}
+        </h3>
         {pending.length === 0 && (
           <p className="mt-3 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
             Nothing to decide — the agents have it covered.
@@ -111,6 +116,8 @@ function PendingDecisionCard({
   decision: Decision;
   onChange: () => void;
 }) {
+  const roles = useSchemeRoles(schemeId);
+  const mayDecide = canDecide(roles, decision.deciderRole);
   const isCommitteeTier = decision.deciderRole.includes("committee");
 
   return (
@@ -133,7 +140,12 @@ function PendingDecisionCard({
         <div className="rounded-lg border border-amber-100 bg-card p-4">
           <Markdown>{decision.summaryMd}</Markdown>
         </div>
-        {isCommitteeTier ? (
+        {!mayDecide ? (
+          <p className="text-sm text-muted-foreground">
+            This decision is with the {decision.deciderRole.replace(/_/g, " ")} — you'll see the
+            outcome here.
+          </p>
+        ) : isCommitteeTier ? (
           <CommitteeVotePanel schemeId={schemeId} decision={decision} onChange={onChange} />
         ) : (
           <ResolveButtons schemeId={schemeId} decision={decision} onChange={onChange} />
