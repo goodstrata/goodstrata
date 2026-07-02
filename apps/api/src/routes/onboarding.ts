@@ -127,6 +127,29 @@ export function documentsRoutes(deps: AppDeps) {
         return c.json({ documents: docs });
       },
     )
+    .get("/:schemeId/documents/:documentId/content", requireSchemeMember(deps), async (c) => {
+      const ctx = deps.serviceContext(userActor(c.get("user").id));
+      const docs = await documentsService.listDocuments(ctx, c.get("schemeId"));
+      const doc = docs.find((d) => d.id === c.req.param("documentId"));
+      if (!doc) {
+        return c.json({ error: { code: "NOT_FOUND", message: "Document not found" } }, 404);
+      }
+      // s146 access levels: committee/admin docs need an officer-tier role.
+      if (doc.accessLevel !== "owners") {
+        const roles = c.get("roles");
+        const officer = roles.some((r) =>
+          ["chair", "secretary", "treasurer", "committee_member", "manager_admin"].includes(r),
+        );
+        if (!officer) {
+          return c.json({ error: { code: "FORBIDDEN", message: "Committee access only" } }, 403);
+        }
+      }
+      const content = await deps.integrations.storage.get(doc.storageKey);
+      return c.body(content.buffer as ArrayBuffer, 200, {
+        "content-type": doc.mime,
+        "content-disposition": `inline; filename="${doc.title.replace(/[^\w.\- ]/g, "_")}"`,
+      });
+    })
     .post("/:schemeId/documents", requireSchemeMember(deps), officerOrAdmin, async (c) => {
       const body = await c.req.parseBody();
       const file = body.file;
