@@ -168,6 +168,88 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
 }
 
 // ---------------------------------------------------------------------------
+// Video meetings (Daily.co in production; console provider offline)
+// ---------------------------------------------------------------------------
+
+const VIDEO_ROOM_EXPIRES_MINUTES = 4 * 60;
+
+/** Deterministic room name so join can re-derive it without extra state. */
+export function videoRoomName(meetingId: string): string {
+  return `gs-${meetingId.slice(0, 8)}`;
+}
+
+/**
+ * Create the video room for a committee meeting or AGM. Idempotent: if a room
+ * already exists, its URL is returned unchanged.
+ */
+export async function startVideoMeeting(ctx: ServiceContext, schemeId: string, meetingId: string) {
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting) throw notFound("Meeting");
+  if (meeting.kind !== "committee" && meeting.kind !== "agm") {
+    throw new DomainError(
+      "VIDEO_UNSUPPORTED",
+      "Video rooms are only available for committee meetings and AGMs",
+      422,
+    );
+  }
+  if (meeting.status === "closed" || meeting.status === "minutes_distributed") {
+    throw new DomainError("ALREADY_CLOSED", "Meeting is already closed", 409);
+  }
+  if (meeting.videoUrl) return { url: meeting.videoUrl };
+
+  const room = await ctx.integrations.video.createRoom({
+    name: videoRoomName(meetingId),
+    expiresMinutes: VIDEO_ROOM_EXPIRES_MINUTES,
+  });
+
+  await ctx.db.transaction(async (tx) => {
+    await tx
+      .update(meetings)
+      .set({
+        videoUrl: room.url,
+        ...(meeting.status === "notice_sent" ? { status: "in_progress" as const } : {}),
+      })
+      .where(eq(meetings.id, meetingId));
+    await publishEvent(tx, {
+      schemeId,
+      stream: `meeting:${meetingId}`,
+      type: "meeting.video.started",
+      payload: { meetingId, url: room.url },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+  });
+
+  return { url: room.url };
+}
+
+/** Mint a join token for the meeting's video room. */
+export async function joinVideoMeeting(
+  ctx: ServiceContext,
+  schemeId: string,
+  meetingId: string,
+  userName: string,
+  isOwner = false,
+) {
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting) throw notFound("Meeting");
+  if (!meeting.videoUrl) {
+    throw new DomainError("VIDEO_NOT_STARTED", "Video has not been started for this meeting", 409);
+  }
+
+  const { token } = await ctx.integrations.video.createMeetingToken({
+    roomName: videoRoomName(meetingId),
+    userName,
+    isOwner,
+  });
+  return { url: meeting.videoUrl, token };
+}
+
+// ---------------------------------------------------------------------------
 // Motions + voting (s 89 enforced at cast time)
 // ---------------------------------------------------------------------------
 

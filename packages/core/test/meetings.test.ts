@@ -306,3 +306,73 @@ describe("AGM lifecycle", () => {
     expect(events).toHaveLength(1);
   });
 });
+
+describe("video meetings", () => {
+  let committeeMeetingId: string;
+
+  it("starts a video room for a committee meeting and flips notice_sent → in_progress", async () => {
+    const ctx = ctxAt(NOW);
+    const meeting = await meetingsService.createMeeting(ctx, schemeId, {
+      kind: "committee",
+      title: "July committee catch-up",
+      scheduledAt: "2026-07-03T09:00:00Z",
+      agenda: [],
+    });
+    committeeMeetingId = meeting.id;
+    await meetingsService.sendMeetingNotice(ctx, schemeId, committeeMeetingId);
+
+    // Joining before the room exists is rejected.
+    await expect(
+      meetingsService.joinVideoMeeting(ctx, schemeId, committeeMeetingId, "Alex Chen"),
+    ).rejects.toThrow(/not been started/i);
+
+    const { url } = await meetingsService.startVideoMeeting(ctx, schemeId, committeeMeetingId);
+    expect(url).toContain(meetingsService.videoRoomName(committeeMeetingId));
+
+    const updated = await tdb.db.query.meetings.findFirst({
+      where: (t, { eq }) => eq(t.id, committeeMeetingId),
+    });
+    expect(updated!.videoUrl).toBe(url);
+    expect(updated!.status).toBe("in_progress");
+
+    const events = await tdb.db.query.eventLog.findMany({
+      where: (t, { eq }) => eq(t.type, "meeting.video.started"),
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.payload).toMatchObject({ meetingId: committeeMeetingId, url });
+
+    // Idempotent: a second start returns the same room without a new event.
+    const again = await meetingsService.startVideoMeeting(ctx, schemeId, committeeMeetingId);
+    expect(again.url).toBe(url);
+    const eventsAfter = await tdb.db.query.eventLog.findMany({
+      where: (t, { eq }) => eq(t.type, "meeting.video.started"),
+    });
+    expect(eventsAfter).toHaveLength(1);
+  });
+
+  it("members join with a room-scoped token", async () => {
+    const ctx = ctxAt(NOW);
+    const { url, token } = await meetingsService.joinVideoMeeting(
+      ctx,
+      schemeId,
+      committeeMeetingId,
+      "Alex Chen",
+    );
+    expect(url).toContain(meetingsService.videoRoomName(committeeMeetingId));
+    expect(token).toContain(meetingsService.videoRoomName(committeeMeetingId));
+    expect(token).toContain("Alex_Chen");
+  });
+
+  it("rejects video for SGMs", async () => {
+    const ctx = ctxAt(NOW);
+    const sgm = await meetingsService.createMeeting(ctx, schemeId, {
+      kind: "sgm",
+      title: "Special general meeting",
+      scheduledAt: "2026-09-01T09:00:00Z",
+      agenda: [],
+    });
+    await expect(meetingsService.startVideoMeeting(ctx, schemeId, sgm.id)).rejects.toThrow(
+      /committee meetings and AGMs/,
+    );
+  });
+});
