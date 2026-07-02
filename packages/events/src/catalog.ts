@@ -1,3 +1,4 @@
+import { CHAIR_NOTE_KINDS } from "@goodstrata/shared";
 import { z } from "zod";
 
 /**
@@ -110,7 +111,12 @@ export const eventDefs = {
     meetingId: z.string(),
     recipients: z.number().int(),
   }),
-  "meeting.closed": z.object({ meetingId: z.string(), quorumMet: z.boolean() }),
+  "meeting.closed": z.object({
+    meetingId: z.string(),
+    quorumMet: z.boolean(),
+    /** Stored transcript document, when the video meeting was transcribed. */
+    transcriptDocumentId: z.string().nullable().optional(),
+  }),
   "motion.opened": z.object({ motionId: z.string(), resolutionType: z.string() }),
   "proxy.submitted": z.object({
     proxyId: z.string(),
@@ -133,6 +139,15 @@ export const eventDefs = {
   }),
   "minutes.drafted": z.object({ meetingId: z.string(), documentId: z.string() }),
   "meeting.video.started": z.object({ meetingId: z.string(), url: z.string() }),
+  /** Synthetic clock tick: the conductor loop publishes one per interval while
+   *  the meeting is in progress; the chair agent runs off it. */
+  "meeting.conduct.tick": z.object({ meetingId: z.string(), tick: z.number().int().min(1) }),
+  /** A note the AI chair posted (also appended to meetings.chair_log). */
+  "meeting.chair.note": z.object({
+    meetingId: z.string(),
+    kind: z.enum(CHAIR_NOTE_KINDS),
+    note: z.string(),
+  }),
 
   // documents / compliance / comms
   "document.uploaded": lax,

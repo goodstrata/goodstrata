@@ -1,4 +1,5 @@
 import {
+  type ChairLogEntry,
   MEETING_KINDS,
   MEETING_STATUSES,
   MOTION_STATUSES,
@@ -46,6 +47,10 @@ export const meetings = pgTable(
     noticeSentAt: timestamp({ withTimezone: true }),
     quorumMet: boolean(),
     minutesDocumentId: uuid().references(() => documents.id),
+    /** Append-only log written by the AI chair while it conducts the meeting. */
+    chairLog: jsonb().$type<ChairLogEntry[]>().notNull().default([]),
+    /** Set when the video provider confirmed transcription started. */
+    transcriptionStarted: boolean().notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
