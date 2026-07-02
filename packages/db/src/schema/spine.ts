@@ -139,6 +139,29 @@ export const decisions = pgTable(
   (t) => [index("decisions_scheme_status_idx").on(t.schemeId, t.status)],
 );
 
+/**
+ * Committee ballots on a decision. For "treasurer"-tier decisions a single
+ * eligible vote resolves immediately; committee/all_owners tiers tally votes
+ * against the count of eligible members (simple majority).
+ */
+export const decisionVotes = pgTable(
+  "decision_votes",
+  {
+    id: pk(),
+    decisionId: uuid()
+      .notNull()
+      .references(() => decisions.id),
+    userId: text()
+      .notNull()
+      .references(() => users.id),
+    /** approve | decline */
+    choice: text().notNull(),
+    note: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("decision_votes_decision_user_idx").on(t.decisionId, t.userId)],
+);
+
 /** Inbound webhook idempotency ledger. */
 export const webhookEvents = pgTable(
   "webhook_events",
