@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { signIn, signUp } from "../lib/auth";
 
@@ -7,7 +7,6 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,7 +27,9 @@ function LoginPage() {
       setError(result.error.message ?? "Something went wrong");
       return;
     }
-    void navigate({ to: "/" });
+    // Full navigation: the session store re-initialises from the cookie, so
+    // the home page can't race a stale null session back to /login.
+    window.location.href = "/";
   }
 
   return (

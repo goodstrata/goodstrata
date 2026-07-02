@@ -17,7 +17,7 @@ interface SchemeRow {
     status: string;
     tier: number;
   };
-  role: string;
+  roles: string[];
 }
 
 function HomePage() {
@@ -69,7 +69,7 @@ function SchemeList() {
             No schemes yet. Create your owners corporation to get started.
           </p>
         )}
-        {data?.schemes.map(({ scheme, role }) => (
+        {data?.schemes.map(({ scheme, roles }) => (
           <Link
             key={scheme.id}
             to="/schemes/$schemeId"
@@ -84,7 +84,9 @@ function SchemeList() {
                 </p>
               </div>
               <div className="text-right text-sm">
-                <span className="rounded-full bg-brand-100 px-2 py-0.5 text-brand-800">{role}</span>
+                <span className="rounded-full bg-brand-100 px-2 py-0.5 text-brand-800">
+                  {roles.join(" · ")}
+                </span>
                 <p className="mt-1 text-gray-400">{scheme.status}</p>
               </div>
             </div>

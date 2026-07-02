@@ -2,9 +2,15 @@ import type { Subscription } from "@goodstrata/events";
 import { echoAgent } from "./agents/echo.js";
 import { financeAgent } from "./agents/finance.js";
 import { maintenanceAgent } from "./agents/maintenance.js";
+import { meetingsAgent } from "./agents/meetings.js";
 import type { AgentDefinition } from "./types.js";
 
-export const allAgents: AgentDefinition[] = [echoAgent, financeAgent, maintenanceAgent];
+export const allAgents: AgentDefinition[] = [
+  echoAgent,
+  financeAgent,
+  maintenanceAgent,
+  meetingsAgent,
+];
 
 export function agentQueue(name: string): string {
   return `agent.run.${name}`;

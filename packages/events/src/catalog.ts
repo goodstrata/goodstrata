@@ -100,12 +100,38 @@ export const eventDefs = {
   "work_order.completed": z.object({ workOrderId: z.string() }),
 
   // meetings / governance
-  "meeting.scheduled": lax,
-  "meeting.notice.issued": lax,
-  "proxy.submitted": lax,
-  "vote.cast": lax,
-  "motion.resolved": lax,
-  "minutes.drafted": lax,
+  "meeting.scheduled": z.object({
+    meetingId: z.string(),
+    kind: z.string(),
+    title: z.string(),
+    scheduledAt: z.string(),
+  }),
+  "meeting.notice.issued": z.object({
+    meetingId: z.string(),
+    recipients: z.number().int(),
+  }),
+  "meeting.closed": z.object({ meetingId: z.string(), quorumMet: z.boolean() }),
+  "motion.opened": z.object({ motionId: z.string(), resolutionType: z.string() }),
+  "proxy.submitted": z.object({
+    proxyId: z.string(),
+    lotId: z.string(),
+    proxyPersonId: z.string(),
+  }),
+  "vote.cast": z.object({
+    motionId: z.string(),
+    lotId: z.string(),
+    choice: z.string(),
+    entitlementWeight: z.number().int(),
+    viaProxy: z.boolean(),
+  }),
+  "motion.resolved": z.object({
+    motionId: z.string(),
+    carried: z.boolean(),
+    forWeight: z.number().int(),
+    againstWeight: z.number().int(),
+    abstainWeight: z.number().int(),
+  }),
+  "minutes.drafted": z.object({ meetingId: z.string(), documentId: z.string() }),
 
   // documents / compliance / comms
   "document.uploaded": lax,

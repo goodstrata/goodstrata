@@ -97,7 +97,15 @@ export async function listSchemesForUser(ctx: ServiceContext, userId: string) {
     .from(memberships)
     .innerJoin(schemes, eq(memberships.schemeId, schemes.id))
     .where(and(eq(memberships.userId, userId), isNull(memberships.endedOn)));
-  return rows;
+
+  // One card per scheme, however many roles the user holds in it.
+  const byScheme = new Map<string, { scheme: (typeof rows)[number]["scheme"]; roles: string[] }>();
+  for (const row of rows) {
+    const entry = byScheme.get(row.scheme.id);
+    if (entry) entry.roles.push(row.role);
+    else byScheme.set(row.scheme.id, { scheme: row.scheme, roles: [row.role] });
+  }
+  return [...byScheme.values()];
 }
 
 /** Active membership roles for a user in a scheme (drives authorization). */

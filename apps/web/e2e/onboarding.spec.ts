@@ -13,6 +13,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   page,
   browser,
 }) => {
+  test.setTimeout(120_000);
   // --- Manager signs up and creates the scheme ---
   await page.goto("/login");
   await page.getByText("New here? Create an account").click();
@@ -170,4 +171,52 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await expect(
     page.getByTestId("event-feed").getByText("maintenance.request.created"),
   ).toBeVisible();
+
+  // ======================= AGM =======================
+
+  const agmDate = new Date(Date.now() + 30 * 86_400_000);
+  const agmLocal = `${agmDate.toISOString().slice(0, 10)}T18:00`;
+
+  await page.getByRole("button", { name: "meetings" }).click();
+  await page.getByTestId("meeting-title").fill("2026 Annual General Meeting");
+  await page.getByTestId("meeting-when").fill(agmLocal);
+  await page.getByTestId("meeting-agenda").fill("Financial statements\nCommittee election");
+  await page.getByRole("button", { name: "Schedule meeting" }).click();
+  await page.getByRole("button", { name: /2026 Annual General Meeting/ }).click();
+
+  await page.getByRole("button", { name: "Send notice" }).click();
+  await expect(page.getByText("notice sent")).toBeVisible();
+
+  await page.getByTestId("motion-title").fill("Repaint the stairwell");
+  await page.getByTestId("motion-text").fill("That the OC engages a painter for the stairwell.");
+  await page.getByRole("button", { name: "Add motion", exact: true }).click();
+  const motionCard = page.getByTestId("motion-Repaint the stairwell");
+  await expect(motionCard).toBeVisible();
+  await motionCard.getByRole("button", { name: "Open voting" }).click();
+  await expect(motionCard.getByText("open", { exact: true })).toBeVisible();
+
+  // --- Alex (owner of lot 2) votes from their own session ---
+  const voterContext = await browser.newContext();
+  const voterPage = await voterContext.newPage();
+  await voterPage.goto("/login");
+  await voterPage.getByPlaceholder("Email").fill("alex@example.com");
+  await voterPage.getByPlaceholder("Password").fill("owner-pass-123");
+  await voterPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(voterPage.getByRole("heading", { name: "Your schemes" })).toBeVisible({
+    timeout: 15_000,
+  });
+  await voterPage.getByRole("link", { name: /48 Rose St Owners Corporation/ }).click();
+  await voterPage.getByRole("button", { name: "meetings" }).click();
+  await voterPage.getByRole("button", { name: /2026 Annual General Meeting/ }).click();
+  await voterPage.getByRole("button", { name: "I'm attending" }).click();
+  const voterMotion = voterPage.getByTestId("motion-Repaint the stairwell");
+  await voterMotion.getByTestId("vote-lot").selectOption({ label: "Lot 2" });
+  await voterMotion.getByRole("button", { name: "for", exact: true }).click();
+  await expect(voterPage.getByTestId("quorum")).toContainText("entitlements represented");
+  await voterContext.close();
+
+  // --- Manager closes and tallies: 10 for, carried ---
+  await motionCard.getByRole("button", { name: "Close & tally" }).click();
+  await expect(motionCard.getByText("carried")).toBeVisible();
+  await expect(motionCard.getByText(/For 10/)).toBeVisible();
 });

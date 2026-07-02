@@ -21,6 +21,13 @@ export {
   createRequestInput,
   triageInput,
 } from "./services/maintenance.js";
+export * as meetingsService from "./services/meetings.js";
+export {
+  addMotionInput,
+  castVoteInput,
+  createMeetingInput,
+  submitProxyInput,
+} from "./services/meetings.js";
 export * as onboardingService from "./services/onboarding.js";
 export * as paymentsService from "./services/payments.js";
 export * as peopleService from "./services/people.js";
