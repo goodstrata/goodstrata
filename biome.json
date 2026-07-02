@@ -13,7 +13,9 @@
       "!**/routeTree.gen.ts",
       "!**/*.gen.ts",
       "!**/*.css",
-      "!apps/web/public"
+      "!apps/web/public",
+      "!docs/blog/sim-artifacts",
+      "!site"
     ]
   },
   "formatter": {
