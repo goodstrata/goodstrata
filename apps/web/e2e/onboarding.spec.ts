@@ -104,4 +104,49 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await expect(feed.getByText("scheme.activated")).toBeVisible();
   await expect(feed.getByText("lots.imported")).toBeVisible();
   await expect(feed.getByText("agent.run.completed")).toBeVisible();
+
+  // ======================= The money loop =======================
+
+  // --- Draft a budget (opens the treasurer decision gate) ---
+  await page.getByRole("button", { name: "finance" }).click();
+  await page.getByTestId("budget-fy").fill("2026-07-01");
+  await page.getByTestId("budget-admin").fill("48000");
+  await page.getByTestId("budget-maintenance").fill("12000");
+  await page.getByRole("button", { name: "Draft budget" }).click();
+  await expect(page.getByText("committee review")).toBeVisible();
+
+  // --- Approve it in the decisions inbox ---
+  await page.getByRole("button", { name: "decisions" }).click();
+  const budgetDecision = page.getByTestId("decision-budget_adoption");
+  await expect(budgetDecision).toBeVisible();
+  await budgetDecision.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByText("Nothing to decide")).toBeVisible();
+
+  // --- The code executor adopts the budget asynchronously ---
+  await expect(async () => {
+    await page.reload();
+    await page.getByRole("button", { name: "finance" }).click();
+    await expect(page.getByText("adopted", { exact: true })).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 20_000 });
+
+  // --- Create the quarterly schedule and issue instalment 1 ---
+  await page.getByTestId("schedule-budget").selectOption({ index: 1 });
+  await page.getByTestId("schedule-first-due").fill("2026-10-01");
+  await page.getByRole("button", { name: "Create quarterly schedule" }).click();
+  await expect(page.getByText(/quarterly × 4/)).toBeVisible();
+  await page.getByRole("button", { name: "Issue notices" }).click();
+  await expect(page.getByText(/LN-2026-01-1/)).toBeVisible();
+
+  // Three notices issued, each with a Simulate payment button.
+  await expect(page.getByRole("button", { name: "Simulate payment" })).toHaveCount(3);
+
+  // --- Pay the first notice via the signed mock webhook ---
+  await page.getByRole("button", { name: "Simulate payment" }).first().click();
+  await expect(page.getByText("paid", { exact: true })).toBeVisible();
+
+  // --- Owners' emails: levy notices + a receipt went out ---
+  const finalOutbox = await (await fetch(`${API}/dev/outbox`)).json();
+  const subjects = finalOutbox.emails.map((e: { subject: string }) => e.subject);
+  expect(subjects.filter((s: string) => s.startsWith("Levy notice"))).toHaveLength(3);
+  expect(subjects.some((s: string) => s.startsWith("Receipt"))).toBeTruthy();
 });

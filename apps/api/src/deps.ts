@@ -1,5 +1,5 @@
 import { createModelResolver, type ModelResolver } from "@goodstrata/agents";
-import type { ServiceContext } from "@goodstrata/core";
+import type { Causation, ServiceContext } from "@goodstrata/core";
 import type { Database } from "@goodstrata/db";
 import { type Integrations, integrationsFromEnv } from "@goodstrata/integrations";
 import { type Actor, type Clock, systemClock } from "@goodstrata/shared";
@@ -14,7 +14,7 @@ export interface AppDeps {
   integrations: Integrations;
   clock: Clock;
   resolveModel: ModelResolver;
-  serviceContext(actor: Actor): ServiceContext;
+  serviceContext(actor: Actor, causation?: Causation): ServiceContext;
 }
 
 export function buildServiceContextFactory(
@@ -22,7 +22,13 @@ export function buildServiceContextFactory(
   integrations: Integrations,
   clock: Clock = systemClock,
 ) {
-  return (actor: Actor): ServiceContext => ({ db, clock, integrations, actor });
+  return (actor: Actor, causation?: Causation): ServiceContext => ({
+    db,
+    clock,
+    integrations,
+    actor,
+    causation,
+  });
 }
 
 export async function buildModelResolver(env: Env): Promise<ModelResolver> {

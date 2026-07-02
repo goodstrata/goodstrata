@@ -1,13 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { DecisionsTab } from "../components/DecisionsTab";
+import { FinanceTab } from "../components/FinanceTab";
 import { api, unwrap } from "../lib/api";
 
 export const Route = createFileRoute("/schemes/$schemeId")({
   component: SchemePage,
 });
 
-const TABS = ["overview", "lots", "people", "committee", "documents", "activity"] as const;
+const TABS = [
+  "overview",
+  "finance",
+  "decisions",
+  "lots",
+  "people",
+  "committee",
+  "documents",
+  "activity",
+] as const;
 type Tab = (typeof TABS)[number];
 
 function SchemePage() {
@@ -62,6 +73,8 @@ function SchemePage() {
 
       <div className="pt-4">
         {tab === "overview" && <OverviewTab schemeId={schemeId} />}
+        {tab === "finance" && <FinanceTab schemeId={schemeId} />}
+        {tab === "decisions" && <DecisionsTab schemeId={schemeId} />}
         {tab === "lots" && <LotsTab schemeId={schemeId} />}
         {tab === "people" && <PeopleTab schemeId={schemeId} />}
         {tab === "committee" && <CommitteeTab schemeId={schemeId} />}

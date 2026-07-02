@@ -6,6 +6,7 @@ import type { AppDeps } from "./deps.js";
 import { type AppEnv, requireAuth } from "./middleware.js";
 import { devRoutes } from "./routes/dev.js";
 import { eventsRoutes } from "./routes/events.js";
+import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
 import {
   activationRoutes,
   committeeRoutes,
@@ -17,6 +18,7 @@ import {
 } from "./routes/onboarding.js";
 import { schemesRoutes } from "./routes/schemes.js";
 import { type SseHub, sseRoutes } from "./sse.js";
+import { paymentWebhookRoutes } from "./webhooks.js";
 
 export function createApp(deps: AppDeps, hub: SseHub) {
   // Authenticated, typed API surface — AppType is consumed by the web client.
@@ -30,6 +32,8 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", committeeRoutes(deps))
     .route("/schemes", documentsRoutes(deps))
     .route("/schemes", activationRoutes(deps))
+    .route("/schemes", financeRoutes(deps))
+    .route("/schemes", decisionsRoutes(deps))
     .route("/invites", invitesRoutes(deps));
 
   const app = new Hono()
@@ -37,11 +41,12 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .get("/api/health", (c) => c.json({ ok: true }))
     .on(["POST", "GET"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw))
     .route("/api/invites", publicInviteRoutes(deps))
+    .route("/webhooks", paymentWebhookRoutes(deps))
     .route("/api", api);
 
-  // Test/dev-only introspection; the memory provider only exists off-prod.
-  if (deps.integrations.email.name === "memory") {
-    app.route("/dev", devRoutes(deps));
+  // Dev/test-only introspection and simulators — never in production.
+  if (deps.env.NODE_ENV !== "production") {
+    app.route("/dev", devRoutes(deps, `http://localhost:${deps.env.PORT}`));
   }
 
   app.onError((err, c) => {

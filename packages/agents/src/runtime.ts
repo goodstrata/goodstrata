@@ -1,7 +1,7 @@
-import type { ServiceContext } from "@goodstrata/core";
+import type { Causation, ServiceContext } from "@goodstrata/core";
 import { agentRuns } from "@goodstrata/db";
 import { type EventRecord, MAX_CAUSATION_DEPTH, publishEvent } from "@goodstrata/events";
-import { agentActor, systemActor } from "@goodstrata/shared";
+import { type Actor, agentActor, systemActor } from "@goodstrata/shared";
 import { generateText, stepCountIs } from "ai";
 import { and, eq } from "drizzle-orm";
 import type { ModelResolver } from "./models.js";
@@ -12,8 +12,12 @@ export const MAX_RUNS_PER_CORRELATION = 25;
 
 export interface RuntimeDeps {
   resolveModel: ModelResolver;
-  /** Builds a ServiceContext with the given actor (db, clock, integrations). */
-  serviceContext(actor: Parameters<typeof publishEvent>[1]["actor"]): ServiceContext;
+  /**
+   * Builds a ServiceContext with the given actor (db, clock, integrations).
+   * When `causation` is provided, every event a service publishes on the
+   * agent's behalf is linked to the triggering event automatically.
+   */
+  serviceContext(actor: Actor, causation?: Causation): ServiceContext;
 }
 
 export type AgentRunOutcome =
@@ -100,7 +104,11 @@ export async function runAgent(
     agent: def.name,
     schemeId: event.schemeId,
     triggerEvent: event,
-    services: deps.serviceContext(agentActor(def.name, runId)),
+    services: deps.serviceContext(agentActor(def.name, runId), {
+      correlationId: event.correlationId,
+      causationId: event.id,
+      causationDepth: event.causationDepth + 1,
+    }),
     eventsPublished: 0,
     awaitingDecision: false,
     toolCallSeq: 0,

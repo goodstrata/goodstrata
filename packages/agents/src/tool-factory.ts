@@ -5,9 +5,13 @@ import type { z } from "zod";
 import type { AgentRunCtx } from "./types.js";
 
 /**
- * Publish an event on behalf of an agent run: actor, causation chain, and an
- * idempotency dedupe key are stamped automatically so pg-boss retries can
- * replay a half-finished run without double-effects.
+ * Publish an event directly on behalf of an agent run (for tools that don't
+ * go through a service). Actor, causal linkage, and an idempotency dedupe key
+ * are stamped automatically so pg-boss retries can't double-publish.
+ *
+ * Most tools should instead call `@goodstrata/core` services — those publish
+ * their own events inside their transactions, and the runtime's ServiceContext
+ * already carries the agent actor + causation.
  */
 export async function agentPublish(
   ctx: AgentRunCtx,
@@ -32,16 +36,18 @@ export async function agentPublish(
 export interface AgentToolSpec<Schema extends z.ZodType> {
   description: string;
   inputSchema: Schema;
-  /** Mutating tools MUST publish at least one event — enforced below. */
+  /**
+   * Documentation flag: mutating tools must record what they did on the event
+   * log — either via a core service (which publishes in-transaction) or via
+   * agentPublish.
+   */
   mutates: boolean;
   execute(input: z.infer<Schema>, ctx: AgentRunCtx): Promise<unknown>;
 }
 
 /**
- * Wrap a tool so the runtime's invariants hold:
- * - mutating tools must record what they did on the event log;
- * - tool errors are returned to the model as structured failures (the run
- *   continues; the model can adapt or give up).
+ * Wrap a tool so errors are returned to the model as structured failures —
+ * the run continues and the model can adapt or give up gracefully.
  */
 export function defineAgentTool<Schema extends z.ZodType>(
   ctx: AgentRunCtx,
@@ -51,12 +57,8 @@ export function defineAgentTool<Schema extends z.ZodType>(
     description: spec.description,
     inputSchema: spec.inputSchema,
     execute: async (input: z.infer<Schema>) => {
-      const before = ctx.eventsPublished;
       try {
         const result = await spec.execute(input, ctx);
-        if (spec.mutates && ctx.eventsPublished === before) {
-          throw new Error("invariant: mutating agent tool completed without publishing an event");
-        }
         return result ?? { ok: true };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };

@@ -146,7 +146,13 @@ describe("EventDispatcher", () => {
     await publishEvent(tdb.db, {
       stream: "m:1",
       type: "message.sent",
-      payload: {},
+      payload: {
+        messageId: "m1",
+        channel: "email",
+        to: "x@example.com",
+        subject: null,
+        template: null,
+      },
       actor: systemActor("test"),
       causationDepth: 99,
     });

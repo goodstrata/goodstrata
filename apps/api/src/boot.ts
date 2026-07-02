@@ -4,9 +4,21 @@ import {
   type RuntimeDeps,
   registerAgentWorkers,
 } from "@goodstrata/agents";
-import { EventDispatcher } from "@goodstrata/events";
+import { arrearsService, decisionsService } from "@goodstrata/core";
+import { schemes } from "@goodstrata/db";
+import {
+  type DispatchJobData,
+  EventDispatcher,
+  loadEvent,
+  type Subscription,
+} from "@goodstrata/events";
+import { systemActor } from "@goodstrata/shared";
+import { eq } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
 import type { AppDeps } from "./deps.js";
+
+const DECISION_EXECUTE_QUEUE = "decision.execute";
+const CRON_ARREARS = "cron.arrears.daily";
 
 export interface BackgroundServices {
   boss: PgBoss;
@@ -15,20 +27,27 @@ export interface BackgroundServices {
 }
 
 /**
- * Start the background machinery: pg-boss, the event dispatcher, and one
- * worker per agent. Runs in-process with the API by default (self-host floor:
- * one Node process); a split deployment can call this from a separate entry.
+ * Start the background machinery: pg-boss, the event dispatcher, one worker
+ * per agent, the decision follow-up executor, and cron. Runs in-process with
+ * the API by default (self-host floor: one Node process).
  */
 export async function startBackground(deps: AppDeps): Promise<BackgroundServices> {
   const boss = new PgBoss({ connectionString: deps.env.DATABASE_URL });
   boss.on("error", (err) => console.error("[pg-boss]", err));
   await boss.start();
 
+  // The executor consumes decision.resolved like any other event consumer.
+  const executorSubscription: Subscription = {
+    name: "decision.execute",
+    queue: DECISION_EXECUTE_QUEUE,
+    types: ["decision.resolved"],
+  };
+
   const dispatcher = new EventDispatcher({
     db: deps.db,
     boss,
     connectionString: deps.env.DATABASE_URL,
-    subscriptions: agentSubscriptions(allAgents),
+    subscriptions: [...agentSubscriptions(allAgents), executorSubscription],
   });
   await dispatcher.start();
 
@@ -39,6 +58,41 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
   await registerAgentWorkers(boss, deps.db, runtimeDeps, allAgents, (agent, outcome) => {
     if (outcome.kind === "ran") {
       console.log(`[agent:${agent}] run ${outcome.runId} → ${outcome.status}`);
+    }
+  });
+
+  // Decision follow-up executor: code runs what the human approved.
+  await boss.work(DECISION_EXECUTE_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      const data = job.data as DispatchJobData;
+      const event = await loadEvent(deps.db, data.eventId);
+      if (!event) continue;
+      const payload = event.payload as { decisionId: string };
+      const ctx = deps.serviceContext(systemActor("decision-executor"), {
+        correlationId: event.correlationId,
+        causationId: event.id,
+        causationDepth: event.causationDepth + 1,
+      });
+      const result = await decisionsService.executeDecisionFollowUp(ctx, payload.decisionId);
+      if (result.executed) {
+        console.log(`[decisions] executed ${result.executed} for ${payload.decisionId}`);
+      }
+    }
+  });
+
+  // Cron: pure code sweeps that evaluate state and emit events. Never an LLM.
+  await boss.createQueue(CRON_ARREARS).catch(() => {});
+  await boss.schedule(CRON_ARREARS, "0 7 * * *", null, { tz: "Australia/Melbourne" });
+  await boss.work(CRON_ARREARS, async () => {
+    const ctx = deps.serviceContext(systemActor(CRON_ARREARS));
+    const active = await deps.db.query.schemes.findMany({
+      where: eq(schemes.status, "active"),
+    });
+    for (const scheme of active) {
+      const { emitted } = await arrearsService.scanArrears(ctx, scheme.id);
+      if (emitted.length > 0) {
+        console.log(`[cron:arrears] ${scheme.name}: ${emitted.length} stage event(s)`);
+      }
     }
   });
 

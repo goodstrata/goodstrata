@@ -12,6 +12,14 @@ export default defineConfig({
         target: process.env.API_URL ?? "http://localhost:3000",
         changeOrigin: false,
       },
+      "/dev": {
+        target: process.env.API_URL ?? "http://localhost:3000",
+        changeOrigin: false,
+      },
+      "/webhooks": {
+        target: process.env.API_URL ?? "http://localhost:3000",
+        changeOrigin: false,
+      },
     },
   },
 });

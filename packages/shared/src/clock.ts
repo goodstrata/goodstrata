@@ -34,3 +34,15 @@ export function toDateOnly(date: Date): string {
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 86_400_000);
 }
+
+/** Add calendar months to a date-only string, clamping to month end (UTC). */
+export function addMonthsDateOnly(dateOnly: string, months: number): string {
+  const d = fromDateOnly(dateOnly);
+  const targetMonth = d.getUTCMonth() + months;
+  const result = new Date(Date.UTC(d.getUTCFullYear(), targetMonth, 1));
+  const daysInTarget = new Date(
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  result.setUTCDate(Math.min(d.getUTCDate(), daysInTarget));
+  return toDateOnly(result);
+}
