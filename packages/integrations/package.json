@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./pdf": "./src/pdf/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -13,10 +14,12 @@
   "dependencies": {
     "@aws-sdk/client-s3": "catalog:",
     "@aws-sdk/client-sesv2": "catalog:",
+    "pdfkit": "^0.19.1",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pdfkit": "^0.17.6",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

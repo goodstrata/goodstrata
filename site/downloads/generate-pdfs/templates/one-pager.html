@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="brand.css" />
+  <title>GoodStrata — one-pager</title>
+  <!-- one-pager only: compress to a single A4 page (overrides brand.css) -->
+  <style>
+    html { font-size: 10pt; }
+    .masthead { margin-bottom: 8px; }
+    .hero-split { gap: 24px; }
+    .receipt { padding: 12px 15px; }
+    .receipt .r-big { font-size: 22pt; }
+    .receipt .rl { padding: 3px 0; }
+    .receipt .r-label { margin-top: 8px; }
+    .section { margin-top: 10px; }
+    h2 { font-size: 13.5pt; }
+    .cols { margin-top: 11px; gap: 18px; }
+    .col-item p { font-size: 9pt; }
+    .proof-panel { margin-top: 11px; padding: 12px 18px; }
+    .proof-panel .lede { font-size: 9.5pt; }
+    .proof-panel .stats { margin-top: 11px; }
+    .stat b { font-size: 17pt; }
+    .cta-strip { margin-top: 9px; padding: 11px 15px; }
+    .badge { font-size: 7pt; }
+  </style>
+</head>
+<body>
+
+  <header class="masthead">
+    <span class="logo">{{LOGO}}</span>
+    <span class="site-url">goodstrata.com.au</span>
+  </header>
+
+  <div class="hero-split">
+    <div class="hero-copy">
+      <h1 class="compact">Free strata management that <em>shows its working</em>.</h1>
+      <p class="sub">
+        AI agents run the day-to-day — levies, arrears, repairs, meetings — while you and your
+        committee just approve, vote, or step in. The AI never touches the money: levies are summed
+        by plain, tested code, and every action lands on a record no one can edit or delete.
+      </p>
+    </div>
+
+    <aside class="receipt" aria-label="What a typical building pays, before and after">
+      <span class="badge">Typical 12-lot building · per year</span>
+      <div class="r-label">Your strata manager charges</div>
+      <div class="r-big struck">$8,400<span class="yr"> /yr</span></div>
+      <div class="r-lines">
+        <div class="rl"><span>Base management fee</span><span>$6,600</span></div>
+        <div class="rl"><span>Disbursements &amp; sundries</span><span>$1,320</span></div>
+        <div class="rl"><span>Meeting &amp; AGM fees</span><span>$480</span></div>
+        <div class="rl comm"><span>Insurance commission</span><span>undisclosed</span></div>
+      </div>
+      <div class="r-label">With GoodStrata</div>
+      <div class="r-big zero">$0<span class="yr"> /yr</span></div>
+    </aside>
+  </div>
+
+  <div class="section">
+    <h2>Agents execute, you decide — and it&rsquo;s all on the record.</h2>
+    <div class="cols">
+      <div class="col-item">
+        <div class="rule"><span></span><span></span><span></span></div>
+        <h3>Agents execute</h3>
+        <p>Levies, payment matching, arrears, repair triage, contractor dispatch and meeting
+          notices run themselves — with a full transcript of every step.</p>
+      </div>
+      <div class="col-item">
+        <div class="rule"><span></span><span></span><span></span></div>
+        <h3>Humans decide</h3>
+        <p>Anything that spends money, commits the building, or bends a rule stops at the decisions
+          inbox — evidence attached — and waits for a person to tap approve.</p>
+      </div>
+      <div class="col-item">
+        <div class="rule"><span></span><span></span><span></span></div>
+        <h3>The money is code</h3>
+        <p>Apportionment, penalty interest, reconciliation and vote weighting are deterministic,
+          tested code. Swap every AI for a random number generator and your levies still sum to
+          the budget.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="proof-panel avoid-break">
+    <h2>We ran a whole building on one laptop, with a local model.</h2>
+    <p class="lede">A seeded 12-lot walk-up, a full month of management: arrears chased to
+      the cent, a roof leak triaged and dispatched under a code-enforced threshold, minutes drafted
+      without inventing a word, and exactly one committee approval.</p>
+    <div class="stats">
+      <div class="stat"><b>110</b><span>audited events on the append-only log</span></div>
+      <div class="stat"><b>1</b><span>human decision across the month</span></div>
+      <div class="stat"><b>$0.00</b><span>money computed by an LLM</span></div>
+      <div class="stat"><b>~21k</b><span>local-model tokens, no cloud AI</span></div>
+    </div>
+  </div>
+
+  <div class="section avoid-break">
+    <h2>Free for your strata. We earn only on payments that move.</h2>
+    <div class="split" style="margin-top:14px;">
+      <div class="col">
+        <h3><span class="tag earn">Earn</span> How we make money</h3>
+        <ul class="checklist">
+          <li>A small, <strong>published margin</strong> on levies in and contractor payments out.</li>
+          <li>An optional <strong>paid managed service</strong> for owners corporations who&rsquo;d rather not self-host.</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3><span class="tag refuse">Refuse</span> What we never take</h3>
+        <ul class="never">
+          <li><strong>No insurance commissions.</strong> At renewal the committee chooses; our revenue doesn&rsquo;t change.</li>
+          <li><strong>No contractor kickbacks, no invoice markups.</strong> The contractor&rsquo;s price is your price.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="cta-strip avoid-break">
+    <div class="qr">{{QR}}</div>
+    <div class="cta-copy">
+      <h3>See what your building really pays — free.</h3>
+      <p>Drop in your AGM papers or budget and read the fee in plain dollars. Then click through
+        the live demo — it resets itself, so you can&rsquo;t break it.</p>
+      <p class="url">goodstrata.com.au/what-am-i-paying</p>
+    </div>
+  </div>
+</body>
+</html>

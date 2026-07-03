@@ -50,7 +50,7 @@ function RegistryPlate({
           <p className={cn("eyebrow text-muted-foreground", compact && "text-[10px]")}>{eyebrow}</p>
           <Name
             className={cn(
-              "mt-0.5 truncate font-display font-medium tracking-tight",
+              "mt-0.5 truncate font-display font-bold tracking-tight",
               compact ? "text-lg" : "text-2xl md:text-3xl",
             )}
           >

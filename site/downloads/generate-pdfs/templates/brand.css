@@ -1,0 +1,329 @@
+/* =====================================================================
+   GoodStrata marketing PDFs — "The Registry" print system.
+   Mirrors site/style.css: eucalypt on ink/paper, Public Sans BOLD sans
+   headings (never serif), IBM Plex Mono for figures. Self-hosted fonts.
+   Colours are the site's oklch tokens converted to sRGB hex for print.
+   ===================================================================== */
+
+/* Fonts (@font-face) are injected as base64 data URIs by generate.js so the
+   built page is fully self-contained — see FONT_FILES in generate.js. */
+
+:root {
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  --paper: #faf9f7;
+  --card: #ffffff;
+  --ink: #0f172a;          /* matches the wordmark's slate ink */
+  --muted-ink: #4a5360;
+  --faint-ink: #6b727c;
+  --line: #dce0e5;
+  --primary: #095b41;      /* eucalypt */
+  --primary-strong: #004730;
+  --on-primary: #faf9f7;
+  --accent: #e9f8f0;
+  --accent-ink: #03432f;
+  --critical: #c52c2a;     /* oxide — the "we refuse this" tone */
+
+  /* deep eucalypt band — the "by the numbers" signature */
+  --band-bg: #0e3627;
+  --band-ink: #ecf6f1;
+  --band-muted: #b6cec2;
+  --band-fig: #85ecc1;
+  --band-line: #2f5c49;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 10.5pt; }
+
+body {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* keep background fills crisp in Chromium print */
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+a { color: var(--primary); text-decoration: none; }
+
+em { font-style: normal; color: var(--primary); }
+
+/* ---- masthead / cover ---------------------------------------------- */
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+.masthead .logo { height: 26px; display: block; }
+.masthead .logo svg { height: 26px; width: auto; display: block; }
+.masthead .site-url {
+  font-family: var(--font-mono);
+  font-size: 8.5pt;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted-ink);
+}
+
+/* three stacked floor plates — the strata motif signature */
+.motif { display: inline-flex; flex-direction: column; gap: 2.5px; vertical-align: middle; }
+.motif span { display: block; height: 2px; width: 20px; border-radius: 2px; background: var(--primary); }
+.motif span:nth-child(1) { margin-left: 6px; }
+.motif span:nth-child(2) { margin-left: 3px; }
+
+/* ---- titles -------------------------------------------------------- */
+h1 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 27pt;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.doc-kind {
+  font-family: var(--font-mono);
+  font-size: 8.5pt;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 14px;
+}
+h1.compact { font-size: 21pt; }
+.sub {
+  margin-top: 16px;
+  font-size: 12pt;
+  line-height: 1.5;
+  color: var(--muted-ink);
+  max-width: 62ch;
+}
+.meta-line {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 8.5pt;
+  letter-spacing: 0.02em;
+  color: var(--faint-ink);
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+h2 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 15pt;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+h3 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 11.5pt;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+p { font-size: 10.5pt; color: var(--muted-ink); }
+p.body { margin-top: 10px; }
+strong, b { color: var(--ink); font-weight: 600; }
+
+/* ---- section rhythm ------------------------------------------------ */
+.section { margin-top: 22px; }
+.section > .section-body { margin-top: 10px; max-width: 66ch; }
+.section > .section-body p + p { margin-top: 10px; }
+.feature { padding-top: 22px; margin-top: 22px; border-top: 1px solid var(--line); }
+.feature:first-child { border-top: none; margin-top: 18px; }
+.feature > .section-body { margin-top: 8px; max-width: 66ch; }
+
+/* ---- three-up column cards ---------------------------------------- */
+.cols {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+.col-item .rule { display: flex; flex-direction: column; gap: 2.5px; margin-bottom: 11px; }
+.col-item .rule span { display: block; height: 2px; width: 22px; border-radius: 2px; background: var(--primary); }
+.col-item .rule span:nth-child(1) { margin-left: 6px; }
+.col-item .rule span:nth-child(2) { margin-left: 3px; }
+.col-item h3 { font-size: 11pt; margin-bottom: 5px; }
+.col-item p { font-size: 9.5pt; line-height: 1.45; }
+
+/* ---- checklist (plate-marked affirmative) -------------------------- */
+ul.checklist { list-style: none; margin-top: 14px; display: grid; gap: 9px; }
+ul.checklist li {
+  position: relative; padding-left: 22px; font-size: 10pt; line-height: 1.45; color: var(--ink);
+}
+ul.checklist li::before {
+  content: ""; position: absolute; left: 0; top: 5px;
+  width: 8px; height: 8px; border-radius: 2px; background: var(--primary);
+}
+ul.checklist li strong { font-weight: 600; }
+
+/* ---- never list (the transparency wedge) --------------------------- */
+ul.never { list-style: none; margin-top: 14px; display: grid; gap: 9px; }
+ul.never li {
+  position: relative; padding-left: 24px; font-size: 10pt; line-height: 1.45; color: var(--ink);
+}
+ul.never li::before {
+  content: "\00d7"; position: absolute; left: 0; top: -1px;
+  font-family: var(--font-mono); font-weight: 600; font-size: 13pt; line-height: 1.35; color: var(--critical);
+}
+
+/* ---- earn vs refuse split ------------------------------------------ */
+.split { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.split .col h3 { display: flex; align-items: center; gap: 8px; font-size: 11pt; }
+.tag {
+  font-family: var(--font-mono); font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.07em;
+  padding: 2px 7px; border-radius: 5px; font-weight: 500;
+}
+.tag.earn { background: var(--accent); color: var(--accent-ink); }
+.tag.refuse { background: #f7dedd; color: var(--critical); }
+
+/* ---- comparison table ---------------------------------------------- */
+table.compare {
+  width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 9.5pt;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+}
+table.compare th, table.compare td {
+  padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top;
+}
+table.compare tr:last-child td { border-bottom: none; }
+table.compare thead th {
+  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 7.5pt; font-weight: 500; color: var(--muted-ink); background: #f4f6f4;
+}
+table.compare thead th.gs { color: var(--primary); }
+table.compare td { color: var(--muted-ink); }
+table.compare td:first-child, table.compare th:first-child { font-weight: 600; color: var(--ink); width: 26%; }
+table.compare td.gs { background: var(--accent); color: var(--accent-ink); font-weight: 500; }
+
+/* ---- numbered steps ------------------------------------------------ */
+ol.steps { list-style: none; counter-reset: step; margin-top: 16px; display: grid; gap: 14px; }
+ol.steps li { position: relative; padding-left: 42px; }
+ol.steps li::before {
+  counter-increment: step; content: counter(step);
+  position: absolute; left: 0; top: 0; width: 28px; height: 28px; display: grid; place-items: center;
+  font-family: var(--font-mono); font-weight: 600; font-size: 11pt;
+  color: var(--primary); background: var(--accent); border-radius: 8px;
+}
+ol.steps li h4 { font-size: 10.5pt; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 3px; color: var(--ink); }
+ol.steps li p { font-size: 9.5pt; line-height: 1.4; }
+
+/* ---- pitch quote --------------------------------------------------- */
+.pitch {
+  margin-top: 16px; padding: 20px 24px; background: var(--accent); color: var(--accent-ink);
+  border-left: 3px solid var(--primary); border-radius: 10px;
+}
+.pitch p { font-family: var(--font-sans); font-size: 12pt; line-height: 1.45; color: var(--accent-ink); font-weight: 500; }
+
+/* ---- callout note -------------------------------------------------- */
+.note {
+  margin-top: 14px; padding: 13px 16px; border: 1px solid var(--line); border-left: 2px solid var(--primary);
+  border-radius: 8px; background: var(--card); font-size: 9.5pt; color: var(--muted-ink);
+}
+code {
+  font-family: var(--font-mono); background: var(--accent); color: var(--accent-ink);
+  border-radius: 4px; padding: 1px 5px; font-size: 0.9em;
+}
+
+/* ---- Q&A objection blocks ------------------------------------------ */
+.qa { margin-top: 16px; display: grid; gap: 14px; }
+.qa .q h3 { font-size: 11pt; margin-bottom: 4px; }
+.qa .q h3::before { content: "\201C"; color: var(--primary); }
+.qa .q h3::after { content: "\201D"; color: var(--primary); }
+.qa .q p { font-size: 9.5pt; line-height: 1.45; }
+
+/* ---- receipt card (fee-check hook) --------------------------------- */
+.receipt {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  padding: 16px 18px; width: 240px;
+}
+.receipt .badge {
+  display: inline-block; font-family: var(--font-mono); font-size: 7.5pt; text-transform: uppercase;
+  letter-spacing: 0.06em; font-weight: 500; padding: 3px 9px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink);
+}
+.receipt .r-label { font-family: var(--font-mono); font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-ink); margin-top: 12px; }
+.receipt .r-big { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 30pt; line-height: 1; letter-spacing: -0.02em; }
+.receipt .r-big .yr { font-size: 0.38em; color: var(--muted-ink); }
+.receipt .r-big.struck { color: var(--ink); text-decoration: line-through; text-decoration-color: rgba(197,44,42,0.7); text-decoration-thickness: 2px; }
+.receipt .r-big.zero { color: var(--primary); }
+.receipt .r-lines { margin-top: 12px; border-top: 1px solid var(--line); }
+.receipt .rl { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 8.5pt; color: var(--muted-ink); }
+.receipt .rl span:last-child { font-family: var(--font-mono); color: var(--ink); }
+.receipt .rl.comm span:last-child { color: var(--critical); }
+
+/* ---- hero split (copy + receipt) ----------------------------------- */
+.hero-split { display: grid; grid-template-columns: 1fr 240px; gap: 30px; align-items: start; }
+
+/* ---- stat row (proof numbers) -------------------------------------- */
+.stats { margin-top: 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.stat { border-left: 2px solid var(--primary); padding-left: 12px; }
+.stat b {
+  display: block; font-family: var(--font-mono); font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: 20pt; line-height: 1.05; letter-spacing: -0.01em; color: var(--ink);
+}
+.stat span { font-size: 8.5pt; color: var(--muted-ink); line-height: 1.35; display: block; margin-top: 3px; }
+
+/* ---- dark proof panel ---------------------------------------------- */
+.proof-panel {
+  margin-top: 18px; background: var(--band-bg); color: var(--band-ink);
+  border-radius: 14px; padding: 20px 24px;
+}
+.proof-panel h2 { color: var(--band-ink); }
+.proof-panel .lede { color: var(--band-muted); margin-top: 8px; font-size: 10.5pt; max-width: 64ch; }
+.proof-panel .stats { margin-top: 22px; }
+.proof-panel .stat { border-left-color: var(--band-fig); }
+.proof-panel .stat b { color: var(--band-fig); }
+.proof-panel .stat span { color: var(--band-muted); }
+ul.proof-list {
+  list-style: none; margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px 28px;
+}
+.proof-panel ul.proof-list li {
+  padding-left: 14px; border-left: 2px solid var(--band-fig); font-size: 9.5pt; color: var(--band-muted); line-height: 1.4;
+}
+.proof-panel ul.proof-list li strong {
+  display: block; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600;
+  font-size: 10pt; color: var(--band-fig); margin-bottom: 2px;
+}
+
+/* ---- CTA strip ----------------------------------------------------- */
+.cta-strip {
+  margin-top: 24px; display: flex; align-items: center; gap: 20px;
+  padding: 16px 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+}
+.cta-strip .qr { width: 78px; height: 78px; flex: none; }
+.cta-strip .qr svg { width: 78px; height: 78px; display: block; }
+.cta-strip .cta-copy h3 { font-size: 12pt; }
+.cta-strip .cta-copy p { font-size: 9.5pt; margin-top: 3px; }
+.cta-strip .cta-copy .url { font-family: var(--font-mono); font-weight: 600; color: var(--primary); font-size: 10.5pt; }
+
+/* ---- "what's inside" contents list --------------------------------- */
+ul.contents { list-style: none; margin-top: 18px; display: grid; gap: 10px; max-width: 62ch; }
+ul.contents li { position: relative; padding-left: 30px; font-size: 10.5pt; color: var(--muted-ink); counter-increment: c; }
+ul.contents { counter-reset: c; }
+ul.contents li::before {
+  content: counter(c, decimal-leading-zero); position: absolute; left: 0; top: 0;
+  font-family: var(--font-mono); font-weight: 500; font-size: 9pt; color: var(--primary);
+}
+ul.contents li strong { color: var(--ink); font-weight: 600; }
+
+/* ---- page control -------------------------------------------------- */
+.page-break { break-before: page; }
+.avoid-break { break-inside: avoid; }
+/* keep headings with their content and don't split tight blocks across pages */
+h1, h2, h3, h4 { break-after: avoid; }
+.pitch, .note, table.compare, .proof-panel, .cta-strip,
+.receipt, .col-item, .qa .q, ol.steps li, ul.contents,
+.split, .cols { break-inside: avoid; }

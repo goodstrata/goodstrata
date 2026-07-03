@@ -51,7 +51,7 @@ function LoginPage() {
   return (
     <AuthShell
       heading={
-        <h1 className="text-balance font-display text-2xl font-medium tracking-tight md:text-[1.75rem]">
+        <h1 className="text-balance font-display text-2xl font-bold tracking-tight md:text-[1.75rem]">
           The building runs itself. You stay in charge.
         </h1>
       }

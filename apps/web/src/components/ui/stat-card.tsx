@@ -34,7 +34,7 @@ function StatCard({ label, value, hint, tone, hero = false, className }: StatCar
       <p
         className={cn(
           "mt-1.5 text-xl sm:text-2xl",
-          hero ? "font-display font-medium tracking-tight" : "font-mono font-medium tabular-nums",
+          hero ? "font-display font-bold tracking-tight" : "font-mono font-bold tabular-nums",
           tone && statToneClasses[tone],
         )}
       >

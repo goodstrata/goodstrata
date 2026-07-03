@@ -105,7 +105,7 @@ function WhatAmIPayingPage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 py-2 md:py-8">
       <header className="flex flex-col gap-4 text-center">
         <Eyebrow className="mx-auto">What am I paying?</Eyebrow>
-        <h1 className="text-balance font-display text-3xl font-medium tracking-tight md:text-[2.25rem]">
+        <h1 className="text-balance font-display text-3xl font-bold tracking-tight md:text-[2.25rem]">
           See what your strata manager actually costs you
         </h1>
         <p className="mx-auto max-w-xl text-pretty text-muted-foreground md:text-lg">
@@ -204,7 +204,7 @@ function Dropzone({
         <>
           <Spinner className="size-8 text-primary" aria-hidden="true" />
           <div className="space-y-1" aria-live="polite">
-            <p className="font-display text-lg font-medium">Reading your document…</p>
+            <p className="font-display text-lg font-bold">Reading your document…</p>
             <p className="text-sm text-muted-foreground">
               {busyLabel ? (
                 <span className="font-mono">{busyLabel}</span>
@@ -223,7 +223,7 @@ function Dropzone({
             <UploadCloud className="size-7" />
           </div>
           <div className="space-y-1">
-            <p className="text-balance font-display text-lg font-medium">
+            <p className="text-balance font-display text-lg font-bold">
               Drop your AGM, budget or financial statement
             </p>
             <p className="text-sm text-muted-foreground">PDF or a photo — up to 12 MB</p>
@@ -265,7 +265,7 @@ function ResultView({ result, onReset }: { result: EstimateResult; onReset: () =
         <div className="border-b bg-accent/30 px-6 py-7 text-center md:px-8 md:py-9">
           <Eyebrow className="text-accent-foreground">Your strata manager costs about</Eyebrow>
           {hasTotal ? (
-            <p className="mt-2 font-display text-4xl font-medium tracking-tight tabular-nums md:text-5xl">
+            <p className="mt-2 font-display text-4xl font-bold tracking-tight tabular-nums md:text-5xl">
               {formatMoney(total)}
               <span className="ml-2 align-middle text-base font-normal text-muted-foreground md:text-lg">
                 a year
@@ -380,7 +380,7 @@ function CtaBand() {
         <div className="space-y-1.5">
           <div className="flex items-center justify-center gap-2">
             <Building2 aria-hidden="true" className="size-5 text-primary" />
-            <p className="font-display text-xl font-medium">GoodStrata does this for $0</p>
+            <p className="font-display text-xl font-bold">GoodStrata does this for $0</p>
           </div>
           <p className="text-pretty text-sm text-muted-foreground">
             We run your owners corporation with AI — budgets, levies, meetings and maintenance — and

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   amountPanel,
-  emailBrand,
   type EmailInput,
+  emailBrand,
   infoNote,
   keyValueTable,
   paragraph,
@@ -27,7 +27,9 @@ const SAMPLE: EmailInput = {
     infoNote("Interest accrues on overdue levies under the scheme by-laws."),
   ],
   cta: { label: "View & pay levy", url: "https://my.goodstrata.com.au/levies/L-2026-014" },
-  secondaryLinks: [{ label: "Download PDF", url: "https://my.goodstrata.com.au/levies/L-2026-014.pdf" }],
+  secondaryLinks: [
+    { label: "Download PDF", url: "https://my.goodstrata.com.au/levies/L-2026-014.pdf" },
+  ],
   footerNote: "You receive this because you are the levy recipient for lot 12.",
 };
 

@@ -790,7 +790,7 @@ function MeetingDetailView({
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="font-display text-lg font-medium">Motions</h2>
+          <h2 className="font-display text-lg font-bold">Motions</h2>
           {isOfficer && !meetingOver && (
             <AddMotionSheet schemeId={schemeId} meetingId={meetingId} onChange={invalidate} />
           )}

@@ -12,7 +12,7 @@ function SignupPage() {
     <AuthShell
       heading={
         <div className="flex flex-col gap-2">
-          <h1 className="text-balance font-display text-2xl font-medium tracking-tight md:text-[1.75rem]">
+          <h1 className="text-balance font-display text-2xl font-bold tracking-tight md:text-[1.75rem]">
             Create your account
           </h1>
           <p className="text-balance text-sm text-muted-foreground">

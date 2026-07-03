@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="brand.css" />
+  <title>GoodStrata — how we make money</title>
+  <!-- pull the transparency explainer onto three pages (overrides brand.css) -->
+  <style>
+    .feature { padding-top: 16px; margin-top: 16px; }
+    .section { margin-top: 16px; }
+    table.compare th, table.compare td { padding: 6px 12px; }
+    .proof-panel { margin-top: 11px; padding: 12px 20px; }
+    .proof-panel ul.proof-list {
+      margin-top: 11px; grid-template-columns: repeat(3, 1fr); gap: 9px 22px;
+    }
+    ul.checklist, ul.never { gap: 7px; }
+    .cta-strip { margin-top: 11px; }
+    .meta-line { margin-top: 16px; padding-top: 12px; }
+  </style>
+</head>
+<body>
+
+  <header class="masthead">
+    <span class="logo">{{LOGO}}</span>
+    <span class="site-url">goodstrata.com.au</span>
+  </header>
+
+  <h1>How we make money. <em>All of it, on one page.</em></h1>
+  <p class="sub">
+    GoodStrata is free for your owners corporation. We earn a small, published margin on payments
+    that actually move — and nothing at all on the choices you make. Here is every dollar we take,
+    and every dollar we refuse.
+  </p>
+  <div class="meta-line">
+    <span>Good Strata Pty Ltd</span>
+    <span>ACN 684 135 760</span>
+    <span>Apache-2.0 open source</span>
+  </div>
+
+  <div class="section">
+    <div class="feature">
+      <h2>Free for your owners corporation</h2>
+      <div class="section-body">
+        <p>Free, not freemium. There is no per-lot fee, no subscription, no setup charge, and no exit
+          charge for your owners corporation — ever. You run GoodStrata one of two ways, and both cost
+          your building nothing to use. Self-host it: the whole platform is Apache-2.0 open source, and
+          it runs on PostgreSQL and one process. Or take the hosted free tier: we run the servers, you
+          pay nothing to use the software. For comparison, a traditional strata manager charges roughly
+          $300–$600 per lot, per year, for work that is mostly admin. Your building&rsquo;s copy of that
+          work, run by agents and audited to the tool-call, is $0.</p>
+      </div>
+      <ul class="checklist">
+        <li><strong>Self-host:</strong> Apache-2.0, PostgreSQL plus one process, $0 forever.</li>
+        <li><strong>Hosted free tier:</strong> we run it, your owners corporation pays nothing to use it.</li>
+        <li><strong>No per-lot fee, no subscription, no onboarding fee, no cancellation fee.</strong></li>
+        <li><strong>Open source,</strong> so &ldquo;no lock-in&rdquo; is a claim you can verify in the repo — not a sales line.</li>
+      </ul>
+    </div>
+
+    <div class="feature">
+      <h2>How we actually make money</h2>
+      <div class="section-body">
+        <p>We take a small, disclosed margin on money that moves through the platform, and we sell a
+          paid managed service to owners corporations that would rather not run their own servers.
+          That&rsquo;s the whole business. Levies coming in are the primary line: owners pay by PayID or
+          NPP through Monoova, the payment reconciles itself to the cent against the right lot, and we
+          keep a thin, published margin on that transfer. Contractor payments going out work the same
+          way. The number that matters: that margin is identical no matter which contractor the
+          committee chooses, so paying one plumber earns us exactly what paying another does.</p>
+      </div>
+      <ul class="checklist">
+        <li><strong>Levies in (primary):</strong> owners pay by PayID/NPP via Monoova, auto-reconciled to the cent — we keep a small, published margin on the transfer.</li>
+        <li><strong>Contractor payments out:</strong> the same thin margin on the outbound payment — the same figure whichever contractor wins the work.</li>
+        <li><strong>Managed service:</strong> a paid, up-front-priced tier for owners corporations that want us to host and run it instead of self-hosting.</li>
+        <li><strong>Statutory certificates:</strong> a small platform component on the Section 32 certificate, shown as its own line item.</li>
+        <li><strong>We earn only on money that moves.</strong> No hidden fixed fees sit underneath any of this.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="feature" style="border-top:none;margin-top:6px;">
+      <h2>What we will never do</h2>
+      <div class="section-body">
+        <p>The reason your strata fees feel like a black box is a conflict of interest built into the
+          traditional model. A conventional manager earns invisible commissions on the insurance they
+          place for your building, and kickbacks from the contractors they appoint to it. So the person
+          choosing your insurer and your tradespeople is quietly paid more for some choices than others
+          — and the owners footing every bill can&rsquo;t see a cent of it. GoodStrata takes none of it,
+          and never will. Because our margin is flat and sits on the payment rail, there is nothing for
+          us to steer. The conflict isn&rsquo;t managed or disclosed away. It structurally isn&rsquo;t
+          there.</p>
+      </div>
+      <ul class="never">
+        <li><strong>No insurance commissions.</strong> We take no share of your premium — at renewal the committee chooses and our revenue doesn&rsquo;t change.</li>
+        <li><strong>No contractor kickbacks.</strong> No trade pays to be in the pool or to be picked.</li>
+        <li><strong>No margin-ranking.</strong> The AI never orders contractors by what we earn — it earns the same either way; the committee chooses on the evidence.</li>
+        <li><strong>No invoice markups.</strong> The contractor&rsquo;s price is your price.</li>
+      </ul>
+    </div>
+
+    <div class="feature">
+      <h2>The difference, line by line</h2>
+      <div class="section-body">
+        <p>Same job — your money, your maintenance, your meetings. The difference is where the money
+          goes, and whether you can see it.</p>
+      </div>
+      <table class="compare">
+        <thead>
+          <tr><th></th><th>Traditional strata manager</th><th class="gs">GoodStrata</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Management fee</td><td>~$300–$600 per lot, per year</td><td class="gs">$0 — free for the owners corporation</td></tr>
+          <tr><td>Insurance commission</td><td>Takes an invisible cut of your premium</td><td class="gs">None — the committee chooses; our revenue is unchanged</td></tr>
+          <tr><td>Contractor kickbacks</td><td>Paid to appoint certain trades</td><td class="gs">None — no trade pays to be in the pool or to win</td></tr>
+          <tr><td>Invoice markups</td><td>May mark up what the tradie charges</td><td class="gs">None — the contractor&rsquo;s price is your price</td></tr>
+          <tr><td>How they&rsquo;re paid</td><td>Fixed fees plus commissions you never see</td><td class="gs">A small, published margin on payments that move</td></tr>
+          <tr><td>Where you can see it</td><td>A monthly statement you&rsquo;re asked to trust</td><td class="gs">Every fee on an append-only audit log</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="feature" style="border-top:none;margin-top:6px;">
+      <h2>How you can check</h2>
+      <div class="section-body">
+        <p>You don&rsquo;t have to trust any of this. Every fee we take lands on the same append-only
+          audit log as everything else: our margin is its own event, stamped with the amount to the cent,
+          the timestamp, and the causation chain back to the payment that triggered it. There&rsquo;s no
+          second set of books — the log is the only book, and a database trigger stops anyone, us
+          included, from editing it after the fact. Then read the code: the platform is Apache-2.0 on
+          GitHub, so the logic that computes what we keep is in the open. &ldquo;No hidden fees&rdquo;
+          isn&rsquo;t a slogan; it&rsquo;s a claim you can open the demo and read, or clone the repo and
+          grep.</p>
+      </div>
+      <ul class="checklist">
+        <li><strong>On the ledger:</strong> every fee is an event you can read; no off-ledger charge can exist.</li>
+        <li><strong>In the open:</strong> the code that calculates our margin is Apache-2.0 on GitHub.</li>
+        <li><strong>Deterministic:</strong> what we keep is computed by tested code, not a model — $0.00 of it is guessed by an LLM.</li>
+        <li><strong>Checkable, not promised:</strong> open the live demo, read the audit log, then read the source.</li>
+      </ul>
+    </div>
+
+    <div class="proof-panel avoid-break">
+      <h2>The numbers behind the model.</h2>
+      <ul class="proof-list">
+        <li><strong>$0</strong> per-lot fee, subscription, and setup — forever</li>
+        <li><strong>$300–$600</strong> per lot, per year: what a traditional manager charges</li>
+        <li><strong>0</strong> insurance commissions we take</li>
+        <li><strong>0</strong> contractor kickbacks we take</li>
+        <li><strong>Same margin</strong> whichever contractor the committee picks</li>
+        <li><strong>Apache-2.0</strong> — the code that computes our cut is public</li>
+      </ul>
+    </div>
+
+    <div class="cta-strip avoid-break">
+      <div class="qr">{{QR}}</div>
+      <div class="cta-copy">
+        <h3>Check the business model yourself.</h3>
+        <p>Open the live demo and read the audit log, or read the source on GitHub.</p>
+        <p class="url">goodstrata.com.au</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

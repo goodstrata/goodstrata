@@ -10,6 +10,7 @@ import { agentRunsRoutes } from "./routes/agents.js";
 import { communityRoutes } from "./routes/community.js";
 import { complianceRoutes } from "./routes/compliance.js";
 import { devRoutes } from "./routes/dev.js";
+import { documentsPdfRoutes } from "./routes/documents-pdf.js";
 import { estimatorRoutes } from "./routes/estimator.js";
 import { eventsRoutes } from "./routes/events.js";
 import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
@@ -46,6 +47,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", documentsRoutes(deps))
     .route("/schemes", activationRoutes(deps))
     .route("/schemes", financeRoutes(deps))
+    .route("/schemes", documentsPdfRoutes(deps))
     .route("/schemes", trustRoutes(deps))
     .route("/schemes", decisionsRoutes(deps))
     .route("/schemes", maintenanceRoutes(deps))

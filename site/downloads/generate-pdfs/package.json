@@ -1,0 +1,13 @@
+{
+  "name": "goodstrata-marketing-pdfs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reproducible generator for the GoodStrata marketing PDFs (one-pager, committee decision pack, how-we-make-money). Branded HTML rendered to A4 PDF with Playwright/Chromium.",
+  "scripts": {
+    "build": "node generate.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "qrcode": "^1.5.4"
+  }
+}
