@@ -1,11 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { lots, memberships, ownerships, people, schemes, users } from "@goodstrata/db";
+import {
+  lots,
+  memberships,
+  organizations,
+  ownerships,
+  people,
+  schemes,
+  users,
+} from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import type { EventRecord } from "@goodstrata/events";
 import { integrationsFromEnv, mockPaymentsProvider } from "@goodstrata/integrations";
 import { type Actor, fixedClock, systemActor, userActor } from "@goodstrata/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServiceContext } from "../src/context.js";
+import * as complianceService from "../src/services/compliance.js";
 import * as decisionsService from "../src/services/decisions.js";
 import * as notificationsService from "../src/services/notifications.js";
 import * as notifierService from "../src/services/notifier.js";
@@ -307,5 +316,178 @@ describe("the notifier", () => {
       fakeEvent("payment.received", { paymentId: "p", amountCents: 1, payid: null }),
     );
     expect(unknown.created).toBe(0);
+  });
+});
+
+describe("the notifier — org-scoped compliance obligations", () => {
+  const MGR_BOTH = "user-mgr-both-n"; // manager_admin in schemes A and B
+  const MGR_ONE = "user-mgr-one-n"; // manager_admin in scheme A only
+  const ORG_OWNER = "user-org-owner-n"; // plain owner in scheme A — never notified
+  let organizationId: string;
+  let schemeA: string;
+  let schemeB: string;
+
+  beforeAll(async () => {
+    const orgRows = await tdb.db
+      .insert(organizations)
+      .values({ name: "Good Strata Management" })
+      .returning();
+    organizationId = orgRows[0]!.id;
+
+    const schemeRows = await tdb.db
+      .insert(schemes)
+      .values([
+        {
+          organizationId,
+          name: "Org OC A",
+          planOfSubdivision: "PS888801N",
+          addressLine1: "1 Manager Way",
+          suburb: "Carlton",
+          postcode: "3053",
+          tier: 3,
+          status: "active",
+        },
+        {
+          organizationId,
+          name: "Org OC B",
+          planOfSubdivision: "PS888802N",
+          addressLine1: "2 Manager Way",
+          suburb: "Carlton",
+          postcode: "3053",
+          tier: 3,
+          status: "active",
+        },
+      ])
+      .returning();
+    schemeA = schemeRows[0]!.id;
+    schemeB = schemeRows[1]!.id;
+
+    await tdb.db.insert(users).values([
+      { id: MGR_BOTH, name: "Manny Manager", email: "mgr-both-n@example.com" },
+      { id: MGR_ONE, name: "Mona Manager", email: "mgr-one-n@example.com" },
+      { id: ORG_OWNER, name: "Orla Owner", email: "org-owner-n@example.com" },
+    ]);
+    await tdb.db.insert(memberships).values([
+      { schemeId: schemeA, userId: MGR_BOTH, role: "manager_admin", startedOn: "2025-01-01" },
+      { schemeId: schemeB, userId: MGR_BOTH, role: "manager_admin", startedOn: "2025-01-01" },
+      { schemeId: schemeA, userId: MGR_ONE, role: "manager_admin", startedOn: "2025-01-01" },
+      { schemeId: schemeA, userId: ORG_OWNER, role: "owner", startedOn: "2025-01-01" },
+    ]);
+  });
+
+  it("pi_expiry sweep event notifies org admins in-app (per scheme) and by email (once)", async () => {
+    memoryEmail.sent.length = 0;
+
+    // Raise the org-level obligation well ahead (band: none at 2026-07-02)…
+    const obligation = await complianceService.raiseObligation(ctxAs(), {
+      organizationId,
+      kind: "pi_expiry",
+      dueOn: "2026-11-15",
+      subjectRef: "pi_policy:test",
+    });
+    expect(obligation.schemeId).toBeNull();
+
+    // …then sweep from inside the 30-day window so the band change publishes
+    // compliance.obligation.due with schemeId null + the organizationId.
+    const laterCtx: ServiceContext = {
+      db: tdb.db,
+      clock: fixedClock("2026-10-20T00:00:00Z"),
+      integrations,
+      actor: systemActor("cron.compliance.daily"),
+    };
+    const { notified } = await complianceService.sweep(laterCtx, { organizationId });
+    expect(notified).toBe(1);
+
+    const event = await tdb.db.query.eventLog.findFirst({
+      where: (t, { and, eq }) =>
+        and(
+          eq(t.type, "compliance.obligation.due"),
+          eq(t.stream, `compliance_obligation:${obligation.id}`),
+        ),
+    });
+    expect(event!.schemeId).toBeNull();
+
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      event as unknown as EventRecord,
+    );
+    // Scheme A: both managers; scheme B: the cross-scheme manager. Never the owner.
+    expect(created).toBe(3);
+
+    for (const [scheme, userId] of [
+      [schemeA, MGR_BOTH],
+      [schemeA, MGR_ONE],
+      [schemeB, MGR_BOTH],
+    ] as const) {
+      const rows = await notificationsService.listNotifications(ctxAs(), scheme, userId, {
+        unreadOnly: true,
+      });
+      const match = rows.find((n) => n.related?.id === obligation.id);
+      expect(match).toMatchObject({
+        category: "general",
+        title: "Manager PI insurance expiry — due 2026-11-15",
+        related: { type: "compliance_obligation", id: obligation.id },
+      });
+    }
+    const ownerRows = await notificationsService.listNotifications(ctxAs(), schemeA, ORG_OWNER, {
+      unreadOnly: true,
+    });
+    expect(ownerRows.some((n) => n.related?.id === obligation.id)).toBe(false);
+
+    // Email: one per distinct admin, linking to the manager back-office.
+    expect(memoryEmail.sent.map((e) => e.to).sort()).toEqual([
+      "mgr-both-n@example.com",
+      "mgr-one-n@example.com",
+    ]);
+    expect(memoryEmail.sent[0]!.subject).toBe("Manager PI insurance expiry — due 2026-11-15");
+    expect(memoryEmail.sent[0]!.text).toContain("/manager");
+  });
+
+  it("overdue registration_renewal reads as overdue; an org with no admins is a no-op", async () => {
+    memoryEmail.sent.length = 0;
+
+    const obligation = await complianceService.raiseObligation(ctxAs(), {
+      organizationId,
+      kind: "registration_renewal",
+      title: "Manager registration review",
+      dueOn: "2026-06-01", // already past NOW (2026-07-02) → overdue at raise
+      subjectRef: "registration",
+    });
+
+    const orgEvent = (payload: { organizationId: string }): EventRecord => ({
+      ...fakeEvent("compliance.obligation.due", {
+        obligationId: obligation.id,
+        kind: "registration_renewal",
+        dueOn: "2026-06-01",
+        status: "overdue",
+        escalationState: "overdue",
+        responsibleRole: "manager_admin",
+        schemeId: null,
+        ...payload,
+      }),
+      schemeId: null,
+    });
+
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      orgEvent({ organizationId }),
+    );
+    expect(created).toBe(3);
+
+    const rows = await notificationsService.listNotifications(ctxAs(), schemeB, MGR_BOTH, {
+      unreadOnly: true,
+    });
+    const match = rows.find((n) => n.related?.id === obligation.id)!;
+    expect(match.title).toBe("Overdue: Manager registration review");
+    expect(match.body).toContain("was due 2026-06-01");
+    expect(memoryEmail.sent).toHaveLength(2);
+
+    // An org nobody administers (or a payload without an org) creates nothing.
+    const emptyOrg = await tdb.db.insert(organizations).values({ name: "Empty Org" }).returning();
+    const none = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      orgEvent({ organizationId: emptyOrg[0]!.id }),
+    );
+    expect(none.created).toBe(0);
   });
 });
