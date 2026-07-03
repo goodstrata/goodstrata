@@ -1,15 +1,16 @@
 import type React from "react";
 import {
   AbsoluteFill,
+  Audio,
   interpolate,
   Sequence,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 import { AgmCard } from "../lib/AgmCard";
-import { countUp, dropIn, fade, riseIn } from "../lib/anim";
+import { countUp, EASE_IN_OUT, EASE_OUT, fade, riseIn, sceneFade } from "../lib/anim";
 import { Caption } from "../lib/Caption";
-import { EndCard } from "../lib/EndCard";
 import { FeeCard } from "../lib/FeeCard";
 import { KenBurns } from "../lib/KenBurns";
 import "../lib/loadFonts";
@@ -19,49 +20,68 @@ export type C1Props = {
   hook: "A" | "B" | "C";
 };
 
-// ---- Scene timing (30fps). 9 scenes, 840 frames = 28.0s ---------------------
+// ---- Scene timing (30fps) ---------------------------------------------------
+// Re-timed to the ElevenLabs en-AU VO (public/audio/c1-vo.mp3, ~36.9s). Scene
+// boundaries land in the silences between the plan's C1 lines (measured with
+// ffmpeg silencedetect) so each caption + visual lands as its line is spoken.
+//   s1  0.00s  "Somewhere in your AGM papers…really costs you."
+//   s2  4.40s  "The base fee is the number they show you."
+//   s3  8.13s  "The extras — meeting fees, arrears notices, admin time…"
+//   s4 17.20s  "Plus a commission on your building's insurance…never shown."
+//   s5 21.57s  "So take a photo of the page, and drop it in."
+//   s6 24.50s  "In seconds, the real number, in plain dollars."   ← $8,400 band
+//   s7 28.60s  "GoodStrata does that same admin…free for your OC." ← $8,400→$0
+//   s8 32.60s  "Agents do the work; you just decide." + "See your number…"
 export const SCENES = {
-  s1: { from: 0, dur: 105 },
-  s2: { from: 105, dur: 90 },
-  s3: { from: 195, dur: 105 },
-  s4: { from: 300, dur: 90 },
-  s5: { from: 390, dur: 75 },
-  s6: { from: 465, dur: 105 },
-  s7: { from: 570, dur: 105 },
-  s8: { from: 675, dur: 90 },
-  s9: { from: 765, dur: 75 },
+  s1: { from: 0, dur: 132 },
+  s2: { from: 132, dur: 112 },
+  s3: { from: 244, dur: 272 },
+  s4: { from: 516, dur: 131 },
+  s5: { from: 647, dur: 88 },
+  s6: { from: 735, dur: 123 },
+  s7: { from: 858, dur: 120 },
+  s8: { from: 978, dur: 132 },
 } as const;
-export const C1_DURATION = 840;
+export const C1_DURATION = 1110; // 37.0s @ 30fps — covers the full VO + a hold.
 
 const theme: Theme = light;
 
-// A shared row used on the clean-UI scenes.
+// Per-scene fade wrapper — eases each scene in over the paper root so the hard
+// Sequence cuts read as gentle dissolves (premium transitions, not cuts).
+const SceneFade: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+  const opacity = sceneFade(frame, durationInFrames);
+  return <AbsoluteFill style={{ opacity }}>{children}</AbsoluteFill>;
+};
+
+// A shared row used on the clean-UI scenes (scaled ~2x).
 const MonoLine: React.FC<{
   label: string;
   amount: string;
   theme: Theme;
   strong?: boolean;
   width?: number;
-}> = ({ label, amount, theme, strong, width = 640 }) => (
+}> = ({ label, amount, theme, strong, width = 1120 }) => (
   <div
     style={{
       display: "flex",
       alignItems: "baseline",
       justifyContent: "space-between",
-      gap: 24,
+      gap: 44,
       width,
-      padding: "20px 28px",
+      padding: "34px 50px",
       background: theme.card,
-      border: `1px solid ${theme.line}`,
-      borderRadius: 14,
-      boxShadow: "0 20px 40px -30px rgba(15,20,28,0.5)",
+      border: `1.5px solid ${theme.line}`,
+      borderRadius: 22,
+      boxShadow: "0 34px 66px -40px rgba(15,20,28,0.5)",
     }}
   >
     <span
       style={{
         fontFamily: fonts.sans,
         fontWeight: 600,
-        fontSize: 26,
+        fontSize: 46,
         color: theme.ink,
       }}
     >
@@ -72,7 +92,7 @@ const MonoLine: React.FC<{
         fontFamily: fonts.mono,
         fontVariantNumeric: "tabular-nums",
         fontWeight: 600,
-        fontSize: strong ? 34 : 30,
+        fontSize: strong ? 62 : 54,
         color: theme.ink,
       }}
     >
@@ -123,7 +143,7 @@ const Scene2: React.FC = () => {
           label="Base management fee"
           amount={money(fees.base)}
           strong
-          width={720}
+          width={1180}
         />
       </div>
       <Caption theme={theme}>The base fee is the number they show you</Caption>
@@ -132,6 +152,8 @@ const Scene2: React.FC = () => {
 };
 
 // ---- Scene 3: fee cards drop and stack like bricks --------------------------
+// Drops timed to the VO enumeration ("meeting fees" ~ local 36, then
+// "arrears notices, admin time" ~ local 150). Sums to the extras exactly.
 const Scene3: React.FC = () => {
   return (
     <AbsoluteFill
@@ -141,24 +163,23 @@ const Scene3: React.FC = () => {
         justifyContent: "center",
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
         <MonoLine
           theme={theme}
           label="Base management fee"
           amount={money(fees.base)}
-          width={640}
-        />
-        <FeeCard
-          theme={theme}
-          label="+ Disbursements & sundries"
-          amount={money(fees.disbursements)}
-          dropAt={8}
         />
         <FeeCard
           theme={theme}
           label="+ Meeting & AGM fees"
           amount={money(fees.meetings)}
-          dropAt={26}
+          dropAt={36}
+        />
+        <FeeCard
+          theme={theme}
+          label="+ Arrears notices & admin time"
+          amount={money(fees.disbursements)}
+          dropAt={150}
         />
       </div>
       <Caption theme={theme}>
@@ -172,10 +193,11 @@ const Scene3: React.FC = () => {
 const Scene4: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const { opacity, translateY } = riseIn(frame, fps, 6, 14);
-  const shadow = interpolate(frame, [6, 30], [0.25, 1], {
+  const { opacity, translateY } = riseIn(frame, fps, 8, 22);
+  const shadow = interpolate(frame, [8, 36], [0.25, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
+    easing: EASE_OUT,
   });
   return (
     <AbsoluteFill
@@ -185,13 +207,12 @@ const Scene4: React.FC = () => {
         justifyContent: "center",
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
         <div style={{ opacity: 0.4 }}>
           <MonoLine
             theme={theme}
             label="Base + extras"
             amount={money(fees.base + fees.disbursements + fees.meetings)}
-            width={640}
           />
         </div>
         <div
@@ -206,19 +227,19 @@ const Scene4: React.FC = () => {
               display: "flex",
               alignItems: "baseline",
               justifyContent: "space-between",
-              gap: 24,
-              width: 640,
-              padding: "20px 28px",
+              gap: 44,
+              width: 1120,
+              padding: "34px 50px",
               background: `color-mix(in oklch, ${theme.card} 78%, ${theme.paper})`,
-              border: `1px solid color-mix(in oklch, ${theme.critical} 40%, ${theme.line})`,
-              borderRadius: 14,
+              border: `1.5px solid color-mix(in oklch, ${theme.critical} 40%, ${theme.line})`,
+              borderRadius: 22,
             }}
           >
             <span
               style={{
                 fontFamily: fonts.sans,
                 fontWeight: 500,
-                fontSize: 26,
+                fontSize: 46,
                 color: theme.faintInk,
               }}
             >
@@ -228,7 +249,7 @@ const Scene4: React.FC = () => {
               style={{
                 fontFamily: fonts.mono,
                 fontWeight: 500,
-                fontSize: 28,
+                fontSize: 50,
                 fontStyle: "italic",
                 color: theme.critical,
               }}
@@ -248,15 +269,15 @@ const Scene4: React.FC = () => {
 // ---- Scene 5: take a photo of the page + upload spinner ---------------------
 const Scene5: React.FC = () => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames } = useVideoConfig();
+  const { fps } = useVideoConfig();
   // shutter flash around frame 14
   const flash = interpolate(frame, [12, 16, 22], [0, 0.75, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
   const spin = (frame / fps) * 360; // spinner rotation
-  const uiEnter = riseIn(frame, fps, 24);
-  const phoneExit = fade(frame, 24, 34, 1, 0);
+  const uiEnter = riseIn(frame, fps, 26);
+  const phoneExit = fade(frame, 26, 38, 1, 0);
 
   return (
     <AbsoluteFill
@@ -270,19 +291,19 @@ const Scene5: React.FC = () => {
       <div style={{ position: "absolute", opacity: phoneExit }}>
         <div
           style={{
-            width: 300,
-            height: 600,
-            borderRadius: 44,
-            border: `10px solid ${theme.ink}`,
+            width: 460,
+            height: 900,
+            borderRadius: 62,
+            border: `14px solid ${theme.ink}`,
             background: theme.card,
-            boxShadow: "0 40px 90px -50px rgba(15,20,28,0.7)",
+            boxShadow: "0 60px 130px -60px rgba(15,20,28,0.7)",
             overflow: "hidden",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <div style={{ transform: "scale(0.34)" }}>
+          <div style={{ transform: "scale(0.38)" }}>
             <AgmCard theme={theme} />
           </div>
         </div>
@@ -293,23 +314,23 @@ const Scene5: React.FC = () => {
         style={{
           opacity: uiEnter.opacity,
           transform: `translateY(${uiEnter.translateY}px)`,
-          width: 520,
-          padding: "36px 40px",
+          width: 860,
+          padding: "52px 60px",
           background: theme.card,
-          border: `1px solid ${theme.line}`,
-          borderRadius: 16,
-          boxShadow: "0 24px 50px -34px rgba(15,20,28,0.5)",
+          border: `1.5px solid ${theme.line}`,
+          borderRadius: 26,
+          boxShadow: "0 40px 84px -50px rgba(15,20,28,0.5)",
           display: "flex",
           alignItems: "center",
-          gap: 22,
+          gap: 36,
         }}
       >
         <div
           style={{
-            width: 46,
-            height: 46,
+            width: 78,
+            height: 78,
             borderRadius: "50%",
-            border: `4px solid ${theme.line}`,
+            border: `7px solid ${theme.line}`,
             borderTopColor: theme.primary,
             transform: `rotate(${spin}deg)`,
           }}
@@ -319,7 +340,7 @@ const Scene5: React.FC = () => {
             style={{
               fontFamily: fonts.sans,
               fontWeight: 600,
-              fontSize: 24,
+              fontSize: 40,
               color: theme.ink,
             }}
           >
@@ -328,9 +349,9 @@ const Scene5: React.FC = () => {
           <div
             style={{
               fontFamily: fonts.mono,
-              fontSize: 16,
+              fontSize: 26,
               color: theme.faintInk,
-              marginTop: 4,
+              marginTop: 8,
             }}
           >
             agm-2026.pdf
@@ -343,8 +364,6 @@ const Scene5: React.FC = () => {
         style={{ background: "white", opacity: flash, pointerEvents: "none" }}
       />
       <Caption theme={theme}>Just take a photo of the page</Caption>
-      {/* keep durationInFrames referenced for clarity */}
-      {frame > durationInFrames ? null : null}
     </AbsoluteFill>
   );
 };
@@ -353,9 +372,9 @@ const Scene5: React.FC = () => {
 const Scene6: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const value = countUp(frame, fees.total, 10, 30);
+  const value = countUp(frame, fees.total, 10, 42);
   const enter = riseIn(frame, fps, 4);
-  const breakdownOpacity = fade(frame, 40, 55);
+  const breakdownOpacity = fade(frame, 58, 76);
 
   return (
     <AbsoluteFill
@@ -369,7 +388,7 @@ const Scene6: React.FC = () => {
       <div
         style={{
           fontFamily: fonts.mono,
-          fontSize: 22,
+          fontSize: 40,
           textTransform: "uppercase",
           letterSpacing: "0.12em",
           color: theme.bandMuted,
@@ -384,21 +403,21 @@ const Scene6: React.FC = () => {
           fontFamily: fonts.mono,
           fontVariantNumeric: "tabular-nums",
           fontWeight: 600,
-          fontSize: 200,
+          fontSize: 320,
           lineHeight: 1,
           letterSpacing: "-0.03em",
           color: theme.bandFig,
-          marginTop: 12,
+          marginTop: 20,
         }}
       >
         {money(value)}
-        <span style={{ fontSize: 64, color: theme.bandMuted }}> /yr</span>
+        <span style={{ fontSize: 108, color: theme.bandMuted }}> /yr</span>
       </div>
       <div
         style={{
-          marginTop: 26,
+          marginTop: 40,
           fontFamily: fonts.mono,
-          fontSize: 24,
+          fontSize: 44,
           color: theme.bandMuted,
           opacity: breakdownOpacity,
         }}
@@ -413,22 +432,24 @@ const Scene6: React.FC = () => {
 };
 
 // ---- Scene 7: struck $8,400 vs a clean $0 -----------------------------------
+// The $0 reveal is delayed to land on the spoken word "free" (~31s).
 const Scene7: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const left = riseIn(frame, fps, 4);
-  const right = riseIn(frame, fps, 20);
-  // line-through draws across the $8,400
-  const strike = interpolate(frame, [26, 48], [0, 1], {
+  const right = riseIn(frame, fps, 56);
+  // line-through draws across the $8,400 (ease-in-out)
+  const strike = interpolate(frame, [32, 56], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
+    easing: EASE_IN_OUT,
   });
 
   const bigStyle: React.CSSProperties = {
     fontFamily: fonts.mono,
     fontVariantNumeric: "tabular-nums",
     fontWeight: 600,
-    fontSize: 128,
+    fontSize: 210,
     lineHeight: 1,
     letterSpacing: "-0.02em",
   };
@@ -441,7 +462,7 @@ const Scene7: React.FC = () => {
         justifyContent: "center",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 90 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 72 }}>
         {/* struck 8,400 */}
         <div
           style={{
@@ -454,28 +475,28 @@ const Scene7: React.FC = () => {
           <div
             style={{
               fontFamily: fonts.mono,
-              fontSize: 20,
+              fontSize: 34,
               textTransform: "uppercase",
               letterSpacing: "0.08em",
               color: theme.mutedInk,
-              marginBottom: 12,
+              marginBottom: 20,
             }}
           >
             A strata manager charges
           </div>
           <div style={{ ...bigStyle, color: theme.ink, position: "relative" }}>
             {money(fees.total)}
-            <span style={{ fontSize: 46, color: theme.mutedInk }}> /yr</span>
+            <span style={{ fontSize: 76, color: theme.mutedInk }}> /yr</span>
             {/* the line-through, drawn like .receipt-big.struck */}
             <div
               style={{
                 position: "absolute",
                 left: 0,
                 top: "52%",
-                height: 5,
+                height: 8,
                 width: `${strike * 100}%`,
                 background: `color-mix(in oklch, ${theme.critical} 72%, transparent)`,
-                borderRadius: 3,
+                borderRadius: 4,
               }}
             />
           </div>
@@ -484,7 +505,7 @@ const Scene7: React.FC = () => {
         <div
           style={{
             fontFamily: fonts.sans,
-            fontSize: 60,
+            fontSize: 96,
             color: theme.faintInk,
             opacity: right.opacity,
           }}
@@ -503,18 +524,18 @@ const Scene7: React.FC = () => {
           <div
             style={{
               fontFamily: fonts.mono,
-              fontSize: 20,
+              fontSize: 34,
               textTransform: "uppercase",
               letterSpacing: "0.08em",
               color: theme.accentInk,
-              marginBottom: 12,
+              marginBottom: 20,
             }}
           >
             With GoodStrata
           </div>
           <div style={{ ...bigStyle, color: theme.primary }}>
             $0
-            <span style={{ fontSize: 46, color: theme.mutedInk }}> /yr</span>
+            <span style={{ fontSize: 76, color: theme.mutedInk }}> /yr</span>
           </div>
         </div>
       </div>
@@ -524,27 +545,34 @@ const Scene7: React.FC = () => {
 };
 
 // ---- Scene 8: you still decide (façade brand treatment + Approve tap) -------
+// Closes the clip — no logo end-card. The final VO line "See your number.
+// It's free." lands as a caption swap over the last ~1.7s.
 const Scene8: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const enter = riseIn(frame, fps, 6);
-  // cursor moves in and taps around frame 40
-  const cursorX = interpolate(frame, [16, 44], [160, 0], {
+  const enter = riseIn(frame, fps, 8);
+  // cursor moves in and taps the Approve button around frame 52 ("you decide")
+  const cursorX = interpolate(frame, [20, 52], [220, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: EASE_IN_OUT,
+  });
+  const cursorY = interpolate(frame, [20, 52], [160, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: EASE_IN_OUT,
+  });
+  const tap = interpolate(frame, [52, 60, 70], [0, 1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-  const cursorY = interpolate(frame, [16, 44], [120, 0], {
+  const glow = interpolate(frame, [52, 62], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
+    easing: EASE_OUT,
   });
-  const tap = interpolate(frame, [44, 50, 58], [0, 1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const glow = interpolate(frame, [44, 52], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
+  // Final CTA caption swap at local frame 81 (~35.3s global).
+  const showCta = frame >= 81;
 
   return (
     <AbsoluteFill style={{ overflow: "hidden" }}>
@@ -566,7 +594,7 @@ const Scene8: React.FC = () => {
                 left: `${8 + i * 11}%`,
                 top: 0,
                 bottom: 0,
-                width: 2,
+                width: 3,
                 background: theme.primaryStrong,
               }}
             />
@@ -579,7 +607,7 @@ const Scene8: React.FC = () => {
                 top: `${10 + i * 16}%`,
                 left: 0,
                 right: 0,
-                height: 2,
+                height: 3,
                 background: theme.primaryStrong,
               }}
             />
@@ -587,25 +615,25 @@ const Scene8: React.FC = () => {
         </AbsoluteFill>
       </KenBurns>
 
-      {/* decision card */}
+      {/* decision card (scaled ~1.5x) */}
       <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
         <div
           style={{
             opacity: enter.opacity,
             transform: `translateY(${enter.translateY}px)`,
-            width: 560,
+            width: 860,
             background: theme.card,
-            border: `1px solid ${theme.line}`,
-            borderRadius: 18,
-            padding: "34px 36px 32px",
-            boxShadow: "0 40px 90px -50px rgba(15,20,28,0.65)",
+            border: `1.5px solid ${theme.line}`,
+            borderRadius: 28,
+            padding: "52px 56px 50px",
+            boxShadow: "0 60px 130px -60px rgba(15,20,28,0.65)",
             position: "relative",
           }}
         >
           <div
             style={{
               fontFamily: fonts.mono,
-              fontSize: 15,
+              fontSize: 24,
               textTransform: "uppercase",
               letterSpacing: "0.1em",
               color: theme.mutedInk,
@@ -617,10 +645,10 @@ const Scene8: React.FC = () => {
             style={{
               fontFamily: fonts.sans,
               fontWeight: 700,
-              fontSize: 30,
+              fontSize: 48,
               letterSpacing: "-0.02em",
               color: theme.ink,
-              marginTop: 8,
+              marginTop: 12,
             }}
           >
             Dispatch plumber for roof leak
@@ -628,40 +656,40 @@ const Scene8: React.FC = () => {
           <div
             style={{
               fontFamily: fonts.sans,
-              fontSize: 19,
+              fontSize: 30,
               color: theme.mutedInk,
-              marginTop: 6,
+              marginTop: 10,
             }}
           >
             Quote $420 · within the $1,000 committee limit
           </div>
-          <div style={{ display: "flex", gap: 14, marginTop: 26 }}>
+          <div style={{ display: "flex", gap: 22, marginTop: 40 }}>
             <div
               style={{
                 flex: 1,
                 textAlign: "center",
-                padding: "14px 0",
-                borderRadius: 10,
+                padding: "22px 0",
+                borderRadius: 16,
                 background: theme.primary,
                 color: theme.onPrimary,
                 fontFamily: fonts.sans,
                 fontWeight: 600,
-                fontSize: 22,
+                fontSize: 34,
                 position: "relative",
-                boxShadow: `0 0 ${glow * 34}px ${glow * 6}px color-mix(in oklch, ${theme.primary} 60%, transparent)`,
+                boxShadow: `0 0 ${glow * 52}px ${glow * 10}px color-mix(in oklch, ${theme.primary} 60%, transparent)`,
               }}
             >
               Approve
             </div>
             <div
               style={{
-                padding: "14px 26px",
-                borderRadius: 10,
-                border: `1px solid ${theme.line}`,
+                padding: "22px 42px",
+                borderRadius: 16,
+                border: `1.5px solid ${theme.line}`,
                 color: theme.ink,
                 fontFamily: fonts.sans,
                 fontWeight: 600,
-                fontSize: 22,
+                fontSize: 34,
               }}
             >
               Hold
@@ -672,28 +700,28 @@ const Scene8: React.FC = () => {
           <div
             style={{
               position: "absolute",
-              left: 150,
-              bottom: 44,
+              left: 230,
+              bottom: 68,
               transform: `translate(${cursorX}px, ${cursorY}px)`,
             }}
           >
             <div
               style={{
                 position: "absolute",
-                left: -18,
-                top: -18,
-                width: 60,
-                height: 60,
+                left: -28,
+                top: -28,
+                width: 92,
+                height: 92,
                 borderRadius: "50%",
-                border: `3px solid ${theme.primary}`,
+                border: `4px solid ${theme.primary}`,
                 opacity: tap,
                 transform: `scale(${0.4 + tap * 1.1})`,
               }}
             />
             <div
               style={{
-                width: 26,
-                height: 26,
+                width: 40,
+                height: 40,
                 borderRadius: "50%",
                 background: theme.ink,
                 opacity: 0.82,
@@ -702,7 +730,11 @@ const Scene8: React.FC = () => {
           </div>
         </div>
       </AbsoluteFill>
-      <Caption theme={theme}>You still decide everything that matters</Caption>
+      {showCta ? (
+        <Caption theme={theme}>See your number. It&apos;s free.</Caption>
+      ) : (
+        <Caption theme={theme}>You still decide everything that matters</Caption>
+      )}
     </AbsoluteFill>
   );
 };
@@ -711,36 +743,50 @@ const Scene8: React.FC = () => {
 export const C1TheNumber: React.FC<C1Props> = () => {
   return (
     <AbsoluteFill style={{ background: theme.paper }}>
+      {/* ElevenLabs en-AU narration — muxed into both mp4 + webm. The homepage
+          cut plays muted via the <video muted> attribute, so the track rides
+          along and a tap unmutes it. */}
+      <Audio src={staticFile("audio/c1-vo.mp3")} />
+
       <Sequence from={SCENES.s1.from} durationInFrames={SCENES.s1.dur}>
-        <Scene1 />
+        <SceneFade>
+          <Scene1 />
+        </SceneFade>
       </Sequence>
       <Sequence from={SCENES.s2.from} durationInFrames={SCENES.s2.dur}>
-        <Scene2 />
+        <SceneFade>
+          <Scene2 />
+        </SceneFade>
       </Sequence>
       <Sequence from={SCENES.s3.from} durationInFrames={SCENES.s3.dur}>
-        <Scene3 />
+        <SceneFade>
+          <Scene3 />
+        </SceneFade>
       </Sequence>
       <Sequence from={SCENES.s4.from} durationInFrames={SCENES.s4.dur}>
-        <Scene4 />
+        <SceneFade>
+          <Scene4 />
+        </SceneFade>
       </Sequence>
       <Sequence from={SCENES.s5.from} durationInFrames={SCENES.s5.dur}>
-        <Scene5 />
+        <SceneFade>
+          <Scene5 />
+        </SceneFade>
       </Sequence>
       <Sequence from={SCENES.s6.from} durationInFrames={SCENES.s6.dur}>
-        <Scene6 />
+        <SceneFade>
+          <Scene6 />
+        </SceneFade>
       </Sequence>
       <Sequence from={SCENES.s7.from} durationInFrames={SCENES.s7.dur}>
-        <Scene7 />
+        <SceneFade>
+          <Scene7 />
+        </SceneFade>
       </Sequence>
       <Sequence from={SCENES.s8.from} durationInFrames={SCENES.s8.dur}>
-        <Scene8 />
-      </Sequence>
-      <Sequence from={SCENES.s9.from} durationInFrames={SCENES.s9.dur}>
-        <EndCard
-          theme={theme}
-          url="goodstrata.com.au/what-am-i-paying"
-          cta="See your number. It's free."
-        />
+        <SceneFade>
+          <Scene8 />
+        </SceneFade>
       </Sequence>
     </AbsoluteFill>
   );

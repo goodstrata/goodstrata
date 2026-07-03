@@ -1,67 +1,76 @@
-import { interpolate, spring } from "remotion";
+import { Easing, interpolate, spring } from "remotion";
 
 // Shared motion grammar (see plan §"Shared production spine"):
-//  - UI enters with a 6px rise + fade over ~9 frames, spring settle.
-//  - Count-ups ease-out over ~24 frames.
-//  - Fee cards drop with a subtle y-overshoot ("thunk").
+//  - UI enters with a rise + fade over ~10 frames, soft spring settle.
+//  - Count-ups & transitions use a bezier ease-in-out (premium, not mechanical).
+//  - Fee cards drop with a gentle y-overshoot ("thunk").
 
-// 6px rise + fade. `frame` is scene-local, `start` is the enter frame.
+// A classic ease-in-out bezier reused for count-ups, strikes and transitions.
+export const EASE_IN_OUT = Easing.bezier(0.45, 0, 0.25, 1);
+// A soft ease-out for entrances (fast to settle, no snap).
+export const EASE_OUT = Easing.bezier(0.16, 1, 0.3, 1);
+
+// Rise + fade. `frame` is scene-local, `start` is the enter frame.
+// A soft spring (damping 200) settles the translate with no bounce.
 export const riseIn = (
   frame: number,
   fps: number,
   start = 0,
-  rise = 6,
+  rise = 16,
 ): { opacity: number; translateY: number } => {
   const local = frame - start;
-  const opacity = interpolate(local, [0, 9], [0, 1], {
+  const opacity = interpolate(local, [0, 11], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
+    easing: EASE_OUT,
   });
   const s = spring({
     frame: local,
     fps,
-    config: { damping: 200, mass: 0.6, stiffness: 120 },
-    durationInFrames: 18,
+    config: { damping: 200, mass: 0.7, stiffness: 120 },
+    durationInFrames: 22,
   });
   const translateY = interpolate(s, [0, 1], [rise, 0]);
   return { opacity, translateY };
 };
 
-// Ease-out count-up to `to` over `dur` frames, starting at `start`.
+// Ease-in-out count-up to `to` over `dur` frames, starting at `start`.
 export const countUp = (
   frame: number,
   to: number,
   start: number,
-  dur = 24,
+  dur = 40,
 ): number =>
   interpolate(frame, [start, start + dur], [0, to], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
-    easing: (t) => 1 - Math.pow(1 - t, 3),
+    easing: EASE_IN_OUT,
   });
 
-// Fee-card drop with a subtle overshoot "thunk". Returns opacity + translateY.
+// Fee-card drop with a gentle overshoot "thunk". Returns opacity + translateY.
 export const dropIn = (
   frame: number,
   fps: number,
   start = 0,
 ): { opacity: number; translateY: number } => {
   const local = frame - start;
-  const opacity = interpolate(local, [0, 6], [0, 1], {
+  const opacity = interpolate(local, [0, 7], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
+    easing: EASE_OUT,
   });
+  // damping ~14 keeps a single soft overshoot — a thunk, not a bounce.
   const s = spring({
     frame: local,
     fps,
-    config: { damping: 12, mass: 0.9, stiffness: 140 },
-    durationInFrames: 24,
+    config: { damping: 14, mass: 0.85, stiffness: 130 },
+    durationInFrames: 28,
   });
-  const translateY = interpolate(s, [0, 1], [-26, 0]);
+  const translateY = interpolate(s, [0, 1], [-44, 0]);
   return { opacity, translateY };
 };
 
-// Simple clamped fade between two frames.
+// Simple clamped fade between two frames (linear by default).
 export const fade = (
   frame: number,
   from: number,
@@ -72,4 +81,32 @@ export const fade = (
   interpolate(frame, [from, to], [a, b], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
+    easing: EASE_IN_OUT,
   });
+
+// Per-scene fade — eases each scene in (and optionally out) so the hard
+// Sequence cuts read as gentle dissolves over the paper root.
+export const sceneFade = (
+  frame: number,
+  durationInFrames: number,
+  inFrames = 11,
+  outFrames = 0,
+): number => {
+  const fin = interpolate(frame, [0, inFrames], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: EASE_OUT,
+  });
+  if (outFrames <= 0) return fin;
+  const fout = interpolate(
+    frame,
+    [durationInFrames - outFrames, durationInFrames],
+    [1, 0],
+    {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+      easing: EASE_IN_OUT,
+    },
+  );
+  return fin * fout;
+};

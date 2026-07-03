@@ -218,9 +218,25 @@ header.site .logo {
 .logo-cube .cf {
   position: absolute;
   inset: 0;
-  border: 1.5px solid color-mix(in oklab, var(--primary) 50%, transparent);
-  background: color-mix(in oklab, var(--primary) 6%, transparent);
-  border-radius: 3px;
+  border: 1.5px solid color-mix(in oklab, var(--primary) 34%, transparent);
+  /* Very subtle sheen: a faint eucalypt gradient band drifts across each face. */
+  background: linear-gradient(
+    115deg,
+    color-mix(in oklab, var(--primary) 2%, transparent) 30%,
+    color-mix(in oklab, var(--primary) 11%, transparent) 50%,
+    color-mix(in oklab, var(--primary) 2%, transparent) 70%
+  );
+  background-size: 220% 220%;
+  animation: cfShimmer 6s ease-in-out infinite;
+}
+@keyframes cfShimmer {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
 }
 .cf-front {
   transform: translateZ(13px);
@@ -252,6 +268,9 @@ header.site .logo {
   .logo-cube {
     animation: none;
     transform: rotateX(-22deg) rotateY(-38deg);
+  }
+  .logo-cube .cf {
+    animation: none;
   }
 }
 header.site .logo img {
@@ -1545,8 +1564,9 @@ ul.proof-list li strong {
   .hero > .clip-wrap .clip {
     margin-top: 0;
   }
+  /* Breathing room between the clip's "real number" CTA and the hero heading. */
   .hero-grid {
-    margin-top: 8px;
+    margin-top: 34px;
   }
 }
 @media (max-width: 620px) {

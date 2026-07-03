@@ -19,19 +19,19 @@ export const AgmCard: React.FC<{ theme: Theme }> = ({ theme }) => {
   return (
     <div
       style={{
-        width: 780,
+        width: 1080,
         background: theme.card,
-        border: `1px solid ${theme.line}`,
-        borderRadius: 8,
-        padding: "40px 44px 44px",
-        boxShadow: "0 40px 80px -50px rgba(15,20,28,0.6)",
+        border: `1.5px solid ${theme.line}`,
+        borderRadius: 14,
+        padding: "56px 64px 60px",
+        boxShadow: "0 60px 120px -60px rgba(15,20,28,0.6)",
         transform: "rotate(-1.4deg)",
       }}
     >
       <div
         style={{
           fontFamily: fonts.mono,
-          fontSize: 15,
+          fontSize: 22,
           textTransform: "uppercase",
           letterSpacing: "0.14em",
           color: theme.mutedInk,
@@ -43,10 +43,10 @@ export const AgmCard: React.FC<{ theme: Theme }> = ({ theme }) => {
         style={{
           fontFamily: fonts.sans,
           fontWeight: 700,
-          fontSize: 34,
+          fontSize: 50,
           letterSpacing: "-0.02em",
           color: theme.ink,
-          marginTop: 10,
+          marginTop: 14,
         }}
       >
         Annual General Meeting
@@ -55,17 +55,17 @@ export const AgmCard: React.FC<{ theme: Theme }> = ({ theme }) => {
         style={{
           fontFamily: fonts.sans,
           fontWeight: 600,
-          fontSize: 20,
+          fontSize: 29,
           color: theme.mutedInk,
-          marginTop: 2,
+          marginTop: 4,
         }}
       >
         Statement of Fees &amp; Charges
       </div>
       <div
         style={{
-          marginTop: 22,
-          borderTop: `1px solid ${theme.line}`,
+          marginTop: 30,
+          borderTop: `1.5px solid ${theme.line}`,
         }}
       >
         {rows.map(([label, amt]) => {
@@ -76,11 +76,11 @@ export const AgmCard: React.FC<{ theme: Theme }> = ({ theme }) => {
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                gap: 20,
-                padding: "11px 0",
-                borderBottom: `1px solid ${theme.line}`,
+                gap: 30,
+                padding: "16px 0",
+                borderBottom: `1.5px solid ${theme.line}`,
                 fontFamily: fonts.sans,
-                fontSize: 18,
+                fontSize: 27,
                 color: theme.mutedInk,
               }}
             >

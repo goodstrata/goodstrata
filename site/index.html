@@ -100,7 +100,7 @@
   <!-- C1 "The Number" — the flagship explainer, tying the animated number to
        the live slider above. Muted, looped, self-contained; JS (clips.js) only
        plays it when ≥50% in view and never loads it for reduced-motion / Save-Data. -->
-  <div class="wrap">
+  <div class="wrap clip-wrap">
     <figure class="clip" id="c1-clip">
       <div class="clip-frame">
         <video
@@ -116,6 +116,15 @@
           <source src="/clips/c1-the-number.webm" type="video/webm" />
           <source src="/clips/c1-the-number.mp4" type="video/mp4" />
         </video>
+        <!-- Ambient hint: the clip autoplays muted; a tap unmutes + restarts.
+             Hidden once sound is on (clips.js adds .clip-sound-on) or for the
+             reduced-motion / Save-Data static fallback. -->
+        <button type="button" class="clip-sound" hidden>tap for sound 🔊</button>
+        <!-- Shown by clips.js on the 'ended' event of a with-sound playthrough
+             (the loop is turned off once the viewer opts into audio). -->
+        <button type="button" class="clip-again" hidden aria-label="Watch the clip again with sound">
+          <span class="clip-again-btn">Watch again ↻</span>
+        </button>
       </div>
       <figcaption class="clip-cap">
         <a class="clip-cta" href="/what-am-i-paying/">See your building's real number →</a>

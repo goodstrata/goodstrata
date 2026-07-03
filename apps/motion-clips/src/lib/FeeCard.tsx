@@ -24,15 +24,15 @@ export const FeeCard: React.FC<{
         display: "flex",
         alignItems: "baseline",
         justifyContent: "space-between",
-        gap: 24,
-        width: 640,
-        padding: "20px 28px",
+        gap: 44,
+        width: 1120,
+        padding: "34px 50px",
         background: greyed
           ? `color-mix(in oklch, ${theme.card} 78%, ${theme.paper})`
           : theme.card,
-        border: `1px solid ${tone === "critical" ? `color-mix(in oklch, ${theme.critical} 40%, ${theme.line})` : theme.line}`,
-        borderRadius: 14,
-        boxShadow: "0 20px 40px -30px rgba(15,20,28,0.55)",
+        border: `1.5px solid ${tone === "critical" ? `color-mix(in oklch, ${theme.critical} 40%, ${theme.line})` : theme.line}`,
+        borderRadius: 22,
+        boxShadow: "0 34px 66px -40px rgba(15,20,28,0.55)",
         opacity: greyed ? opacity * 0.92 : opacity,
         transform: `translateY(${translateY}px)`,
       }}
@@ -41,7 +41,7 @@ export const FeeCard: React.FC<{
         style={{
           fontFamily: fonts.sans,
           fontWeight: 500,
-          fontSize: 26,
+          fontSize: 46,
           color: greyed ? theme.faintInk : theme.mutedInk,
         }}
       >
@@ -52,7 +52,7 @@ export const FeeCard: React.FC<{
           fontFamily: fonts.mono,
           fontVariantNumeric: "tabular-nums",
           fontWeight: 600,
-          fontSize: 30,
+          fontSize: 54,
           color: amountColor,
           fontStyle: greyed ? "italic" : "normal",
         }}

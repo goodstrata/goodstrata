@@ -111,16 +111,16 @@ async function main() {
   });
   console.log("\n[render] webm done");
 
-  // 3) Poster JPG — a real mid-clip frame (~scene 6, the $8,400 count).
-  // Scene 6 is frames 465-570; grab 540 (count settled, breakdown visible).
+  // 3) Poster JPG — the payoff frame: struck $8,400 vs a clean $0 (scene 7,
+  // frames 858-978). Grab 930 (strike drawn, $0 revealed and glowing).
   const poster = path.join(outDir, "c1-poster.jpg");
-  console.log("[render] poster jpg (frame 540)…");
+  console.log("[render] poster jpg (frame 930)…");
   await renderStill({
     serveUrl,
     composition,
     inputProps: { hook: "A" },
     browserExecutable: browserExecutable ?? undefined,
-    frame: 540,
+    frame: 930,
     output: poster,
     imageFormat: "jpeg",
     jpegQuality: 90,
