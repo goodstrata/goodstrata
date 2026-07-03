@@ -70,6 +70,29 @@ export const dropIn = (
   return { opacity, translateY };
 };
 
+// Pattern-interrupt slam for the vertical paid-social hooks: text lands at
+// scale with a single hard settle (stiffer spring than dropIn — a slam, not
+// a thunk). Opacity resolves in 4 frames so the first readable frame is bold.
+export const slamIn = (
+  frame: number,
+  fps: number,
+  start = 0,
+): { opacity: number; scale: number } => {
+  const local = frame - start;
+  const opacity = interpolate(local, [0, 4], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const s = spring({
+    frame: local,
+    fps,
+    config: { damping: 16, mass: 0.6, stiffness: 210 },
+    durationInFrames: 16,
+  });
+  const scale = interpolate(s, [0, 1], [1.22, 1]);
+  return { opacity, scale };
+};
+
 // Simple clamped fade between two frames (linear by default).
 export const fade = (
   frame: number,
