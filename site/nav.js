@@ -14,7 +14,12 @@
     var orbit = document.createElement("span");
     orbit.className = "logo-orbit";
     orbit.setAttribute("aria-hidden", "true");
-    orbit.innerHTML = '<span class="logo-orbit-sq"></span>';
+    orbit.innerHTML =
+      '<span class="logo-cube">' +
+      '<span class="cf cf-front"></span><span class="cf cf-back"></span>' +
+      '<span class="cf cf-right"></span><span class="cf cf-left"></span>' +
+      '<span class="cf cf-top"></span><span class="cf cf-bottom"></span>' +
+      "</span>";
     logo.insertBefore(orbit, logo.firstChild);
   }
 

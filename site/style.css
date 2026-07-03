@@ -206,30 +206,52 @@ header.site .logo {
   perspective: 220px;
   pointer-events: none;
 }
-.logo-orbit-sq {
+.logo-cube {
   position: absolute;
-  left: -23px;
-  top: -23px;
-  width: 46px;
-  height: 46px;
-  border: 1.5px solid color-mix(in oklab, var(--primary) 55%, transparent);
-  border-radius: 3px;
-  background: color-mix(in oklab, var(--primary) 8%, transparent);
+  left: -20px;
+  top: -20px;
+  width: 40px;
+  height: 40px;
   transform-style: preserve-3d;
-  animation: logoOrbit 7s linear infinite;
+  animation: cubeSpin 9s linear infinite;
 }
-@keyframes logoOrbit {
+.logo-cube .cf {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid color-mix(in oklab, var(--primary) 50%, transparent);
+  background: color-mix(in oklab, var(--primary) 6%, transparent);
+  border-radius: 3px;
+}
+.cf-front {
+  transform: translateZ(20px);
+}
+.cf-back {
+  transform: rotateY(180deg) translateZ(20px);
+}
+.cf-right {
+  transform: rotateY(90deg) translateZ(20px);
+}
+.cf-left {
+  transform: rotateY(-90deg) translateZ(20px);
+}
+.cf-top {
+  transform: rotateX(90deg) translateZ(20px);
+}
+.cf-bottom {
+  transform: rotateX(-90deg) translateZ(20px);
+}
+@keyframes cubeSpin {
   from {
-    transform: rotateX(16deg) rotateY(0deg);
+    transform: rotateX(-22deg) rotateY(0deg);
   }
   to {
-    transform: rotateX(16deg) rotateY(360deg);
+    transform: rotateX(-22deg) rotateY(360deg);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .logo-orbit-sq {
+  .logo-cube {
     animation: none;
-    transform: rotateX(16deg) rotateY(-24deg);
+    transform: rotateX(-22deg) rotateY(-38deg);
   }
 }
 header.site .logo img {
