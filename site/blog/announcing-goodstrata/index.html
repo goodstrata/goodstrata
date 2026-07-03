@@ -23,9 +23,13 @@
       <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
       <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
     </a>
-    <nav>
-      <a href="/">Home</a>
+    <nav aria-label="Primary">
+      <a href="/how-it-works/">How it works</a>
+      <a href="/how-we-make-money/">How we make money</a>
+      <a href="/open-source/">Open source</a>
+      <a href="/for-owners/">Rally your building</a>
       <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+      <a class="nav-btn" href="/what-am-i-paying/">What am I paying?</a>
     </nav>
   </header>
 </div>
@@ -39,7 +43,7 @@
 
     <p><b>GoodStrata</b> is our answer: an open-source platform where AI agents do all of that work, and the humans in the building do the only thing that should ever have been theirs to do — <b>decide</b>. Approve the budget. Approve the quote. Vote at the AGM. Everything else runs itself, and every single action lands on an append-only event log you can audit down to the individual model tool-call.</p>
 
-    <p>It's free for owners corporations. Not freemium — free. The platform earns a payment-processing margin when levies move and a commission from contractors who win work through it. No subscriptions, no lock-in — and because it's Apache-2.0 open source, "no lock-in" is a checkable claim: self-host it with nothing but PostgreSQL and one Node process.</p>
+    <p>It's free for owners corporations. Not freemium — free. The platform earns a thin, published margin on the payments that move — the same margin whichever contractor the committee picks, never a commission for choosing one. No insurance commissions, no contractor kickbacks, no subscriptions, no lock-in — and because it's Apache-2.0 open source, "no lock-in" is a checkable claim: self-host it with nothing but PostgreSQL and one Node process.</p>
 
     <h2>We ran a whole building on a laptop, with no cloud AI</h2>
 
@@ -107,6 +111,18 @@
     <p class="fine">Artifacts from the simulation in this post (agent transcripts, the event log, every email) live in the repo under <code>docs/blog/sim-artifacts/</code> — regenerate them yourself with <code>pnpm seed:demo</code> and a local model.</p>
   </div>
 </article>
+
+<section class="closer alt">
+  <div class="wrap">
+    <p class="kicker">Start with your own number</p>
+    <h2>Before you switch — see what your manager charges today.</h2>
+    <p>Drop in your AGM papers or budget and we'll show you, in plain dollars, what you're paying now. Free, and we don't keep your document. Then compare it with $0.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="/what-am-i-paying/">Check what you're paying →</a>
+      <a class="btn ghost" href="https://demo.goodstrata.com.au">Try the live demo</a>
+    </div>
+  </div>
+</section>
 
 <footer>
   <div class="wrap">
