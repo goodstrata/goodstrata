@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-AU">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,9 +7,13 @@
   <meta name="description" content="Free, open-source strata management for Australia. AI agents issue levies, reconcile payments, chase arrears, dispatch contractors, and draft minutes — committee members only approve, vote, or escalate. Every action audited." />
   <meta property="og:title" content="GoodStrata — strata management, run by agents" />
   <meta property="og:description" content="Free for owners corporations. Open source. Try the live demo." />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
   <link rel="icon" href="/favicon.ico" sizes="32x32" />
   <link rel="icon" href="/icon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icon.png" />
+  <link rel="preload" href="/fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -17,7 +21,8 @@
 <div class="wrap">
   <header class="site">
     <a class="logo" href="/">
-      <img src="/logo-on-light.svg" alt="GoodStrata" style="height:38px;width:auto" />
+      <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
+      <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
     </a>
     <nav>
       <a href="https://demo.goodstrata.com.au">Demo</a>
@@ -29,6 +34,10 @@
 
 <div class="hero">
   <div class="wrap">
+    <p class="eyebrow">
+      <span class="motif" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span class="kicker">Free · open source · audit-first</span>
+    </p>
     <h1>Your owners corporation, run by AI agents.<br /><em>Humans only decide.</em></h1>
     <p class="sub">
       Levies issued, payments reconciled, arrears followed up, contractors dispatched, meetings
@@ -52,17 +61,17 @@
     <h2>Agents do the work. You keep the decisions.</h2>
     <div class="points">
       <div class="point">
-        <div class="rule"></div>
+        <div class="rule" aria-hidden="true"><span></span><span></span><span></span></div>
         <h3>Agents execute</h3>
         <p>Finance, maintenance, and meetings agents watch the event bus and act the moment something happens — with a full transcript of every step.</p>
       </div>
       <div class="point">
-        <div class="rule"></div>
+        <div class="rule" aria-hidden="true"><span></span><span></span><span></span></div>
         <h3>Humans decide</h3>
         <p>Budgets, over-threshold works, debt recovery: agents can only propose, with evidence attached. One tap approves; code executes exactly what was approved.</p>
       </div>
       <div class="point">
-        <div class="rule"></div>
+        <div class="rule" aria-hidden="true"><span></span><span></span><span></span></div>
         <h3>Money is never AI</h3>
         <p>Levy apportionment, penalty interest, reconciliation, and vote weighting are deterministic, tested code. The model writes words, not numbers.</p>
       </div>
