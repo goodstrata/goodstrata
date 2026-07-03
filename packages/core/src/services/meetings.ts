@@ -20,6 +20,7 @@ import {
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
+import { emailBrand, infoNote, keyValueTable, paragraph, renderEmail } from "../email/index.js";
 import { type CastVote, quorumMet, tallyMotion } from "../engines/voting.js";
 import { DomainError, notFound } from "../errors.js";
 import { arrearsForScheme } from "./arrears.js";
@@ -141,7 +142,31 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
     });
   });
 
+  const when = meeting.scheduledAt.toLocaleString("en-AU", { timeZone: "Australia/Melbourne" });
+  const meetingUrl = `${emailBrand.urls.app}/schemes/${schemeId}?section=meetings&meeting=${meetingId}`;
+  const detailRows = [{ label: "When", value: when }];
+  if (meeting.location) detailRows.push({ label: "Where", value: meeting.location });
+  const agendaText =
+    agenda.length > 0
+      ? agenda.map((a) => `${a.order}. ${a.title}`).join("\n")
+      : "The agenda will be tabled at the meeting.";
+
   for (const owner of reachable) {
+    const { html, text } = renderEmail({
+      preheader: `Notice of ${meeting.title} for ${scheme?.name} — ${when}.`,
+      heading: `Notice of ${meeting.kind === "committee" ? "committee meeting" : meeting.kind.toUpperCase()}`,
+      intro: `Dear ${owner.givenName ?? "Owner"}, notice is given of the following meeting of ${scheme?.name}.`,
+      blocks: [
+        paragraph(meeting.title),
+        keyValueTable(detailRows, "Meeting details"),
+        paragraph(`Agenda\n${agendaText}`),
+        infoNote(
+          "You may vote in person, online, or appoint a proxy via the portal before the meeting.",
+        ),
+      ],
+      cta: { label: "View meeting & agenda", url: meetingUrl },
+    });
+
     await sendEmail(ctx, {
       schemeId,
       personId: owner.personId,
@@ -149,24 +174,8 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
       subject: `Notice of ${meeting.kind.toUpperCase()}: ${meeting.title} — ${scheme?.name}`,
       template: "meeting_notice",
       related: { type: "meeting", id: meetingId },
-      body: [
-        `Dear ${owner.givenName ?? "Owner"},`,
-        "",
-        `Notice is given of the following meeting of ${scheme?.name}:`,
-        "",
-        `${meeting.title}`,
-        `When: ${meeting.scheduledAt.toLocaleString("en-AU", { timeZone: "Australia/Melbourne" })}`,
-        meeting.location ? `Where: ${meeting.location}` : "",
-        "",
-        "Agenda:",
-        ...agenda.map((a) => `  ${a.order}. ${a.title}`),
-        "",
-        "You may vote in person, online, or appoint a proxy via the portal before the meeting.",
-        "",
-        `${scheme?.name} — powered by GoodStrata`,
-      ]
-        .filter((l) => l !== "")
-        .join("\n"),
+      body: text,
+      html,
     });
   }
 

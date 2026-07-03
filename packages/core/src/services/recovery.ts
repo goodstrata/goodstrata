@@ -4,6 +4,7 @@ import { formatCents } from "@goodstrata/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields } from "../context.js";
+import { amountPanel, emailBrand, infoNote, keyValueTable, renderEmail } from "../email/index.js";
 import { arrearsForScheme, levyRecipient } from "./arrears.js";
 import { sendEmail } from "./comms.js";
 import { registerDecisionAction } from "./decisions.js";
@@ -39,6 +40,37 @@ registerDecisionAction("finance.commenceDebtRecovery", async (ctx, args, decisio
 
   const recipient = await levyRecipient(ctx, schemeId, lotId);
   if (recipient?.email) {
+    const totalCents = arrears.outstandingCents + arrears.interestAccruedCents;
+    const totalPayable = formatCents(totalCents);
+    const lotUrl = `${emailBrand.urls.app}/schemes/${schemeId}?section=lots`;
+    const { html, text } = renderEmail({
+      preheader: `Formal demand: ${totalPayable} now payable for lot ${lot.lotNumber} at ${scheme.name}.`,
+      heading: "Formal demand for unpaid levies",
+      intro: `Dear ${recipient.name ?? "Owner"}, despite previous reminders, levies for lot ${lot.lotNumber} at ${scheme.name} remain unpaid.`,
+      blocks: [
+        amountPanel("Total now payable", totalPayable, { tone: "critical" }),
+        keyValueTable(
+          [
+            { label: "Outstanding levies", value: formatCents(arrears.outstandingCents) },
+            {
+              label: "Accrued penalty interest",
+              value: formatCents(arrears.interestAccruedCents),
+            },
+            { label: "Total now payable", value: totalPayable },
+          ],
+          "Account summary",
+        ),
+        infoNote(
+          "The owners corporation has resolved to commence debt recovery. Unless payment in full is received within 14 days, the matter may be referred for recovery action under the Owners Corporations Act 2006 (Vic), and recovery costs may be added to your lot account.",
+          "warning",
+        ),
+        infoNote(
+          "If you are experiencing hardship, contact the committee to discuss a payment plan.",
+        ),
+      ],
+      cta: { label: "View lot account", url: lotUrl },
+    });
+
     await sendEmail(ctx, {
       schemeId,
       personId: recipient.personId,
@@ -46,23 +78,8 @@ registerDecisionAction("finance.commenceDebtRecovery", async (ctx, args, decisio
       subject: `FORMAL DEMAND — outstanding levies, lot ${lot.lotNumber}, ${scheme.name}`,
       template: "formal_demand",
       related: { type: "lot", id: lotId },
-      body: [
-        `Dear ${recipient.name ?? "Owner"},`,
-        "",
-        `Despite previous reminders, levies for lot ${lot.lotNumber} at ${scheme.name} remain unpaid.`,
-        "",
-        `Outstanding levies: ${formatCents(arrears.outstandingCents)}`,
-        `Accrued penalty interest: ${formatCents(arrears.interestAccruedCents)}`,
-        `Total now payable: ${formatCents(arrears.outstandingCents + arrears.interestAccruedCents)}`,
-        "",
-        "The owners corporation has resolved to commence debt recovery. Unless payment in full is",
-        "received within 14 days, the matter may be referred for recovery action under the Owners",
-        "Corporations Act 2006 (Vic), and recovery costs may be added to your lot account.",
-        "",
-        "If you are experiencing hardship, contact the committee to discuss a payment plan.",
-        "",
-        `${scheme.name} — powered by GoodStrata`,
-      ].join("\n"),
+      body: text,
+      html,
     });
   }
 });

@@ -4,6 +4,7 @@ import { addDays, formatCents } from "@goodstrata/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
+import { emailBrand, infoNote, keyValueTable, paragraph, renderEmail } from "../email/index.js";
 import { DomainError, notFound } from "../errors.js";
 import { sendEmail } from "./comms.js";
 import { registerDecisionAction, requestDecision } from "./decisions.js";
@@ -158,6 +159,18 @@ export async function declineAsLotResponsibility(
     });
     const email = person[0]?.email;
     if (email) {
+      const requestUrl = `${emailBrand.urls.app}/schemes/${schemeId}?section=maintenance`;
+      const { html, text } = renderEmail({
+        preheader: `An update on your maintenance request: ${request.title}.`,
+        heading: `About your maintenance request: ${request.title}`,
+        blocks: [
+          paragraph(explanation),
+          infoNote(
+            "This request has been assessed as the lot owner's responsibility rather than common property, so the owners corporation will not arrange the works. You can view the full request and its history in the portal.",
+          ),
+        ],
+        cta: { label: "View request", url: requestUrl },
+      });
       await sendEmail(ctx, {
         schemeId,
         personId: request.reportedByPersonId,
@@ -165,7 +178,8 @@ export async function declineAsLotResponsibility(
         subject: `About your maintenance request: ${request.title}`,
         template: "maintenance_lot_responsibility",
         related: { type: "maintenance_request", id: requestId },
-        body: explanation,
+        body: text,
+        html,
       });
     }
   }
@@ -388,39 +402,47 @@ export async function dispatchWorkOrder(
   });
 
   if (contractor?.email && scheme) {
-    let lotLine = "Location: common property";
+    let location = "Common property";
     if (wo.requestId) {
       const request = await ctx.db.query.maintenanceRequests.findFirst({
         where: eq(maintenanceRequests.id, wo.requestId),
       });
       if (request?.lotId) {
         const lot = await ctx.db.query.lots.findFirst({ where: eq(lots.id, request.lotId) });
-        lotLine = `Location: lot ${lot?.lotNumber ?? "?"}`;
+        location = `Lot ${lot?.lotNumber ?? "?"}`;
       }
     }
+    const detailRows = [
+      { label: "Scope of work", value: wo.scope },
+      { label: "Location", value: location },
+      {
+        label: "Approved amount",
+        value: `${formatCents(wo.approvedAmountCents)} (do not exceed without written approval)`,
+      },
+    ];
+    if (wo.accessNotes) detailRows.push({ label: "Access", value: wo.accessNotes });
+
+    // No portal CTA: the contractor is an external party without a login. The
+    // requested action is to reply to this email and invoice on completion.
+    const { html, text } = renderEmail({
+      preheader: `Work order for ${scheme.name}: ${wo.scope}.`,
+      heading: `Work order — ${scheme.name}`,
+      intro: `Hi ${contractor.contactName ?? contractor.businessName}, you've been engaged for works at ${scheme.name}, ${scheme.addressLine1}, ${scheme.suburb}.`,
+      blocks: [
+        keyValueTable(detailRows, "Work order details"),
+        infoNote(
+          "Please confirm acceptance by replying to this email, and invoice the owners corporation on completion quoting this work order.",
+        ),
+      ],
+    });
     await sendEmail(ctx, {
       schemeId,
       to: contractor.email,
       subject: `Work order — ${scheme.name}`,
       template: "work_order_dispatch",
       related: { type: "work_order", id: workOrderId },
-      body: [
-        `Hi ${contractor.contactName ?? contractor.businessName},`,
-        "",
-        `You've been engaged for works at ${scheme.name}, ${scheme.addressLine1}, ${scheme.suburb}.`,
-        "",
-        `Scope of work: ${wo.scope}`,
-        lotLine,
-        `Approved amount: ${formatCents(wo.approvedAmountCents)} (do not exceed without written approval)`,
-        wo.accessNotes ? `Access: ${wo.accessNotes}` : "",
-        "",
-        "Please confirm acceptance by replying to this email, and invoice the owners corporation",
-        "on completion quoting this work order.",
-        "",
-        `${scheme.name} — powered by GoodStrata`,
-      ]
-        .filter((l) => l !== "")
-        .join("\n"),
+      body: text,
+      html,
     });
   }
 

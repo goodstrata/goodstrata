@@ -1,4 +1,5 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { renderEmail } from "@goodstrata/core";
 import {
   accounts,
   type Database,
@@ -63,10 +64,20 @@ export function createAuth(opts: {
       // Not awaited — sending in-band would leak timing about whether an
       // address exists (better-auth guidance).
       sendResetPassword: async ({ user, url }) => {
+        const { html, text } = renderEmail({
+          preheader: "Reset the password for your GoodStrata account.",
+          heading: "Reset your password",
+          intro:
+            "Someone asked to reset the password for your GoodStrata account. Choose a new one using the button below.",
+          cta: { label: "Reset password", url },
+          footerNote:
+            "This link expires shortly. If it wasn't you, ignore this email — your password stays the same.",
+        });
         void opts.email.send({
           to: user.email,
           subject: "Reset your GoodStrata password",
-          text: `Someone asked to reset the password for your GoodStrata account.\n\nReset it here: ${url}\n\nThis link expires shortly. If it wasn't you, ignore this email — your password stays the same.`,
+          text,
+          html,
         });
       },
     },
@@ -74,10 +85,20 @@ export function createAuth(opts: {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
       sendVerificationEmail: async ({ user, url }) => {
+        const { html, text } = renderEmail({
+          preheader: "Confirm your email address to secure your GoodStrata account.",
+          heading: "Confirm your email",
+          intro:
+            "Welcome to GoodStrata. Confirm this is your address to secure your account and start using The Registry.",
+          cta: { label: "Confirm your email", url },
+          footerNote:
+            "This link expires shortly. If you didn't create a GoodStrata account, ignore this email.",
+        });
         void opts.email.send({
           to: user.email,
           subject: "Confirm your email for GoodStrata",
-          text: `Welcome to GoodStrata. Confirm this is your address to secure your account:\n\n${url}\n\nIf you didn't create an account, ignore this email.`,
+          text,
+          html,
         });
       },
     },
@@ -92,10 +113,29 @@ export function createAuth(opts: {
         // (above), mailing the NEW address. Either way the change only lands
         // once a link is clicked, which the UI surfaces as a pending state.
         sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+          const { html, text } = renderEmail({
+            preheader: `Confirm the change of your GoodStrata email to ${newEmail}.`,
+            heading: "Confirm your email change",
+            intro:
+              "We received a request to change the email address on your GoodStrata account. Confirm it below to complete the change.",
+            blocks: [
+              {
+                kind: "keyValueTable",
+                caption: "Email change",
+                rows: [
+                  { label: "Current address", value: user.email },
+                  { label: "New address", value: newEmail },
+                ],
+              },
+            ],
+            cta: { label: "Confirm email change", url },
+            footerNote: `This link expires shortly. If you didn't ask for this, ignore this email — your address stays ${user.email}.`,
+          });
           void opts.email.send({
             to: user.email,
             subject: "Confirm your GoodStrata email change",
-            text: `We received a request to change your GoodStrata email address to ${newEmail}.\n\nConfirm the change:\n${url}\n\nIf you didn't ask for this, ignore this email — your address stays ${user.email}.`,
+            text,
+            html,
           });
         },
       },
@@ -134,10 +174,20 @@ export function createAuth(opts: {
     plugins: [
       magicLink({
         sendMagicLink: async ({ email, url }) => {
+          const { html, text } = renderEmail({
+            preheader: "Your secure sign-in link for GoodStrata.",
+            heading: "Sign in to GoodStrata",
+            intro:
+              "Use the button below to sign in to your GoodStrata account. No password needed.",
+            cta: { label: "Sign in", url },
+            footerNote:
+              "This link expires shortly and can only be used once. If you didn't request it, ignore this email.",
+          });
           void opts.email.send({
             to: email,
             subject: "Sign in to GoodStrata",
-            text: `Click to sign in: ${url}\n\nThis link expires shortly. If you didn't request it, ignore this email.`,
+            text,
+            html,
           });
         },
       }),

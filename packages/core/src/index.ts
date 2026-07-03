@@ -1,4 +1,5 @@
 export * from "./context.js";
+export * from "./email/index.js";
 export * from "./engines/arrears-ladder.js";
 export * from "./engines/interest.js";
 export * from "./engines/levy-calc.js";

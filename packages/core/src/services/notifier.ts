@@ -3,6 +3,7 @@ import type { EventRecord } from "@goodstrata/events";
 import { formatCents, type MembershipRole } from "@goodstrata/shared";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { ServiceContext } from "../context.js";
+import { emailBrand, paragraph, renderEmail } from "../email/index.js";
 import { notifyUsers } from "./notifications.js";
 
 /**
@@ -86,6 +87,18 @@ export async function handleEventForNotifications(
       });
 
       // Email + SMS nudge, best-effort per recipient (in-app row already exists).
+      const decisionsUrl = `${emailBrand.urls.app}/schemes/${schemeId}?section=decisions`;
+      const { html, text } = renderEmail({
+        preheader: `A decision needs your vote: ${payload.title}.`,
+        heading: "A decision needs your vote",
+        intro: `The committee has been asked to decide: ${payload.title}.`,
+        blocks: [
+          paragraph(
+            "Open the decision in your inbox to review the details and record your vote. Your response is kept on the record.",
+          ),
+        ],
+        cta: { label: "Review & vote", url: decisionsUrl },
+      });
       const userRows = await ctx.db.query.users.findMany({
         where: inArray(users.id, committee),
       });
@@ -95,7 +108,8 @@ export async function handleEventForNotifications(
           await ctx.integrations.email.send({
             to: user.email,
             subject: title,
-            text: `${body}\n\nDecision: ${payload.title}`,
+            text,
+            html,
           });
         } catch (err) {
           console.error(`[notifier] email to ${user.email} failed`, err);

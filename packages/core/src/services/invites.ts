@@ -4,6 +4,7 @@ import { publishEvent } from "@goodstrata/events";
 import { INVITABLE_ROLES, type MembershipRole, toDateOnly } from "@goodstrata/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import { causationFields, type ServiceContext } from "../context.js";
+import { infoNote, paragraph, renderEmail } from "../email/index.js";
 import { DomainError, notFound } from "../errors.js";
 
 const INVITE_TTL_DAYS = 14;
@@ -60,18 +61,24 @@ export async function invitePerson(
   });
 
   const joinUrl = `${appUrl}/join?token=${token}`;
+  const roleLabel = role.replace(/_/g, " ");
+  const { html, text } = renderEmail({
+    preheader: `You've been invited to join ${scheme.name} on GoodStrata.`,
+    heading: `You're invited to join ${scheme.name}`,
+    intro: `Hi ${person.givenName ?? "there"}, you've been invited to join ${scheme.name} (${scheme.planOfSubdivision}) on GoodStrata as ${roleLabel}.`,
+    blocks: [
+      paragraph(
+        "GoodStrata is the register for your owners corporation — levies, meetings, decisions, and documents, all on the record. Accept your invitation to set up your login.",
+      ),
+      infoNote(`This invitation link expires in ${INVITE_TTL_DAYS} days.`),
+    ],
+    cta: { label: "Accept invitation", url: joinUrl },
+  });
   await ctx.integrations.email.send({
     to: person.email,
     subject: `You're invited to ${scheme.name} on GoodStrata`,
-    text: [
-      `Hi ${person.givenName ?? "there"},`,
-      "",
-      `You've been invited to join ${scheme.name} (${scheme.planOfSubdivision}) on GoodStrata as ${role.replace("_", " ")}.`,
-      "",
-      `Accept your invite: ${joinUrl}`,
-      "",
-      `This link expires in ${INVITE_TTL_DAYS} days.`,
-    ].join("\n"),
+    text,
+    html,
   });
 
   return { token, expiresAt };

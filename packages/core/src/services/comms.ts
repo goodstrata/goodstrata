@@ -8,7 +8,10 @@ export interface SendEmailInput {
   personId?: string;
   to: string;
   subject: string;
+  /** Plain-text body — stored in the correspondence log and always sent. */
   body: string;
+  /** Optional branded HTML body (SES sends both text and html). */
+  html?: string;
   template?: string;
   related?: { type: string; id: string };
 }
@@ -59,6 +62,7 @@ export async function sendEmail(ctx: ServiceContext, input: SendEmailInput) {
       to: input.to,
       subject: input.subject,
       text: input.body,
+      ...(input.html ? { html: input.html } : {}),
     });
     await ctx.db
       .update(messages)

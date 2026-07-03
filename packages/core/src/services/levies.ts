@@ -14,6 +14,14 @@ import { addMonthsDateOnly, formatCents, type LevyFrequency, toDateOnly } from "
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
+import {
+  amountPanel,
+  emailBrand,
+  infoNote,
+  keyValueTable,
+  paragraph,
+  renderEmail,
+} from "../email/index.js";
 import { calculateLevyRun } from "../engines/levy-calc.js";
 import { DomainError, notFound } from "../errors.js";
 import { getAdoptedBudgetFunds } from "./budgets.js";
@@ -225,9 +233,38 @@ export async function issueLevyRun(
   });
 
   // Emails after commit — the notice exists regardless of email fate.
+  const financeUrl = `${emailBrand.urls.app}/schemes/${schemeId}?section=finance`;
   for (const notice of issued) {
     if (!notice.recipientEmail) continue;
     const lot = lotRows.find((l) => l.id === notice.lotId)!;
+    const amountDue = formatCents(notice.totalCents);
+    const detailRows = [
+      { label: "Notice number", value: notice.noticeNumber },
+      { label: "Lot", value: lot.lotNumber },
+      { label: "Due date", value: dueOn },
+    ];
+    if (notice.payid) {
+      detailRows.push({ label: "Pay by (PayID)", value: notice.payid });
+    }
+    detailRows.push({ label: "Payment reference", value: notice.noticeNumber });
+
+    const { html, text } = renderEmail({
+      preheader: `${amountDue} due ${dueOn} for lot ${lot.lotNumber} at ${scheme.name}.`,
+      heading: `Levy notice ${notice.noticeNumber}`,
+      intro: `Dear ${notice.recipientName ?? "Owner"}, a levy notice has been issued for lot ${lot.lotNumber} at ${scheme.name}.`,
+      blocks: [
+        amountPanel("Amount due", amountDue, { sublabel: `Due ${dueOn}` }),
+        keyValueTable(detailRows, "Notice details"),
+        paragraph(
+          `To pay, use PayID ${notice.payid ?? "shown in the portal"} and quote reference ${notice.noticeNumber}. Your payment is matched to this lot automatically.`,
+        ),
+        infoNote(
+          "Payment is due at least 28 days after this notice under the Owners Corporations Act 2006 (Vic). If you are experiencing hardship, contact the committee to discuss a payment plan.",
+        ),
+      ],
+      cta: { label: "View & pay", url: financeUrl },
+    });
+
     await sendEmail(ctx, {
       schemeId,
       personId: notice.recipientPersonId ?? undefined,
@@ -235,21 +272,8 @@ export async function issueLevyRun(
       subject: `Levy notice ${notice.noticeNumber} — ${scheme.name}`,
       template: "levy_notice",
       related: { type: "levy_notice", id: notice.levyNoticeId },
-      body: [
-        `Dear ${notice.recipientName ?? "Owner"},`,
-        "",
-        `A levy notice has been issued for lot ${lot.lotNumber} at ${scheme.name}.`,
-        "",
-        `Notice number: ${notice.noticeNumber}`,
-        `Amount due: ${formatCents(notice.totalCents)}`,
-        `Due date: ${dueOn}`,
-        `Pay by reference (PayID): ${notice.payid}`,
-        "",
-        "Payment is due at least 28 days after this notice per the Owners Corporations Act 2006 (Vic).",
-        "",
-        "Regards,",
-        `${scheme.name} — powered by GoodStrata`,
-      ].join("\n"),
+      body: text,
+      html,
     });
   }
 
