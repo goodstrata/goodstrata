@@ -21,6 +21,13 @@ const envSchema = z.object({
   DATA_DIR: z.string().default("./data"),
   MOCK_PAYMENTS_SECRET: z.string().optional(),
 
+  /** S3 / Cloudflare R2 object storage (STORAGE_PROVIDER=r2|s3). */
+  STORAGE_BUCKET: z.string().optional(),
+  STORAGE_ENDPOINT: z.string().optional(),
+  STORAGE_REGION: z.string().optional(),
+  STORAGE_ACCESS_KEY_ID: z.string().optional(),
+  STORAGE_SECRET_ACCESS_KEY: z.string().optional(),
+
   /** AWS SES (EMAIL_PROVIDER=ses). */
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
@@ -40,6 +47,9 @@ const envSchema = z.object({
 
   /** Public sandbox mode: exposes one-click demo logins on the sign-in page. */
   DEMO_MODE: z.string().optional(),
+
+  /** Require a verified email before sign-in (set in prod once SES delivers). */
+  REQUIRE_EMAIL_VERIFICATION: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

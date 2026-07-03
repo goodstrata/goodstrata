@@ -24,6 +24,8 @@ async function main() {
     secret: env.BETTER_AUTH_SECRET,
     appUrl: env.APP_URL,
     email: integrations.email,
+    requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION === "1",
+    production: env.NODE_ENV === "production",
   });
 
   const deps: AppDeps = {

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Building2, CircleAlertIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { z } from "zod";
@@ -220,14 +220,24 @@ function LoginPage() {
               {mode === "signin" ? "Sign in" : "Sign up"}
             </SubmitButton>
           </form>
-          <Button
-            type="button"
-            variant="link"
-            className="mt-3 h-auto p-0 text-sm"
-            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-          >
-            {mode === "signin" ? "New here? Create an account" : "Have an account? Sign in"}
-          </Button>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto p-0 text-sm"
+              onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+            >
+              {mode === "signin" ? "New here? Create an account" : "Have an account? Sign in"}
+            </Button>
+            {mode === "signin" && (
+              <Link
+                to="/forgot-password"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Forgot password?
+              </Link>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -21,6 +21,7 @@ import {
   localDiskStorageProvider,
   memoryStorageProvider,
   type StorageProvider,
+  s3StorageProvider,
 } from "./storage.js";
 import { consoleVideoProvider, dailyVideoProvider, type VideoProvider } from "./video.js";
 
@@ -40,6 +41,12 @@ export interface IntegrationsEnv {
   VIDEO_PROVIDER?: string;
   DATA_DIR?: string;
   MOCK_PAYMENTS_SECRET?: string;
+  // S3 / Cloudflare R2 (STORAGE_PROVIDER=r2|s3)
+  STORAGE_BUCKET?: string;
+  STORAGE_ENDPOINT?: string;
+  STORAGE_REGION?: string;
+  STORAGE_ACCESS_KEY_ID?: string;
+  STORAGE_SECRET_ACCESS_KEY?: string;
   // AWS SES (EMAIL_PROVIDER=ses)
   AWS_ACCESS_KEY_ID?: string;
   AWS_SECRET_ACCESS_KEY?: string;
@@ -102,6 +109,18 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
     switch (env.STORAGE_PROVIDER ?? "local") {
       case "memory":
         return memoryStorageProvider();
+      case "r2":
+      case "s3": {
+        const flavour = env.STORAGE_PROVIDER === "r2" ? "r2" : "s3";
+        return s3StorageProvider({
+          flavour,
+          bucket: required(env, "STORAGE_BUCKET", flavour),
+          endpoint: env.STORAGE_ENDPOINT,
+          region: env.STORAGE_REGION,
+          accessKeyId: required(env, "STORAGE_ACCESS_KEY_ID", flavour),
+          secretAccessKey: required(env, "STORAGE_SECRET_ACCESS_KEY", flavour),
+        });
+      }
       default:
         return localDiskStorageProvider(dataDir);
     }
