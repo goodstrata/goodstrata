@@ -13,9 +13,10 @@ interface Env {
   AWS_SECRET_ACCESS_KEY?: string;
   AWS_REGION?: string;
   AWS_SES_FROM_EMAIL?: string;
-  // Cloudflare R2 (document storage, S3 API)
+  // Object storage (S3 or Cloudflare R2). R2 sets STORAGE_ENDPOINT; plain S3 doesn't.
   STORAGE_BUCKET?: string;
   STORAGE_ENDPOINT?: string;
+  STORAGE_REGION?: string;
   STORAGE_ACCESS_KEY_ID?: string;
   STORAGE_SECRET_ACCESS_KEY?: string;
   // Daily.co (committee video)
@@ -66,13 +67,15 @@ export class GoodstrataApp extends Container<Env> {
 
     const storage = env.STORAGE_BUCKET
       ? {
-          STORAGE_PROVIDER: "r2",
+          // R2 supplies a custom endpoint; plain AWS S3 doesn't.
+          STORAGE_PROVIDER: env.STORAGE_ENDPOINT ? "r2" : "s3",
           STORAGE_BUCKET: env.STORAGE_BUCKET,
           STORAGE_ENDPOINT: env.STORAGE_ENDPOINT ?? "",
+          STORAGE_REGION: env.STORAGE_REGION ?? "ap-southeast-2",
           STORAGE_ACCESS_KEY_ID: env.STORAGE_ACCESS_KEY_ID ?? "",
           STORAGE_SECRET_ACCESS_KEY: env.STORAGE_SECRET_ACCESS_KEY ?? "",
         }
-      : {}; // falls back to the image's ephemeral local disk until R2 lands
+      : {}; // falls back to the image's ephemeral local disk until storage lands
 
     const video = env.DAILY_API_KEY
       ? { VIDEO_PROVIDER: "daily", DAILY_API_KEY: env.DAILY_API_KEY }
