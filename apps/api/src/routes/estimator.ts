@@ -19,11 +19,24 @@ const MAX_BYTES = 12 * 1024 * 1024;
 const RATE_LIMIT = 10;
 const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
+/**
+ * Global hourly ceiling across ALL callers — a backstop so the paid vision model
+ * can't be driven to unbounded spend even if per-IP keying is ever defeated
+ * (e.g. a large botnet or a misconfigured proxy). Sized well above legitimate
+ * lead-gen volume for a single instance.
+ */
+const GLOBAL_LIMIT = 500;
+
 // In-memory sliding window. Fine for a single instance lead-gen tool; resets on
 // deploy. Keyed by client IP.
 const hits = new Map<string, number[]>();
+// Timestamps of ALL accepted requests in the current window (global backstop).
+let globalHits: number[] = [];
 
 function rateLimited(ip: string, now: number): boolean {
+  globalHits = globalHits.filter((t) => now - t < RATE_WINDOW_MS);
+  if (globalHits.length >= GLOBAL_LIMIT) return true;
+
   const recent = (hits.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
   if (recent.length >= RATE_LIMIT) {
     hits.set(ip, recent);
@@ -31,6 +44,7 @@ function rateLimited(ip: string, now: number): boolean {
   }
   recent.push(now);
   hits.set(ip, recent);
+  globalHits.push(now);
   // Opportunistic cleanup so the map can't grow unbounded.
   if (hits.size > 5000) {
     for (const [key, times] of hits) {
@@ -40,10 +54,29 @@ function rateLimited(ip: string, now: number): boolean {
   return false;
 }
 
+/**
+ * Derive the client IP from a TRUSTED, proxy-set source. The leftmost
+ * X-Forwarded-For token is fully client-controlled: an attacker can spoof a
+ * unique value per request to mint a fresh limiter key every time and bypass the
+ * per-IP window entirely (unbounded LLM cost). In the deployed topology
+ * (Cloudflare → the app) `CF-Connecting-IP` is set by the edge and cannot be
+ * overridden by the client. Fall back to the RIGHTMOST XFF entry (appended by the
+ * nearest trusted proxy), never the leftmost.
+ */
 function clientIp(c: { req: { header: (name: string) => string | undefined } }): string {
+  const cf = c.req.header("cf-connecting-ip");
+  if (cf?.trim()) return cf.trim();
+  const real = c.req.header("x-real-ip");
+  if (real?.trim()) return real.trim();
   const fwd = c.req.header("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0]!.trim();
-  return c.req.header("x-real-ip") ?? "unknown";
+  if (fwd) {
+    const parts = fwd
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1]!;
+  }
+  return "unknown";
 }
 
 export function estimatorRoutes(deps: AppDeps) {

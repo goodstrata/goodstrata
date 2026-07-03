@@ -7,7 +7,7 @@ import {
   onboardingService,
   peopleService,
 } from "@goodstrata/core";
-import { DOCUMENT_CATEGORIES, MEMBERSHIP_ROLES, userActor } from "@goodstrata/shared";
+import { DOCUMENT_CATEGORIES, INVITABLE_ROLES, userActor } from "@goodstrata/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps } from "../deps.js";
@@ -15,6 +15,23 @@ import { type AppEnv, requireRole, requireSchemeMember } from "../middleware.js"
 import { zv } from "../validate.js";
 
 const officerOrAdmin = requireRole("chair", "secretary", "treasurer");
+
+/**
+ * MIME types safe to render inline in the app origin. The stored `mime` is
+ * client-supplied (`file.type` at upload), so serving it verbatim with an
+ * `inline` disposition would let an officer upload `text/html` with a `<script>`
+ * body and have any member's browser execute it same-origin (stored XSS →
+ * session-riding). Anything not on this allowlist is served as a non-renderable
+ * `application/octet-stream` download, and `nosniff` stops content-sniffing past
+ * it — mirroring the community-image handler's defense.
+ */
+const INLINE_SAFE_DOC_TYPES: ReadonlySet<string> = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
 
 export function lotsRoutes(deps: AppDeps) {
   return new Hono<AppEnv>()
@@ -64,7 +81,7 @@ export function peopleRoutes(deps: AppDeps) {
       "/:schemeId/people/:personId/invite",
       requireSchemeMember(deps),
       officerOrAdmin,
-      zv("json", z.object({ role: z.enum(MEMBERSHIP_ROLES).default("owner") })),
+      zv("json", z.object({ role: z.enum(INVITABLE_ROLES).default("owner") })),
       async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         const result = await invitesService.invitePerson(
@@ -145,9 +162,17 @@ export function documentsRoutes(deps: AppDeps) {
         }
       }
       const content = await deps.integrations.storage.get(doc.storageKey);
+      // Never serve a client-supplied mime inline unless it's a known-safe type;
+      // otherwise force a download so mislabelled/hostile content can't execute
+      // as HTML/script in the app origin.
+      const declared = doc.mime.split(";")[0]!.trim().toLowerCase();
+      const safeMime = INLINE_SAFE_DOC_TYPES.has(declared) ? declared : "application/octet-stream";
+      const disposition = safeMime === "application/octet-stream" ? "attachment" : "inline";
+      const safeName = doc.title.replace(/[^\w.\- ]/g, "_");
       return c.body(content.buffer as ArrayBuffer, 200, {
-        "content-type": doc.mime,
-        "content-disposition": `inline; filename="${doc.title.replace(/[^\w.\- ]/g, "_")}"`,
+        "content-type": safeMime,
+        "content-disposition": `${disposition}; filename="${safeName}"`,
+        "x-content-type-options": "nosniff",
       });
     })
     .post("/:schemeId/documents", requireSchemeMember(deps), officerOrAdmin, async (c) => {

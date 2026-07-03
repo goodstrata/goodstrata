@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { invites, memberships, people, schemes } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
-import { type MembershipRole, toDateOnly } from "@goodstrata/shared";
+import { INVITABLE_ROLES, type MembershipRole, toDateOnly } from "@goodstrata/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError, notFound } from "../errors.js";
@@ -20,6 +20,13 @@ export async function invitePerson(
   role: MembershipRole,
   appUrl: string,
 ) {
+  // Defense in depth: an invite must never grant the manager_admin super-role
+  // (which bypasses every downstream gate). Route/tool schemas already restrict
+  // this, but this is the chokepoint that actually writes the role, so re-check.
+  if (!(INVITABLE_ROLES as readonly MembershipRole[]).includes(role)) {
+    throw new DomainError("INVALID_ROLE", "That role cannot be granted via invite", 422);
+  }
+
   const person = await ctx.db.query.people.findFirst({
     where: and(eq(people.id, personId), eq(people.schemeId, schemeId)),
   });

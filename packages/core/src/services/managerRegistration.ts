@@ -200,12 +200,15 @@ export interface RegistrationStatus {
 }
 
 /**
- * Continuity check: PI cover must be held *continuously* (reg 10). Order the
- * policy periods by start and confirm each successive period begins on or before
- * the day after the previous one expires (no gap). A seam we can't prove (a
- * successor with no `effectiveOn`) is treated as a break, conservatively.
+ * Continuity check: PI cover must be held *continuously* AND still be in force
+ * as at `today` (reg 10). Order the policy periods by start and confirm each
+ * successive period begins on or before the day after the previous one expires
+ * (no gap). A seam we can't prove (a successor with no `effectiveOn`) is treated
+ * as a break, conservatively. Finally, a chain whose latest cover has already
+ * lapsed (`max(expiresOn) < today`) is NOT continuous cover today — an expired,
+ * never-renewed policy must not read as continuous.
  */
-function isContinuous(policies: ManagerPiPolicy[]): boolean {
+function isContinuous(policies: ManagerPiPolicy[], today: string): boolean {
   if (policies.length === 0) return false;
   const sorted = [...policies].sort((a, b) => {
     const as = a.effectiveOn ?? a.expiresOn;
@@ -219,7 +222,8 @@ function isContinuous(policies: ManagerPiPolicy[]): boolean {
     const latestStartAllowed = toDateOnly(addDays(fromDateOnly(prev.expiresOn), 1));
     if (cur.effectiveOn > latestStartAllowed) return false;
   }
-  return true;
+  // The chain must reach the present: cover has lapsed if nothing is in force today.
+  return policies.some((p) => p.expiresOn >= today);
 }
 
 /** Registration + PI snapshot for the s147/148 register and OC certificates. */
@@ -237,15 +241,21 @@ export async function getRegistrationStatus(
     orderBy: (t, { desc: d }) => d(t.expiresOn),
   });
 
+  // "Current" = the latest-expiring policy. It only evidences *sufficient* cover
+  // if it is ≥$2M AND has not already expired as at today — a lapsed policy,
+  // however large, provides no cover (reg 10). String date-only compares safely.
+  const today = toDateOnly(ctx.clock.now());
   const currentPiPolicy = policies[0] ?? null;
   const piCoverSufficient =
-    currentPiPolicy !== null && currentPiPolicy.coverAmountCents >= MIN_PI_COVER_CENTS;
+    currentPiPolicy !== null &&
+    currentPiPolicy.coverAmountCents >= MIN_PI_COVER_CENTS &&
+    currentPiPolicy.expiresOn >= today;
 
   return {
     organizationId,
     registrationNumber: org.managerRegistrationNumber,
     currentPiPolicy,
     piCoverSufficient,
-    piContinuous: isContinuous(policies),
+    piContinuous: isContinuous(policies, today),
   };
 }

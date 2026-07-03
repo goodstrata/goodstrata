@@ -402,13 +402,33 @@ export interface S159Report {
  * with in the period (defaults to all-time when no window is given). Exposed
  * here; wiring it into the AGM agenda is a later item.
  */
+/**
+ * Resolve an AGM reporting window to millisecond bounds. A date-only `to`
+ * (YYYY-MM-DD) parses to that day's MIDNIGHT; a `t > toMs` comparison would then
+ * drop every complaint/breach recorded later on the last day of the period.
+ * Extend a date-only upper bound to the END of that day so the window is
+ * inclusive of its final calendar day; leave explicit timestamps untouched.
+ */
+export function s159WindowBounds(period?: { from?: string; to?: string }): {
+  fromMs: number | null;
+  toMs: number | null;
+} {
+  const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+  const END_OF_DAY_MS = 24 * 60 * 60 * 1000 - 1;
+  return {
+    fromMs: period?.from ? new Date(period.from).getTime() : null,
+    toMs: period?.to
+      ? new Date(period.to).getTime() + (DATE_ONLY.test(period.to) ? END_OF_DAY_MS : 0)
+      : null,
+  };
+}
+
 export async function generateS159Report(
   ctx: ServiceContext,
   schemeId: string,
   period?: { from?: string; to?: string },
 ): Promise<S159Report> {
-  const fromMs = period?.from ? new Date(period.from).getTime() : null;
-  const toMs = period?.to ? new Date(period.to).getTime() : null;
+  const { fromMs, toMs } = s159WindowBounds(period);
 
   const inWindow = (at: Date | null): boolean => {
     if (!at) return false;

@@ -1,6 +1,6 @@
 import { lots, ownerships, people, schemes } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
-import { parseCsvRecords, schemeTier, toDateOnly } from "@goodstrata/shared";
+import { isOccupiableLot, parseCsvRecords, schemeTier, toDateOnly } from "@goodstrata/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
@@ -125,11 +125,14 @@ export async function importLotsCsv(
       }
     }
 
-    // Tier follows lot count (OC Act tiers).
-    const total = existing.length + valid.length;
+    // Tier follows the OCCUPIABLE lot count (OC Act tiers): accessory lots
+    // (carpark/storage) are not occupiable and must be excluded from the tally.
+    const occupiable =
+      existing.filter((l) => isOccupiableLot(l.lotType)).length +
+      valid.filter((r) => isOccupiableLot(r.lot_type)).length;
     await tx
       .update(schemes)
-      .set({ tier: schemeTier(total) })
+      .set({ tier: schemeTier(occupiable) })
       .where(eq(schemes.id, schemeId));
 
     await publishEvent(tx, {

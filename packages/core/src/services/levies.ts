@@ -137,8 +137,14 @@ export async function issueLevyRun(
     recipientPersonId: string | null;
   }[] = [];
 
-  await ctx.db.transaction(async (tx) => {
-    for (const entry of run) {
+  // Allocate every PayID BEFORE opening the transaction. createPaymentReference
+  // is a live provider (Monoova) HTTP call; running it per-lot inside the tx would
+  // hold one DB transaction open across seconds of sequential network I/O (idle-
+  // in-transaction/statement timeouts, pool starvation) and, on a rollback/retry,
+  // orphan already-registered PayIDs with no ledger record. Here the external
+  // state is settled first; the tx below is pure DB work.
+  const prepared = await Promise.all(
+    run.map(async (entry) => {
       const lot = lotRows.find((l) => l.id === entry.lotId)!;
       const noticeNumber = `LN-${year}-${String(instalment).padStart(2, "0")}-${lot.lotNumber}`;
       const payid = await ctx.integrations.payments.createPaymentReference({
@@ -146,7 +152,12 @@ export async function issueLevyRun(
         noticeNumber,
         account,
       });
+      return { entry, noticeNumber, payid };
+    }),
+  );
 
+  await ctx.db.transaction(async (tx) => {
+    for (const { entry, noticeNumber, payid } of prepared) {
       const noticeRows = await tx
         .insert(levyNotices)
         .values({

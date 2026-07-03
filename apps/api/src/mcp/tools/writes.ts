@@ -33,7 +33,7 @@ import {
   peopleService,
   schemesService,
 } from "@goodstrata/core";
-import { MEMBERSHIP_ROLES, userActor } from "@goodstrata/shared";
+import { INVITABLE_ROLES, userActor } from "@goodstrata/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { McpToolContext } from "../server.js";
@@ -171,7 +171,7 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
         companyName: z.string().optional().describe("Company name, for a corporate owner"),
         phone: z.string().optional(),
         role: z
-          .enum(MEMBERSHIP_ROLES)
+          .enum(INVITABLE_ROLES)
           .default("owner")
           .describe("Membership role granted on acceptance (default: owner)"),
       },

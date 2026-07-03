@@ -10,6 +10,20 @@ export type SchemeStatus = (typeof SCHEME_STATUSES)[number];
 export const LOT_TYPES = ["residential", "commercial", "carpark", "storage"] as const;
 export type LotType = (typeof LOT_TYPES)[number];
 
+/**
+ * Occupiable lot types for CAV tier banding (OC Act / Owners Corporations
+ * Regulations). Accessory lots — carparks and storage cages — are NOT occupiable
+ * and must be excluded from the tier lot count. Feeding total lots (incl.
+ * accessory) into schemeTier over-states the tier and imposes the wrong statutory
+ * obligations on the OC.
+ */
+const OCCUPIABLE_LOT_TYPES: ReadonlySet<LotType> = new Set(["residential", "commercial"]);
+
+/** True if the lot type counts toward the OC Act occupiable-lot tally. */
+export function isOccupiableLot(lotType: LotType): boolean {
+  return OCCUPIABLE_LOT_TYPES.has(lotType);
+}
+
 export const MEMBERSHIP_ROLES = [
   "owner",
   "committee_member",
@@ -21,6 +35,24 @@ export const MEMBERSHIP_ROLES = [
   "manager_admin",
 ] as const;
 export type MembershipRole = (typeof MEMBERSHIP_ROLES)[number];
+
+/**
+ * Roles that may be granted through an invite. Excludes `manager_admin` — the
+ * super-role that bypasses every `requireRole`/`ctx.actor` gate — so an officer
+ * cannot use an invite (including a self-addressed one) to escalate a person to
+ * full management control of the scheme. Invite call sites validate against this
+ * list, and `invitePerson` re-checks it defensively before persisting.
+ */
+export const INVITABLE_ROLES = [
+  "owner",
+  "committee_member",
+  "chair",
+  "secretary",
+  "treasurer",
+  "tenant",
+  "contractor",
+] as const;
+export type InvitableRole = (typeof INVITABLE_ROLES)[number];
 
 /** Roles that sit on the committee (used for decision routing). */
 export const COMMITTEE_ROLES: readonly MembershipRole[] = [

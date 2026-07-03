@@ -1,6 +1,6 @@
 import { funds, lots, memberships, schemes } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
-import { schemeTier, toDateOnly } from "@goodstrata/shared";
+import { isOccupiableLot, schemeTier, toDateOnly } from "@goodstrata/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
@@ -123,7 +123,9 @@ export async function rolesForUser(ctx: ServiceContext, schemeId: string, userId
 /** Recalculate tier from lot count (called after lot import). */
 export async function recalculateTier(ctx: ServiceContext, schemeId: string) {
   const lotRows = await ctx.db.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
-  const tier = schemeTier(lotRows.length);
+  // Tier bands on OCCUPIABLE lots only — accessory lots (carpark/storage) don't count.
+  const occupiable = lotRows.filter((l) => isOccupiableLot(l.lotType)).length;
+  const tier = schemeTier(occupiable);
   await ctx.db.update(schemes).set({ tier }).where(eq(schemes.id, schemeId));
   return tier;
 }

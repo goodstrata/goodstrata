@@ -22,6 +22,20 @@ const MODERATOR_ROLES: MembershipRole[] = [
 
 const cursorQuery = z.object({ cursor: z.string().optional() });
 
+/**
+ * Image MIME types we accept for community uploads. The client-supplied
+ * Content-Type is NOT trusted for serving: without an allowlist, a member could
+ * upload `text/html` with a `<script>` body and the content endpoint would later
+ * serve it inline same-origin (stored XSS → member-to-member session-riding). We
+ * both reject non-images here and force a safe content-type on serve.
+ */
+const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
 export function communityRoutes(deps: AppDeps) {
   return (
     new Hono<AppEnv>()
@@ -83,9 +97,24 @@ export function communityRoutes(deps: AppDeps) {
           const candidates = Array.isArray(field) ? field : field ? [field] : [];
           for (const f of candidates) {
             if (f instanceof File) {
+              // Normalize away any charset parameter, then allowlist. Reject
+              // anything that isn't a known image type so we never store (and
+              // later serve) attacker-chosen content types like text/html.
+              const declared = (f.type || "").split(";")[0]!.trim().toLowerCase();
+              if (!ALLOWED_IMAGE_TYPES.has(declared)) {
+                return c.json(
+                  {
+                    error: {
+                      code: "UNSUPPORTED_IMAGE",
+                      message: "Images must be PNG, JPEG, WebP or GIF.",
+                    },
+                  },
+                  422,
+                );
+              }
               files.push({
                 filename: f.name,
-                contentType: f.type || "application/octet-stream",
+                contentType: declared,
                 content: new Uint8Array(await f.arrayBuffer()),
               });
             }
@@ -141,9 +170,16 @@ export function communityRoutes(deps: AppDeps) {
           c.get("schemeId"),
           c.req.param("imageId"),
         );
+        // Defense in depth: only ever emit a known-safe image content-type. Legacy
+        // or otherwise-unexpected stored mimes are served as a non-renderable
+        // download so a mislabelled row can't execute as HTML/script in the app
+        // origin. `nosniff` stops the browser from content-sniffing past it.
+        const safeMime = ALLOWED_IMAGE_TYPES.has(row.mime) ? row.mime : "application/octet-stream";
+        const disposition = safeMime === "application/octet-stream" ? "attachment" : "inline";
         return c.body(bytes.buffer as ArrayBuffer, 200, {
-          "content-type": row.mime,
-          "content-disposition": `inline; filename="${row.id}"`,
+          "content-type": safeMime,
+          "content-disposition": `${disposition}; filename="${row.id}"`,
+          "x-content-type-options": "nosniff",
         });
       })
       // Soft-delete: the author, or any officer, may remove a post/comment.
