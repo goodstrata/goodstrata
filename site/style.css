@@ -66,7 +66,7 @@
 
 :root {
   --font-sans: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Newsreader Variable", ui-serif, Georgia, serif;
+  --font-display: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* paper & ink (light) */
@@ -238,14 +238,16 @@ header.site nav a:hover {
 }
 .hero h1 {
   font-family: var(--font-display);
-  font-weight: 500;
+  font-weight: 700;
   font-size: clamp(34px, 5.4vw, 58px);
   line-height: 1.08;
   letter-spacing: -0.02em;
   max-width: 15ch;
 }
-.hero h1 em {
-  font-style: italic;
+.hero h1 em,
+article h1 em,
+h2 em {
+  font-style: normal;
   color: var(--primary);
 }
 .hero p.sub {
@@ -305,7 +307,7 @@ section.alt {
 }
 h2 {
   font-family: var(--font-display);
-  font-weight: 500;
+  font-weight: 700;
   font-size: clamp(25px, 3.4vw, 34px);
   letter-spacing: -0.015em;
   line-height: 1.18;
@@ -421,7 +423,7 @@ article .wrap {
 }
 article h1 {
   font-family: var(--font-display);
-  font-weight: 500;
+  font-weight: 700;
   font-size: clamp(30px, 4.4vw, 44px);
   line-height: 1.12;
   letter-spacing: -0.02em;
@@ -875,7 +877,7 @@ ul.proof-list li strong {
 }
 .download-card h3 {
   font-family: var(--font-display);
-  font-weight: 500;
+  font-weight: 700;
   font-size: 20px;
   letter-spacing: -0.01em;
   margin-bottom: 8px;
