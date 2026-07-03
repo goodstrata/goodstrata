@@ -47,8 +47,22 @@ export function overviewRoutes(deps: AppDeps) {
     const ctx = deps.serviceContext(userActor(c.get("user").id));
     const now = ctx.clock.now();
 
+    // The dashboard composes many independent reads. A single failing section
+    // (e.g. a sparse onboarding scheme with no budget/compliance data) must
+    // degrade to empty, never 500 the whole overview — so each read is
+    // fail-safe with its own fallback + a log for diagnosis.
+    const safe = async <T>(p: Promise<T>, fallback: T, label: string): Promise<T> => {
+      try {
+        return await p;
+      } catch (err) {
+        console.error(`[overview] ${label} read failed`, err);
+        return fallback;
+      }
+    };
+
+    const scheme = await schemesService.getScheme(ctx, schemeId);
+
     const [
-      scheme,
       onboarding,
       lots,
       people,
@@ -63,31 +77,39 @@ export function overviewRoutes(deps: AppDeps) {
       obligations,
       events,
     ] = await Promise.all([
-      schemesService.getScheme(ctx, schemeId),
-      onboardingService.onboardingStatus(ctx, schemeId),
-      lotsService.listLots(ctx, schemeId),
-      peopleService.listPeople(ctx, schemeId),
-      peopleService.listMembers(ctx, schemeId),
-      budgetsService.listBudgets(ctx, schemeId),
-      leviesService.listNotices(ctx, schemeId),
-      arrearsService.arrearsForScheme(ctx, schemeId),
-      decisionsService.listDecisions(ctx, schemeId, "pending"),
-      maintenanceService.listRequests(ctx, schemeId),
-      maintenanceService.listWorkOrders(ctx, schemeId),
-      meetingsService.listMeetings(ctx, schemeId),
-      complianceService.listObligations(ctx, { schemeId, window: "open" }),
-      deps.db
-        .select({
-          id: eventLog.id,
-          seq: eventLog.seq,
-          type: eventLog.type,
-          actor: eventLog.actor,
-          occurredAt: eventLog.occurredAt,
-        })
-        .from(eventLog)
-        .where(eq(eventLog.schemeId, schemeId))
-        .orderBy(desc(eventLog.seq))
-        .limit(8),
+      safe(onboardingService.onboardingStatus(ctx, schemeId), {
+        hasLots: false,
+        hasInsurance: false,
+        ready: false,
+        status: scheme.status,
+      }, "onboarding"),
+      safe(lotsService.listLots(ctx, schemeId), [], "lots"),
+      safe(peopleService.listPeople(ctx, schemeId), [], "people"),
+      safe(peopleService.listMembers(ctx, schemeId), [], "members"),
+      safe(budgetsService.listBudgets(ctx, schemeId), [], "budgets"),
+      safe(leviesService.listNotices(ctx, schemeId), [], "notices"),
+      safe(arrearsService.arrearsForScheme(ctx, schemeId), [], "arrears"),
+      safe(decisionsService.listDecisions(ctx, schemeId, "pending"), [], "decisions"),
+      safe(maintenanceService.listRequests(ctx, schemeId), [], "maintenance"),
+      safe(maintenanceService.listWorkOrders(ctx, schemeId), [], "workOrders"),
+      safe(meetingsService.listMeetings(ctx, schemeId), [], "meetings"),
+      safe(complianceService.listObligations(ctx, { schemeId, window: "open" }), [], "compliance"),
+      safe(
+        deps.db
+          .select({
+            id: eventLog.id,
+            seq: eventLog.seq,
+            type: eventLog.type,
+            actor: eventLog.actor,
+            occurredAt: eventLog.occurredAt,
+          })
+          .from(eventLog)
+          .where(eq(eventLog.schemeId, schemeId))
+          .orderBy(desc(eventLog.seq))
+          .limit(8),
+        [],
+        "events",
+      ),
     ]);
 
     // Finance — the "current" budget matches the finance tab: latest adopted,
