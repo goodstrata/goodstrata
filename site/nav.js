@@ -60,4 +60,14 @@
   };
   if (MOBILE.addEventListener) MOBILE.addEventListener("change", onChange);
   else if (MOBILE.addListener) MOBILE.addListener(onChange);
+
+  // Sticky header: transparent at the top of the page, solid once scrolled.
+  var stickyWrap = header.parentElement;
+  if (stickyWrap) {
+    var onScroll = function () {
+      stickyWrap.classList.toggle("scrolled", window.scrollY > 8);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+  }
 })();
