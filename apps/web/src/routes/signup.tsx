@@ -12,7 +12,7 @@ function SignupPage() {
     <AuthShell
       heading={
         <div className="flex flex-col gap-2">
-          <h1 className="text-balance font-display text-2xl font-bold tracking-tight md:text-[1.75rem]">
+          <h1 className="page-title text-balance">
             Create your account
           </h1>
           <p className="text-balance text-sm text-muted-foreground">
@@ -24,7 +24,7 @@ function SignupPage() {
     >
       <SignUpForm />
 
-      <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[13px] text-muted-foreground">
+      <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-13 text-muted-foreground">
         <li className="flex items-center gap-1.5">
           <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
           Free during beta

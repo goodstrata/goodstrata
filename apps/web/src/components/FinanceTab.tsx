@@ -305,7 +305,7 @@ function BudgetsSection({
               >
                 <div className="min-w-0 space-y-1">
                   <div className="text-sm font-medium">FY from {formatDate(b.fiscalYearStart)}</div>
-                  <dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-[13px] text-muted-foreground">
+                  <dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-13 text-muted-foreground">
                     {b.lines.map((l) => (
                       <div key={l.fundKind} className="flex items-center gap-1.5">
                         <dt className="capitalize">{l.fundKind}</dt>

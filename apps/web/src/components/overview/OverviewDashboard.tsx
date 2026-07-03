@@ -99,7 +99,7 @@ function TabLink({
       to="/schemes/$schemeId"
       params={{ schemeId }}
       search={{ section }}
-      className="inline-flex items-center gap-1 text-[13px] font-medium text-primary hover:underline"
+      className="inline-flex items-center gap-1 text-13 font-medium text-primary hover:underline"
     >
       {children}
       <ArrowRight aria-hidden="true" className="size-3.5" />
@@ -280,7 +280,7 @@ function NeedsAttention({
                     {item.note && (
                       <span
                         className={cn(
-                          "block text-[13px]",
+                          "block text-13",
                           item.critical ? "text-critical" : "text-muted-foreground",
                         )}
                       >
@@ -333,10 +333,10 @@ function NextMeeting({
                 <span className="text-sm font-medium">{meeting.title}</span>
                 <StatusBadge status={meeting.status} />
               </div>
-              <p className="text-[13px] text-muted-foreground">
+              <p className="text-13 text-muted-foreground">
                 {MEETING_KIND_LABEL[meeting.kind] ?? meeting.kind}
               </p>
-              <p className="font-mono text-[13px] tabular-nums">
+              <p className="font-mono text-13 tabular-nums">
                 {formatDateTime(meeting.scheduledAt)}
               </p>
             </div>
@@ -378,7 +378,7 @@ function AtAGlance({
           <GlanceFigure icon={User} label="People" value={glance.people} />
           <GlanceFigure icon={Users} label="Members" value={glance.members} />
           <div className="flex flex-col gap-1">
-            <dt className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+            <dt className="flex items-center gap-1.5 text-13 text-muted-foreground">
               <CircleCheck aria-hidden="true" className="size-3.5" />
               Status
             </dt>
@@ -403,7 +403,7 @@ function GlanceFigure({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <dt className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+      <dt className="flex items-center gap-1.5 text-13 text-muted-foreground">
         <Icon aria-hidden="true" className="size-3.5" />
         {label}
       </dt>
@@ -450,7 +450,7 @@ function RecentActivity({
                     )}
                   />
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium">
+                    <span className="min-w-0 flex-1 truncate font-mono text-13 font-medium">
                       {evt.type}
                     </span>
                     {isAgent && (

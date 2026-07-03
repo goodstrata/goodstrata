@@ -56,7 +56,7 @@ function RegistryPlate({
           >
             {name}
           </Name>
-          {meta && <p className="mt-0.5 text-[13px] text-muted-foreground">{meta}</p>}
+          {meta && <p className="mt-0.5 text-13 text-muted-foreground">{meta}</p>}
         </div>
         {badge && <div className="shrink-0 pt-0.5">{badge}</div>}
       </div>

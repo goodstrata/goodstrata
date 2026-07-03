@@ -483,7 +483,7 @@ function PiInsuranceCard({
           <form.Subscribe selector={(s) => s.values.coverAmountDollars}>
             {(cover) =>
               cover > 0 && cover * 100 < MIN_PI_COVER_CENTS ? (
-                <p className="text-[13px] text-critical">
+                <p className="text-13 text-critical">
                   {dollars(Math.round(cover * 100))} is below the $2,000,000 statutory floor. You
                   can still record it, but the owners corporation will be flagged as non-compliant.
                 </p>
@@ -508,11 +508,11 @@ function PiInsuranceCard({
                 >
                   <div className="min-w-0">
                     <p className="font-medium">{p.insurer}</p>
-                    <p className="text-[13px] text-muted-foreground">
+                    <p className="text-13 text-muted-foreground">
                       {p.policyNumber} · {dollars(p.coverAmountCents)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                  <div className="flex items-center gap-2 text-13 text-muted-foreground">
                     <span>
                       {p.effectiveOn ? `${formatDate(p.effectiveOn)} – ` : "expires "}
                       {formatDate(p.expiresOn)}
@@ -571,7 +571,7 @@ function RemindersCard({ obligations }: { obligations: Obligation[] }) {
                   <CalendarClock className="size-4 text-muted-foreground" aria-hidden="true" />
                   <div>
                     <p className="text-sm font-medium">{o.title}</p>
-                    <p className="text-[13px] text-muted-foreground">Due {formatDate(o.dueOn)}</p>
+                    <p className="text-13 text-muted-foreground">Due {formatDate(o.dueOn)}</p>
                   </div>
                 </div>
                 <Badge tone={STATUS_TONE[o.status]} className="capitalize">

@@ -231,7 +231,7 @@ function ResolveButtons({
         ))}
       </div>
       {resolve.isError && (
-        <p role="alert" className="mt-2 text-[13px] text-critical">
+        <p role="alert" className="mt-2 text-13 text-critical">
           {resolve.error.message}
         </p>
       )}
@@ -342,7 +342,7 @@ function CommitteeVotePanel({
         </>
       )}
       {vote.isError && (
-        <p role="alert" className="text-[13px] text-critical">
+        <p role="alert" className="text-13 text-critical">
           {vote.error.message}
         </p>
       )}

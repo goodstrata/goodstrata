@@ -51,7 +51,7 @@ function Field({ label, hint, error, required, htmlFor, className, children }: F
 
   return (
     <div data-slot="field" className={cn("flex flex-col gap-1.5", className)}>
-      <Label htmlFor={id} className="text-[13px]">
+      <Label htmlFor={id} className="text-13">
         {label}
         {required && (
           <span aria-hidden="true" className="-ml-1 text-critical">
@@ -63,7 +63,7 @@ function Field({ label, hint, error, required, htmlFor, className, children }: F
         ? children(controlProps)
         : React.cloneElement(children, controlProps)}
       {hint && !error && (
-        <p id={hintId} data-slot="field-hint" className="text-[13px] text-muted-foreground">
+        <p id={hintId} data-slot="field-hint" className="text-13 text-muted-foreground">
           {hint}
         </p>
       )}
@@ -71,7 +71,7 @@ function Field({ label, hint, error, required, htmlFor, className, children }: F
         <p
           id={errorId}
           data-slot="field-error"
-          className="flex items-start gap-1 text-[13px] text-critical"
+          className="flex items-start gap-1 text-13 text-critical"
         >
           <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
           <span>{error}</span>

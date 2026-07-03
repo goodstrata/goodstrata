@@ -56,7 +56,7 @@ export function LotsStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="font-display text-2xl font-bold tracking-tight md:text-[1.75rem]">
+        <h1 className="page-title">
           Add your lots
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -95,7 +95,7 @@ export function LotsStep({
         >
           <div className="flex items-start gap-3 rounded-lg border bg-muted/40 px-4 py-3">
             <Layers aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <p className="text-[13px] text-muted-foreground">
+            <p className="text-13 text-muted-foreground">
               We'll create lots numbered 1 upward, each with an equal share. That's the right start
               for most buildings; you can adjust individual entitlements later.
             </p>

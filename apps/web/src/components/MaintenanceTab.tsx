@@ -307,7 +307,7 @@ function WorkOrderList({
                   )}
                 </div>
                 {complete.isError && complete.variables === wo.id && (
-                  <p role="alert" className="w-full text-[13px] text-critical">
+                  <p role="alert" className="w-full text-13 text-critical">
                     {complete.error.message}
                   </p>
                 )}

@@ -230,7 +230,7 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
               </Field>
             </div>
             {upload.error && (
-              <p className="mt-3 flex items-start gap-1.5 text-[13px] text-critical">
+              <p className="mt-3 flex items-start gap-1.5 text-13 text-critical">
                 <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
                 <span>{upload.error.message}</span>
               </p>

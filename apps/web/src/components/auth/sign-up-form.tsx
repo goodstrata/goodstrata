@@ -152,7 +152,7 @@ export function SignUpForm() {
           <form.Field name="consent">
             {(field) => (
               <div className="flex flex-col gap-1.5">
-                <label className="flex items-start gap-2.5 text-[13px] text-muted-foreground">
+                <label className="flex items-start gap-2.5 text-13 text-muted-foreground">
                   <input
                     type="checkbox"
                     id="signup-consent"
@@ -185,7 +185,7 @@ export function SignUpForm() {
                   </span>
                 </label>
                 {fieldError(field.state.meta.errors) && (
-                  <p className="text-[13px] text-critical">{fieldError(field.state.meta.errors)}</p>
+                  <p className="text-13 text-critical">{fieldError(field.state.meta.errors)}</p>
                 )}
               </div>
             )}

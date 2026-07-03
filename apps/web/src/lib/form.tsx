@@ -4,12 +4,11 @@ import {
   type StandardSchemaV1,
   useForm,
 } from "@tanstack/react-form";
-import { CircleAlertIcon } from "lucide-react";
 import type * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import { FormMessage } from "@/components/ui/form-message";
 import { ApiError } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 type FieldErrors<TValues> = Partial<Record<DeepKeys<TValues>, string>>;
 
@@ -120,16 +119,7 @@ export function FormError<TValues extends Record<string, unknown>>({
     <form.Subscribe selector={(state) => state.errorMap.onSubmit}>
       {(error) =>
         typeof error === "string" && error ? (
-          <div
-            role="alert"
-            className={cn(
-              "flex items-start gap-2 rounded-md border border-critical/25 bg-critical/8 px-3 py-2 text-[13px] text-critical",
-              className,
-            )}
-          >
-            <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            <span>{error}</span>
-          </div>
+          <FormMessage className={className}>{error}</FormMessage>
         ) : null
       }
     </form.Subscribe>

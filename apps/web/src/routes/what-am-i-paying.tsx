@@ -149,7 +149,7 @@ function WhatAmIPayingPage() {
             </Alert>
           )}
 
-          <p className="flex items-center justify-center gap-1.5 text-center text-[13px] text-muted-foreground">
+          <p className="flex items-center justify-center gap-1.5 text-center text-13 text-muted-foreground">
             <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0 text-primary" />
             We read the numbers in your document and don't store it.
           </p>
@@ -338,7 +338,7 @@ function ResultView({ result, onReset }: { result: EstimateResult; onReset: () =
 function ConfidenceNote({ confidence }: { confidence: EstimateResult["confidence"] }) {
   if (confidence === "high") {
     return (
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-13 text-muted-foreground">
         These figures were clearly labelled in your document. Always check them against your own
         records.
       </p>
@@ -365,7 +365,7 @@ function TryAnother({ onReset }: { onReset: () => void }) {
       <Button type="button" variant="outline" onClick={onReset}>
         <RotateCcw aria-hidden="true" /> Read another document
       </Button>
-      <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-13 text-muted-foreground">
         <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0 text-primary" />
         We didn't store your document — only the numbers you see here.
       </p>

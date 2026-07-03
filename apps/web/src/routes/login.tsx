@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Building2, CircleAlertIcon } from "lucide-react";
+import { Building2 } from "lucide-react";
 import { useState } from "react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { SignInForm } from "@/components/auth/sign-in-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormMessage } from "@/components/ui/form-message";
 import { Separator } from "@/components/ui/separator";
 import { signIn } from "@/lib/auth";
 
@@ -51,7 +52,7 @@ function LoginPage() {
   return (
     <AuthShell
       heading={
-        <h1 className="text-balance font-display text-2xl font-bold tracking-tight md:text-[1.75rem]">
+        <h1 className="page-title text-balance">
           The building runs itself. You stay in charge.
         </h1>
       }
@@ -68,15 +69,7 @@ function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            {demoError && (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-md border border-critical/25 bg-critical/8 px-3 py-2 text-[13px] text-critical"
-              >
-                <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-                <span>{demoError}</span>
-              </div>
-            )}
+            {demoError && <FormMessage>{demoError}</FormMessage>}
             {demoInfo?.accounts.map((account) => (
               <Button
                 key={account.email}

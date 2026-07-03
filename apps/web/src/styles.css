@@ -109,6 +109,9 @@
   --font-sans: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* dense label / metadata size — the app's default 'small label', sits
+     between text-xs (12px) and text-sm (14px). Use text-13, never a raw pixel size. */
+  --text-13: 0.8125rem;
 }
 
 @layer base {
@@ -134,4 +137,10 @@
 @utility eyebrow-sm {
   /* compact registry kicker for dense surfaces (nav groups, scheme cards) */
   @apply font-mono text-[11px] font-medium tracking-[0.08em] uppercase;
+}
+
+@utility page-title {
+  /* top-level display heading (h1) — the 28px-at-md hero ramp (DESIGN.md §4).
+     Single knob for auth/onboarding hero titles and PageHeader. */
+  @apply font-display text-2xl font-bold tracking-tight md:text-[1.75rem];
 }

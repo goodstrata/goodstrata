@@ -165,7 +165,7 @@ function daysUntil(dateOnly: string): number {
 function DeadlineClock({ complaint }: { complaint: Complaint }) {
   if (CLOSED.includes(complaint.status)) {
     return (
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-13 text-muted-foreground">
         Closed{complaint.resolvedAt ? ` ${formatDate(complaint.resolvedAt)}` : ""}.
       </p>
     );
@@ -179,7 +179,7 @@ function DeadlineClock({ complaint }: { complaint: Complaint }) {
         ? "Due today"
         : `${days} day${days === 1 ? "" : "s"} left`;
   return (
-    <p className={`text-[13px] font-medium ${tone}`}>
+    <p className={`text-13 font-medium ${tone}`}>
       Must be dealt with by {formatDate(complaint.meetByDate)} · {label}
     </p>
   );
@@ -366,7 +366,7 @@ function RaiseComplaintDialog({ schemeId, onChange }: { schemeId: string; onChan
           </form.Field>
           <form.Field name="approvedForm">
             {(field) => (
-              <label className="flex items-start gap-2.5 text-[13px] text-muted-foreground">
+              <label className="flex items-start gap-2.5 text-13 text-muted-foreground">
                 <input
                   type="checkbox"
                   className="mt-0.5 size-4 accent-primary"
@@ -455,7 +455,7 @@ function ComplaintRegister({
                 <p className="text-sm font-medium">{c.subject}</p>
                 <StatusPill status={c.status} />
               </div>
-              <p className="line-clamp-1 text-[13px] text-muted-foreground">{c.details}</p>
+              <p className="line-clamp-1 text-13 text-muted-foreground">{c.details}</p>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 <span>From {nameOf(c.complainantPersonId)}</span>
                 {c.respondentPersonId && <span>· about {nameOf(c.respondentPersonId)}</span>}
@@ -594,10 +594,10 @@ function ComplaintDetailBody({
                       {n.status}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-[13px] text-muted-foreground">
+                  <p className="mt-1 text-13 text-muted-foreground">
                     {n.ruleRef} · rectify by {formatDate(n.rectifyByDate)}
                   </p>
-                  <p className="mt-1 text-[13px] text-muted-foreground">{n.details}</p>
+                  <p className="mt-1 text-13 text-muted-foreground">{n.details}</p>
                 </div>
               ))}
             </div>
@@ -612,7 +612,7 @@ function ComplaintDetailBody({
                 <div className="mt-1.5 size-2 shrink-0 rounded-full bg-border" aria-hidden="true" />
                 <div className="min-w-0">
                   <p className="font-medium capitalize">{statusLabel(ev.kind)}</p>
-                  {ev.note && <p className="text-[13px] text-muted-foreground">{ev.note}</p>}
+                  {ev.note && <p className="text-13 text-muted-foreground">{ev.note}</p>}
                   <p className="text-xs text-muted-foreground">{formatDateTime(ev.at)}</p>
                 </div>
               </li>
@@ -655,7 +655,7 @@ function StatusControls({
 
   if (next.length === 0) {
     return (
-      <p className="rounded-md bg-muted px-3 py-2 text-[13px] text-muted-foreground">
+      <p className="rounded-md bg-muted px-3 py-2 text-13 text-muted-foreground">
         This complaint is closed. No further status changes are available.
       </p>
     );
@@ -683,7 +683,7 @@ function StatusControls({
         onChange={(e) => setNote(e.target.value)}
       />
       {advance.isError && (
-        <p role="alert" className="text-[13px] text-critical">
+        <p role="alert" className="text-13 text-critical">
           {advance.error.message}
         </p>
       )}
@@ -761,7 +761,7 @@ function IssueBreachNotice({
           </DialogDescription>
         </DialogHeader>
         {!canIssue ? (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-13 text-muted-foreground">
             This complaint isn't about a specific person, so a breach notice can't be addressed.
           </p>
         ) : (

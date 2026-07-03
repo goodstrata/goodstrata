@@ -109,12 +109,12 @@ export function OnboardingChecklist({
               >
                 Activate scheme
               </Button>
-              <p className="max-w-md text-[13px] text-muted-foreground">
+              <p className="max-w-md text-13 text-muted-foreground">
                 What happens when you activate: the scheme goes live and its agents begin recording
                 every levy, meeting and maintenance job on the event bus.
               </p>
               {activate.error && (
-                <p className="flex items-start gap-1.5 text-[13px] text-critical">
+                <p className="flex items-start gap-1.5 text-13 text-critical">
                   <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
                   <span>{activate.error.message}</span>
                 </p>

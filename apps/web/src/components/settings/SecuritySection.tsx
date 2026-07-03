@@ -327,7 +327,7 @@ function SessionsCard() {
                         </Badge>
                       ) : null}
                     </div>
-                    <p className="truncate text-[13px] text-muted-foreground">
+                    <p className="truncate text-13 text-muted-foreground">
                       {s.ipAddress ? `${s.ipAddress} · ` : ""}Active {relativeTime(s.updatedAt)}
                     </p>
                   </div>

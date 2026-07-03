@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Building2, CircleAlertIcon } from "lucide-react";
+import { Building2 } from "lucide-react";
 import { useRef } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
+import { FormMessage } from "@/components/ui/form-message";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, unwrap } from "@/lib/api";
@@ -83,15 +84,7 @@ function AcceptInvite({ token }: { token: string }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {accept.error && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-md border border-critical/25 bg-critical/8 px-3 py-2 text-[13px] text-critical"
-            >
-              <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-              <span>{accept.error.message}</span>
-            </div>
-          )}
+          {accept.error && <FormMessage>{accept.error.message}</FormMessage>}
           <Button pending={accept.isPending} onClick={() => accept.mutate()}>
             Accept invite
           </Button>

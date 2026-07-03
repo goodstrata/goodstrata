@@ -40,7 +40,7 @@ function StatCard({ label, value, hint, tone, hero = false, className }: StatCar
       >
         {value}
       </p>
-      {hint && <p className="mt-1 text-[13px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="mt-1 text-13 text-muted-foreground">{hint}</p>}
     </div>
   );
 }

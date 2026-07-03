@@ -169,7 +169,7 @@ function AvatarCard({ user, onChange }: { user: SettingsUser; onChange: () => vo
                 </button>
               ) : null}
             </div>
-            <p className="text-[13px] text-muted-foreground">PNG, JPEG, WebP or GIF, up to 5 MB.</p>
+            <p className="text-13 text-muted-foreground">PNG, JPEG, WebP or GIF, up to 5 MB.</p>
           </div>
         </div>
       </CardContent>
@@ -304,7 +304,7 @@ function EmailCard({ user, onSent }: { user: SettingsUser; onSent: () => void })
                 type="button"
                 disabled={resend.isPending}
                 onClick={() => resend.mutate()}
-                className="ml-auto text-[13px] font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50"
+                className="ml-auto text-13 font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50"
               >
                 Resend verification
               </button>

@@ -190,12 +190,12 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
               value={csv}
               onChange={(e) => setCsv(e.target.value)}
             />
-            <p className="mt-2 text-[13px] text-muted-foreground">
+            <p className="mt-2 text-13 text-muted-foreground">
               Owners are created from owner_name and owner_email when present; existing lots are
               matched by lot number.
             </p>
             {importMutation.error && (
-              <p className="mt-2 flex items-start gap-1.5 text-[13px] text-critical">
+              <p className="mt-2 flex items-start gap-1.5 text-13 text-critical">
                 <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
                 <span>{importMutation.error.message}</span>
               </p>

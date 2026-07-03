@@ -78,7 +78,7 @@ export function InviteStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="font-display text-2xl font-bold tracking-tight md:text-[1.75rem]">
+        <h1 className="page-title">
           Invite your committee & owners
         </h1>
         <p className="text-sm text-muted-foreground">

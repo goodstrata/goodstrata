@@ -62,7 +62,7 @@ export function PasswordStrength({ password }: { password: string }) {
           />
         ))}
       </div>
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-13 text-muted-foreground">
         Password strength: <span className={cn("font-medium", text)}>{label}</span>
       </p>
     </div>

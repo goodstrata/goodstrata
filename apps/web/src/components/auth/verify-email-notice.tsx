@@ -1,7 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
-import { CircleAlertIcon, MailCheck } from "lucide-react";
+import { MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormMessage } from "@/components/ui/form-message";
 import { sendVerificationEmail } from "@/lib/auth";
 
 /**
@@ -40,27 +41,15 @@ export function VerifyEmailNotice({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-13 text-muted-foreground">
           Nothing in your inbox after a minute? Check spam, or resend below.
         </p>
 
-        {resend.isError && (
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-md border border-critical/25 bg-critical/8 px-3 py-2 text-[13px] text-critical"
-          >
-            <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            <span>{resend.error.message}</span>
-          </div>
-        )}
+        {resend.isError && <FormMessage>{resend.error.message}</FormMessage>}
         {resend.isSuccess && !resend.isError && (
-          <p
-            role="status"
-            className="flex items-start gap-2 rounded-md border border-positive/25 bg-positive/8 px-3 py-2 text-[13px] text-positive"
-          >
-            <MailCheck aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            <span>Sent again — the newest link is the one to use.</span>
-          </p>
+          <FormMessage tone="positive" icon={MailCheck}>
+            Sent again — the newest link is the one to use.
+          </FormMessage>
         )}
 
         <Button
