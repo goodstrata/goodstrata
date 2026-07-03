@@ -1,3 +1,4 @@
+import { pgConfig } from "@goodstrata/db";
 import pg from "pg";
 
 export interface EventNotification {
@@ -22,7 +23,7 @@ export function listenForEvents(
 
   async function connect() {
     if (stopped) return;
-    client = new pg.Client({ connectionString });
+    client = new pg.Client(pgConfig(connectionString));
     client.on("error", (err) => {
       onError(err);
       scheduleReconnect();

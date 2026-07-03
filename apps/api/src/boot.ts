@@ -10,7 +10,7 @@ import {
   meetingsService,
   notifierService,
 } from "@goodstrata/core";
-import { schemes } from "@goodstrata/db";
+import { pgConfig, schemes } from "@goodstrata/db";
 import {
   type DispatchJobData,
   EventDispatcher,
@@ -50,7 +50,7 @@ export interface BackgroundServices {
  * the API by default (self-host floor: one Node process).
  */
 export async function startBackground(deps: AppDeps): Promise<BackgroundServices> {
-  const boss = new PgBoss({ connectionString: deps.env.DATABASE_URL });
+  const boss = new PgBoss(pgConfig(deps.env.DATABASE_URL));
   boss.on("error", (err) => console.error("[pg-boss]", err));
   await boss.start();
 
