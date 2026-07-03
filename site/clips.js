@@ -209,10 +209,27 @@
       if (againBtn) againBtn.hidden = false;
       undock();
     });
-    // Both sources 404 / blocked / network drop mid-load: don't sit on a dead
-    // poster with a silent play button — surface a recoverable line pointing to
-    // the summary + link that already sit just below the frame.
+    // Both sources 404 / blocked / network drop mid-load: retry once,
+    // silently, before declaring it dead — a transient blip (stream reset,
+    // flaky hotel wifi) shouldn't strand the reader on an error line. Only a
+    // second failure (or an outright unsupported source) shows the message,
+    // which points to the summary + link that already sit below the frame.
+    var errRetried = false;
     video.addEventListener("error", function () {
+      var code = video.error && video.error.code;
+      if (!errRetried && code !== 4 /* SRC_NOT_SUPPORTED */) {
+        errRetried = true;
+        setPending(false);
+        undock();
+        video.muted = true; // back to the safe ambient defaults
+        video.loop = true;
+        try {
+          video.load();
+        } catch (e) {}
+        playBtn.hidden = false;
+        ambientPlay();
+        return;
+      }
       setPending(false);
       undock();
       playBtn.hidden = true;
