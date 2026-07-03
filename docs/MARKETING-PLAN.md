@@ -46,6 +46,24 @@ The money is **deterministic, tested code, never the AI.** Apportionment, penalt
 
 ---
 
+## 1.5 The field — convergent, not copied (and what's genuinely ours)
+
+GoodStrata did not copy anyone. The **problem** — opaque, conflicted, expensive strata management owners want to escape — is a public, movement-level story (ABC *Four Corners*, the June 2026 *Guardian* feature, the Strata Owners Alliance, explicit r/AusPropertyChat demand for exactly this). Many people converging on "owners should self-manage with better tools" is **market validation, not IP**.
+
+The closest convergent effort is **StrataBot.ai** (Guy Kennedy) — same movement, same channels, same "software, not a strata manager" stance. Treat them as an **ally against the incumbents, not a target.** But our thesis is distinct and further along:
+
+| Genuinely GoodStrata's own | StrataBot / the field |
+|---|---|
+| **Autonomous agents that DO the work** — levies, arrears, repairs, meetings — under a *propose → human decides → code executes* gate | Digital voting + issue tracking + a legal-Q&A chatbot; an AI *co-pilot* (suggestions) and financial control are **2026 roadmap** |
+| **Deterministic money** — the LLM never computes a dollar; money is tested code | not claimed |
+| **Append-only audit log as the trust primitive** — "trust the architecture, not the AI" | not claimed |
+| **Free forever + Apache-2.0 open-source** (revenue only from a published payment margin) | 3-month trial → paid, closed source |
+| **A whole building run on one laptop with a local model** (proven) | — |
+
+**Positioning rules that follow:**
+1. **Differentiate only on the four things that are ours** — *autonomous now · deterministic money · audit-first · free + open*. Never attack StrataBot; punching down at a fellow owner-led reformer cedes the moral high ground the whole wedge stands on.
+2. **Keep our voice our own.** Do **not** echo StrataBot's staked-out lines ("Take Back Control", "corruption-free alternative", leading with Four Corners). Convergent on the *problem* is fine — mirroring their *taglines* is the one move that would actually look like copying. Lead with our distinct language: **agents do the work, you decide, every action is on the record, and the code is public.**
+
 ## 2. Target audience + channel matrix
 
 ### 2.1 The two buyers (and one influencer)
