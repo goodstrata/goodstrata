@@ -106,8 +106,10 @@
   margin: 0;
   padding: 0;
 }
-html {
-  scroll-behavior: smooth;
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 body {
   font-family: var(--font-sans);
@@ -124,6 +126,7 @@ a {
   color: var(--primary);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
+  transition: color 0.15s ease;
 }
 a:hover {
   color: var(--primary-strong);
@@ -351,7 +354,11 @@ h2 em {
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
-    color 0.15s ease;
+    color 0.15s ease,
+    transform 0.08s ease;
+}
+.btn:active {
+  transform: translateY(1px);
 }
 .btn.primary {
   background: var(--primary);
@@ -740,10 +747,17 @@ header.site nav .nav-btn {
   background: var(--primary);
   color: var(--on-primary);
   font-weight: 600;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.08s ease;
 }
 header.site nav .nav-btn:hover {
   background: var(--primary-strong);
   color: var(--on-primary);
+}
+header.site nav .nav-btn:active {
+  transform: translateY(1px);
 }
 
 /* Mobile menu toggle (injected by nav.js) — hidden on desktop. */
@@ -1362,7 +1376,18 @@ ul.proof-list li strong {
   background: var(--primary);
   border: 3px solid var(--card);
   box-shadow: 0 2px 9px -1px rgb(9 91 65 / 55%);
-  cursor: pointer;
+  cursor: grab;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.receipt-slider input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 3px 12px -1px rgb(9 91 65 / 65%);
+}
+.receipt-slider input[type="range"]:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.08);
 }
 .receipt-slider input[type="range"]::-moz-range-thumb {
   width: 22px;
@@ -1370,7 +1395,17 @@ ul.proof-list li strong {
   border: 3px solid var(--card);
   border-radius: 50%;
   background: var(--primary);
-  cursor: pointer;
+  cursor: grab;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.receipt-slider input[type="range"]:hover::-moz-range-thumb {
+  transform: scale(1.12);
+}
+.receipt-slider input[type="range"]:active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.08);
 }
 .receipt-note {
   margin-top: 14px;
