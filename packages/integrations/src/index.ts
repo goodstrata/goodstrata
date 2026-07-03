@@ -9,6 +9,7 @@ import {
   type EmailProvider,
   memoryEmailProvider,
   sesEmailProvider,
+  smtpEmailProvider,
 } from "./email.js";
 import {
   mockPaymentsProvider,
@@ -56,6 +57,12 @@ export interface IntegrationsEnv {
   AWS_SECRET_ACCESS_KEY?: string;
   AWS_REGION?: string;
   AWS_SES_FROM_EMAIL?: string;
+  // Generic SMTP (EMAIL_PROVIDER=smtp) — reuses AWS_SES_FROM_EMAIL as the sender.
+  SMTP_HOST?: string;
+  SMTP_PORT?: string;
+  SMTP_SECURE?: string;
+  SMTP_USER?: string;
+  SMTP_PASS?: string;
   // Twilio (SMS_PROVIDER=twilio)
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
@@ -95,6 +102,16 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
           accessKeyId: required(env, "AWS_ACCESS_KEY_ID", "ses"),
           secretAccessKey: required(env, "AWS_SECRET_ACCESS_KEY", "ses"),
           from: required(env, "AWS_SES_FROM_EMAIL", "ses"),
+        });
+      case "smtp":
+        return smtpEmailProvider({
+          host: required(env, "SMTP_HOST", "smtp"),
+          // 465 = implicit TLS (secure); 587 = STARTTLS (set SMTP_SECURE=false).
+          port: env.SMTP_PORT ? Number(env.SMTP_PORT) : 465,
+          secure: (env.SMTP_SECURE ?? "true") !== "false",
+          user: required(env, "SMTP_USER", "smtp"),
+          pass: required(env, "SMTP_PASS", "smtp"),
+          from: required(env, "AWS_SES_FROM_EMAIL", "smtp"),
         });
       default:
         return consoleEmailProvider();

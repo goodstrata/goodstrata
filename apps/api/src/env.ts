@@ -40,6 +40,18 @@ const envSchema = z.object({
   AWS_REGION: z.string().optional(),
   AWS_SES_FROM_EMAIL: z.string().optional(),
 
+  /**
+   * Generic SMTP (EMAIL_PROVIDER=smtp). Host/user/pass are required only when
+   * EMAIL_PROVIDER=smtp (enforced at construction in integrationsFromEnv); the
+   * sender address reuses AWS_SES_FROM_EMAIL. SMTP_SECURE defaults to true
+   * (implicit TLS, port 465); set it to false for STARTTLS on port 587.
+   */
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().optional(),
+  SMTP_SECURE: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+
   /** Twilio (SMS_PROVIDER=twilio). */
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),

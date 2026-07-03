@@ -1,4 +1,5 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import nodemailer from "nodemailer";
 
 export interface OutboundEmail {
   to: string;
@@ -74,6 +75,77 @@ export function sesEmailProvider(cfg: SesEmailConfig): EmailProvider {
         }),
       );
       return { providerMessageId: out.MessageId ?? "" };
+    },
+  };
+}
+
+/** The subset of a nodemailer message we build — also the fake's contract in tests. */
+export interface SmtpMessage {
+  from: string;
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
+}
+
+/** Minimal shape of a nodemailer transport so tests can inject a fake (no sockets). */
+export interface SmtpTransportLike {
+  sendMail(message: SmtpMessage): Promise<{ messageId?: string }>;
+}
+
+export interface SmtpEmailConfig {
+  host: string;
+  port: number;
+  /** true = implicit TLS (port 465); false = STARTTLS (port 587). */
+  secure: boolean;
+  user: string;
+  pass: string;
+  /** Envelope sender, e.g. "notices@yourdomain.com". */
+  from: string;
+  /** Injectable for tests; defaults to a real nodemailer SMTP transport. */
+  transport?: SmtpTransportLike;
+}
+
+/**
+ * Generic SMTP via nodemailer — point at any mail server (Fastmail, Postmark
+ * SMTP, Migadu, a company relay, …). Unlike the SES Simple-content path, this
+ * forwards `email.attachments` as nodemailer attachments.
+ */
+export function smtpEmailProvider(cfg: SmtpEmailConfig): EmailProvider {
+  const transport: SmtpTransportLike =
+    cfg.transport ??
+    (() => {
+      const t = nodemailer.createTransport({
+        host: cfg.host,
+        port: cfg.port,
+        secure: cfg.secure,
+        auth: { user: cfg.user, pass: cfg.pass },
+      });
+      return { sendMail: (message: SmtpMessage) => t.sendMail(message) };
+    })();
+
+  return {
+    name: "smtp",
+    async send(email) {
+      const info = await transport.sendMail({
+        from: cfg.from,
+        to: email.to,
+        subject: email.subject,
+        text: email.text,
+        ...(email.html ? { html: email.html } : {}),
+        ...(email.attachments && email.attachments.length > 0
+          ? {
+              attachments: email.attachments.map((a) => ({
+                filename: a.filename,
+                // nodemailer wants a Buffer/string/stream; normalise the Uint8Array.
+                content: Buffer.from(a.content),
+                contentType: a.contentType,
+              })),
+            }
+          : {}),
+      });
+      return { providerMessageId: info.messageId ?? "" };
     },
   };
 }

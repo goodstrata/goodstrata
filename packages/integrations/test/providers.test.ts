@@ -1,6 +1,6 @@
 import type { SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { describe, expect, it, vi } from "vitest";
-import { sesEmailProvider } from "../src/email.js";
+import { type SmtpMessage, sesEmailProvider, smtpEmailProvider } from "../src/email.js";
 import { integrationsFromEnv } from "../src/index.js";
 import { twilioSmsProvider } from "../src/sms.js";
 import { consoleVideoProvider, dailyVideoProvider, flattenVtt } from "../src/video.js";
@@ -53,6 +53,67 @@ describe("sesEmailProvider", () => {
     await provider.send({ to: "a@example.com", subject: "Hi", text: "Plain" });
     const input = send.mock.calls[0]![0].input;
     expect(input.Content?.Simple?.Body?.Html).toBeUndefined();
+  });
+});
+
+describe("smtpEmailProvider", () => {
+  it("maps the email and forwards attachments through the injected transport", async () => {
+    const sendMail = vi.fn(async (_msg: SmtpMessage) => ({ messageId: "smtp-msg-1" }));
+    const provider = smtpEmailProvider({
+      host: "smtp.fastmail.com",
+      port: 465,
+      secure: true,
+      user: "notices@example.com",
+      pass: "app-password",
+      from: "notices@example.com",
+      transport: { sendMail },
+    });
+    expect(provider.name).toBe("smtp");
+
+    const result = await provider.send({
+      to: "owner@example.com",
+      subject: "Levy notice",
+      text: "Your levy is due.",
+      html: "<p>Your levy is due.</p>",
+      attachments: [
+        {
+          filename: "notice.pdf",
+          content: new Uint8Array([1, 2, 3]),
+          contentType: "application/pdf",
+        },
+      ],
+    });
+    expect(result.providerMessageId).toBe("smtp-msg-1");
+
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    const msg = sendMail.mock.calls[0]![0];
+    expect(msg.from).toBe("notices@example.com");
+    expect(msg.to).toBe("owner@example.com");
+    expect(msg.subject).toBe("Levy notice");
+    expect(msg.text).toBe("Your levy is due.");
+    expect(msg.html).toBe("<p>Your levy is due.</p>");
+    expect(msg.attachments).toHaveLength(1);
+    expect(msg.attachments![0]!.filename).toBe("notice.pdf");
+    expect(msg.attachments![0]!.contentType).toBe("application/pdf");
+    // Uint8Array is normalised to a Buffer for nodemailer.
+    expect(msg.attachments![0]!.content).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it("omits html and attachments for a plain text-only email", async () => {
+    const sendMail = vi.fn(async (_msg: SmtpMessage) => ({ messageId: "smtp-msg-2" }));
+    const provider = smtpEmailProvider({
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      user: "u",
+      pass: "p",
+      from: "notices@example.com",
+      transport: { sendMail },
+    });
+    await provider.send({ to: "a@example.com", subject: "Hi", text: "Plain" });
+    const msg = sendMail.mock.calls[0]![0];
+    expect(msg.html).toBeUndefined();
+    expect(msg.attachments).toBeUndefined();
   });
 });
 
@@ -169,6 +230,18 @@ describe("integrationsFromEnv provider selection", () => {
     expect(integrations.video.name).toBe("daily");
   });
 
+  it("selects smtp when configured, reusing AWS_SES_FROM_EMAIL as the sender", () => {
+    const integrations = integrationsFromEnv({
+      EMAIL_PROVIDER: "smtp",
+      SMTP_HOST: "smtp.fastmail.com",
+      SMTP_PORT: "465",
+      SMTP_USER: "notices@example.com",
+      SMTP_PASS: "app-password",
+      AWS_SES_FROM_EMAIL: "notices@example.com",
+    });
+    expect(integrations.email.name).toBe("smtp");
+  });
+
   it("falls back to offline drivers and fails fast on missing config", () => {
     const integrations = integrationsFromEnv({});
     expect(integrations.email.name).toBe("console");
@@ -176,6 +249,7 @@ describe("integrationsFromEnv provider selection", () => {
     expect(integrations.video.name).toBe("console");
 
     expect(() => integrationsFromEnv({ EMAIL_PROVIDER: "ses" })).toThrow(/requires AWS_REGION/);
+    expect(() => integrationsFromEnv({ EMAIL_PROVIDER: "smtp" })).toThrow(/requires SMTP_HOST/);
     expect(() => integrationsFromEnv({ SMS_PROVIDER: "twilio" })).toThrow(
       /requires TWILIO_ACCOUNT_SID/,
     );

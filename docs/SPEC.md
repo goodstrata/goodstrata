@@ -369,7 +369,7 @@ The following is the complete list of actions that require human input. Everythi
 | System | Purpose | Priority |
 |--------|---------|----------|
 | Monoova (NPP/PayID) | Inbound levy payments, outbound contractor payments | **Built** |
-| Email (SendGrid/SES) | Transactional notifications, levy notices, meeting notices | **Built** |
+| Email (SES / generic SMTP) | Transactional notifications, levy notices, meeting notices (self-hosters can point at any SMTP server; defaults to a console/local sink) | **Built** |
 | SMS (Twilio/MessageMedia) | Notifications, reminders, 2FA | **Built** |
 | Video conferencing (Zoom/Teams API) | Virtual AGMs and committee meetings | High |
 | Calendar (ICS generation) | Meeting invites and compliance calendar sync | Medium |

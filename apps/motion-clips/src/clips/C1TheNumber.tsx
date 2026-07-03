@@ -9,11 +9,13 @@ import {
   useVideoConfig,
 } from "remotion";
 import { AgmCard } from "../lib/AgmCard";
-import { countUp, EASE_IN_OUT, EASE_OUT, fade, riseIn, sceneFade } from "../lib/anim";
+import { countUp, EASE_IN_OUT, EASE_OUT, fade, riseIn } from "../lib/anim";
 import { Caption } from "../lib/Caption";
 import { FeeCard } from "../lib/FeeCard";
 import { KenBurns } from "../lib/KenBurns";
 import "../lib/loadFonts";
+import { MonoLine } from "../lib/MonoLine";
+import { SceneFade } from "../lib/SceneFade";
 import { fees, fonts, light, money, type Theme } from "../theme";
 
 export type C1Props = {
@@ -21,85 +23,31 @@ export type C1Props = {
 };
 
 // ---- Scene timing (30fps) ---------------------------------------------------
-// Re-timed to the ElevenLabs en-AU VO (public/audio/c1-vo.mp3, ~36.9s). Scene
-// boundaries land in the silences between the plan's C1 lines (measured with
-// ffmpeg silencedetect) so each caption + visual lands as its line is spoken.
-//   s1  0.00s  "Somewhere in your AGM papers…really costs you."
-//   s2  4.40s  "The base fee is the number they show you."
-//   s3  8.13s  "The extras — meeting fees, arrears notices, admin time…"
-//   s4 17.20s  "Plus a commission on your building's insurance…never shown."
-//   s5 21.57s  "So take a photo of the page, and drop it in."
-//   s6 24.50s  "In seconds, the real number, in plain dollars."   ← $8,400 band
-//   s7 28.60s  "GoodStrata does that same admin…free for your OC." ← $8,400→$0
-//   s8 32.60s  "Agents do the work; you just decide." + "See your number…"
+// Re-timed to the regenerated warm en-AU VO (public/audio/c1-vo.mp3, 32.32s).
+// Scene boundaries land in the silences between the plan's C1 lines (measured
+// with ffmpeg silencedetect) so each caption + visual lands as its line is
+// spoken. Boundaries (s): 0 · 4.27 · 7.38 · 12.67 · 16.17 · 18.65 · 22.34 · 27.67.
+//   s1  0.00s  "What does your strata manager actually cost you?"
+//   s2  4.27s  "The base fee is the number they show you."
+//   s3  7.38s  "+ meeting fees + arrears notices + admin time"
+//   s4 12.67s  "+ insurance commission you were never shown."
+//   s5 16.17s  "Just take a photo of the page."
+//   s6 18.65s  "…the real number, in plain dollars."     ← $8,400 band
+//   s7 22.34s  "GoodStrata does the same admin. For $0."  ← $8,400 → $0
+//   s8 27.67s  "You still decide…" + "See your number. It's free."
 export const SCENES = {
-  s1: { from: 0, dur: 132 },
-  s2: { from: 132, dur: 112 },
-  s3: { from: 244, dur: 272 },
-  s4: { from: 516, dur: 131 },
-  s5: { from: 647, dur: 88 },
-  s6: { from: 735, dur: 123 },
-  s7: { from: 858, dur: 120 },
-  s8: { from: 978, dur: 132 },
+  s1: { from: 0, dur: 128 },
+  s2: { from: 128, dur: 93 },
+  s3: { from: 221, dur: 159 },
+  s4: { from: 380, dur: 105 },
+  s5: { from: 485, dur: 75 },
+  s6: { from: 560, dur: 110 },
+  s7: { from: 670, dur: 160 },
+  s8: { from: 830, dur: 140 },
 } as const;
-export const C1_DURATION = 1110; // 37.0s @ 30fps — covers the full VO + a hold.
+export const C1_DURATION = 970; // 32.33s @ 30fps — matches the new VO length.
 
 const theme: Theme = light;
-
-// Per-scene fade wrapper — eases each scene in over the paper root so the hard
-// Sequence cuts read as gentle dissolves (premium transitions, not cuts).
-const SceneFade: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-  const opacity = sceneFade(frame, durationInFrames);
-  return <AbsoluteFill style={{ opacity }}>{children}</AbsoluteFill>;
-};
-
-// A shared row used on the clean-UI scenes (scaled ~2x).
-const MonoLine: React.FC<{
-  label: string;
-  amount: string;
-  theme: Theme;
-  strong?: boolean;
-  width?: number;
-}> = ({ label, amount, theme, strong, width = 1120 }) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "baseline",
-      justifyContent: "space-between",
-      gap: 44,
-      width,
-      padding: "34px 50px",
-      background: theme.card,
-      border: `1.5px solid ${theme.line}`,
-      borderRadius: 22,
-      boxShadow: "0 34px 66px -40px rgba(15,20,28,0.5)",
-    }}
-  >
-    <span
-      style={{
-        fontFamily: fonts.sans,
-        fontWeight: 600,
-        fontSize: 46,
-        color: theme.ink,
-      }}
-    >
-      {label}
-    </span>
-    <span
-      style={{
-        fontFamily: fonts.mono,
-        fontVariantNumeric: "tabular-nums",
-        fontWeight: 600,
-        fontSize: strong ? 62 : 54,
-        color: theme.ink,
-      }}
-    >
-      {amount}
-    </span>
-  </div>
-);
 
 // ---- Scene 1: AGM papers on a table (brand treatment) -----------------------
 const Scene1: React.FC = () => {
@@ -173,13 +121,13 @@ const Scene3: React.FC = () => {
           theme={theme}
           label="+ Meeting & AGM fees"
           amount={money(fees.meetings)}
-          dropAt={36}
+          dropAt={20}
         />
         <FeeCard
           theme={theme}
           label="+ Arrears notices & admin time"
           amount={money(fees.disbursements)}
-          dropAt={150}
+          dropAt={95}
         />
       </div>
       <Caption theme={theme}>
@@ -437,9 +385,9 @@ const Scene7: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const left = riseIn(frame, fps, 4);
-  const right = riseIn(frame, fps, 56);
+  const right = riseIn(frame, fps, 62); // $0 lands on the spoken word "free"
   // line-through draws across the $8,400 (ease-in-out)
-  const strike = interpolate(frame, [32, 56], [0, 1], {
+  const strike = interpolate(frame, [38, 62], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: EASE_IN_OUT,
@@ -551,28 +499,28 @@ const Scene8: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const enter = riseIn(frame, fps, 8);
-  // cursor moves in and taps the Approve button around frame 52 ("you decide")
-  const cursorX = interpolate(frame, [20, 52], [220, 0], {
+  // cursor moves in and taps the Approve button around frame 44 ("you decide")
+  const cursorX = interpolate(frame, [16, 44], [220, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: EASE_IN_OUT,
   });
-  const cursorY = interpolate(frame, [20, 52], [160, 0], {
+  const cursorY = interpolate(frame, [16, 44], [160, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: EASE_IN_OUT,
   });
-  const tap = interpolate(frame, [52, 60, 70], [0, 1, 0], {
+  const tap = interpolate(frame, [44, 52, 62], [0, 1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-  const glow = interpolate(frame, [52, 62], [0, 1], {
+  const glow = interpolate(frame, [44, 56], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: EASE_OUT,
   });
-  // Final CTA caption swap at local frame 81 (~35.3s global).
-  const showCta = frame >= 81;
+  // Final CTA caption swap at local frame 83 (~30.4s global) on "See your number".
+  const showCta = frame >= 83;
 
   return (
     <AbsoluteFill style={{ overflow: "hidden" }}>
