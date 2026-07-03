@@ -8,12 +8,14 @@ import { mcpRoutes } from "./mcp/index.js";
 import { type AppEnv, requireAuth } from "./middleware.js";
 import { agentRunsRoutes } from "./routes/agents.js";
 import { communityRoutes } from "./routes/community.js";
+import { complianceRoutes } from "./routes/compliance.js";
 import { devRoutes } from "./routes/dev.js";
 import { estimatorRoutes } from "./routes/estimator.js";
 import { eventsRoutes } from "./routes/events.js";
 import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
 import { grievancesRoutes } from "./routes/grievances.js";
 import { maintenanceRoutes } from "./routes/maintenance.js";
+import { managerRoutes } from "./routes/manager.js";
 import { meetingsRoutes } from "./routes/meetings.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import {
@@ -27,6 +29,7 @@ import {
 } from "./routes/onboarding.js";
 import { profileRoutes } from "./routes/profile.js";
 import { schemesRoutes } from "./routes/schemes.js";
+import { trustRoutes } from "./routes/trust.js";
 import { type SseHub, sseRoutes } from "./sse.js";
 import { paymentWebhookRoutes } from "./webhooks.js";
 
@@ -43,13 +46,16 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", documentsRoutes(deps))
     .route("/schemes", activationRoutes(deps))
     .route("/schemes", financeRoutes(deps))
+    .route("/schemes", trustRoutes(deps))
     .route("/schemes", decisionsRoutes(deps))
     .route("/schemes", maintenanceRoutes(deps))
     .route("/schemes", grievancesRoutes(deps))
+    .route("/schemes", complianceRoutes(deps))
     .route("/schemes", communityRoutes(deps))
     .route("/schemes", meetingsRoutes(deps))
     .route("/schemes", notificationsRoutes(deps))
     .route("/schemes", agentRunsRoutes(deps))
+    .route("/schemes", managerRoutes(deps))
     .route("/invites", invitesRoutes(deps))
     .route("/profile", profileRoutes(deps));
 

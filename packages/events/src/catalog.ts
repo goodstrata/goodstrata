@@ -160,6 +160,33 @@ export const eventDefs = {
   "document.uploaded": lax,
   "document.classified": lax,
   "compliance.item.due": lax,
+  /** An obligation was raised on the compliance calendar (idempotent per dedupeKey). */
+  "compliance.obligation.raised": z.object({
+    obligationId: z.string(),
+    kind: z.string(),
+    schemeId: z.string().nullable(),
+    organizationId: z.string().nullable(),
+    subjectRef: z.string().nullable(),
+    dueOn: z.string(),
+    periodKey: z.string().nullable(),
+  }),
+  /** The sweep moved an obligation into a notifying band (t_90/t_60/t_30/due/overdue). */
+  "compliance.obligation.due": z.object({
+    obligationId: z.string(),
+    kind: z.string(),
+    dueOn: z.string(),
+    status: z.string(),
+    escalationState: z.string(),
+    responsibleRole: z.string().nullable(),
+    schemeId: z.string().nullable(),
+    organizationId: z.string().nullable(),
+  }),
+  /** An obligation was satisfied (or waived). */
+  "compliance.obligation.completed": z.object({
+    obligationId: z.string(),
+    kind: z.string(),
+    status: z.string(),
+  }),
   "message.sent": z.object({
     messageId: z.string(),
     channel: z.string(),

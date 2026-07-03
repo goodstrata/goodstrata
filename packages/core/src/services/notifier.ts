@@ -19,6 +19,7 @@ export const NOTIFIER_EVENT_TYPES = [
   "minutes.drafted",
   "maintenance.request.created",
   "community.comment.created",
+  "compliance.obligation.due",
 ] as const;
 
 /** Roles considered "the committee" for notification fan-out. */
@@ -223,6 +224,37 @@ export async function handleEventForNotifications(
         body: "Someone replied to your community board post.",
         category: "general",
         related: { type: "community_post", id: payload.postId },
+      });
+      return { created: created.length };
+    }
+
+    case "compliance.obligation.due": {
+      const payload = event.payload as {
+        obligationId: string;
+        kind: string;
+        dueOn: string;
+        status: string;
+        escalationState: string;
+        responsibleRole: string | null;
+      };
+      // Fan out to the responsible role (falling back to the committee), so the
+      // people answerable for the obligation see it approaching/overdue.
+      const roles: MembershipRole[] =
+        payload.responsibleRole &&
+        COMMITTEE_NOTIFY_ROLES.includes(payload.responsibleRole as MembershipRole)
+          ? [payload.responsibleRole as MembershipRole]
+          : COMMITTEE_NOTIFY_ROLES;
+      const recipients = await userIdsWithRoles(ctx, schemeId, roles);
+      const overdue = payload.status === "overdue";
+      const created = await notifyUsers(ctx, schemeId, recipients, {
+        title: overdue
+          ? `Overdue: ${payload.kind.replace(/_/g, " ")}`
+          : `Compliance due ${payload.dueOn}: ${payload.kind.replace(/_/g, " ")}`,
+        body: overdue
+          ? `A compliance obligation is overdue (was due ${payload.dueOn}). Act to bring it back into compliance.`
+          : `A compliance obligation is approaching its due date (${payload.dueOn}).`,
+        category: "general",
+        related: { type: "compliance_obligation", id: payload.obligationId },
       });
       return { created: created.length };
     }

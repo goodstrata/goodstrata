@@ -8,6 +8,7 @@ export * from "./finance.js";
 export * from "./grievances.js";
 export * from "./insurance.js";
 export * from "./maintenance.js";
+export * from "./manager.js";
 export * from "./mcp.js";
 export * from "./meetings.js";
 export * from "./notifications.js";

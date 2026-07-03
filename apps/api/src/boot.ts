@@ -6,6 +6,7 @@ import {
 } from "@goodstrata/agents";
 import {
   arrearsService,
+  complianceService,
   decisionsService,
   meetingsService,
   notifierService,
@@ -199,6 +200,11 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
         console.log(`[cron:arrears] ${scheme.name}: ${emitted.length} stage event(s)`);
       }
     }
+    // Age the compliance calendar globally (scheme + manager-level obligations).
+    console.log(
+      "[cron:compliance]",
+      await complianceService.sweep(deps.serviceContext(systemActor("cron.compliance.daily"))),
+    );
   });
 
   return {

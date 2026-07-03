@@ -26,6 +26,12 @@ export const organizations = pgTable("organizations", {
   name: text().notNull(),
   abn: text(),
   contactEmail: text(),
+  /**
+   * The manager's Business Licensing Authority registration number (registered-
+   * manager path). Feeds OC certificates and the s147/148 register of managers.
+   * Nullable: self-managed groups have no registration.
+   */
+  managerRegistrationNumber: text(),
   settings: jsonb().notNull().default({}),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

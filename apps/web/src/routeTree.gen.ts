@@ -16,7 +16,9 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TrustSchemeIdRouteImport } from './routes/trust.$schemeId'
 import { Route as SchemesSchemeIdRouteImport } from './routes/schemes.$schemeId'
+import { Route as SchemesSchemeIdManagerRouteImport } from './routes/schemes.$schemeId.manager'
 
 const WhatAmIPayingRoute = WhatAmIPayingRouteImport.update({
   id: '/what-am-i-paying',
@@ -53,10 +55,20 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TrustSchemeIdRoute = TrustSchemeIdRouteImport.update({
+  id: '/trust/$schemeId',
+  path: '/trust/$schemeId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SchemesSchemeIdRoute = SchemesSchemeIdRouteImport.update({
   id: '/schemes/$schemeId',
   path: '/schemes/$schemeId',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SchemesSchemeIdManagerRoute = SchemesSchemeIdManagerRouteImport.update({
+  id: '/manager',
+  path: '/manager',
+  getParentRoute: () => SchemesSchemeIdRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -67,7 +79,9 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
-  '/schemes/$schemeId': typeof SchemesSchemeIdRoute
+  '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
+  '/trust/$schemeId': typeof TrustSchemeIdRoute
+  '/schemes/$schemeId/manager': typeof SchemesSchemeIdManagerRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -77,7 +91,9 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
-  '/schemes/$schemeId': typeof SchemesSchemeIdRoute
+  '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
+  '/trust/$schemeId': typeof TrustSchemeIdRoute
+  '/schemes/$schemeId/manager': typeof SchemesSchemeIdManagerRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,7 +104,9 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
-  '/schemes/$schemeId': typeof SchemesSchemeIdRoute
+  '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
+  '/trust/$schemeId': typeof TrustSchemeIdRoute
+  '/schemes/$schemeId/manager': typeof SchemesSchemeIdManagerRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -101,6 +119,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/what-am-i-paying'
     | '/schemes/$schemeId'
+    | '/trust/$schemeId'
+    | '/schemes/$schemeId/manager'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -111,6 +131,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/what-am-i-paying'
     | '/schemes/$schemeId'
+    | '/trust/$schemeId'
+    | '/schemes/$schemeId/manager'
   id:
     | '__root__'
     | '/'
@@ -121,6 +143,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/what-am-i-paying'
     | '/schemes/$schemeId'
+    | '/trust/$schemeId'
+    | '/schemes/$schemeId/manager'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -131,7 +155,8 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   WhatAmIPayingRoute: typeof WhatAmIPayingRoute
-  SchemesSchemeIdRoute: typeof SchemesSchemeIdRoute
+  SchemesSchemeIdRoute: typeof SchemesSchemeIdRouteWithChildren
+  TrustSchemeIdRoute: typeof TrustSchemeIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -185,6 +210,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/trust/$schemeId': {
+      id: '/trust/$schemeId'
+      path: '/trust/$schemeId'
+      fullPath: '/trust/$schemeId'
+      preLoaderRoute: typeof TrustSchemeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schemes/$schemeId': {
       id: '/schemes/$schemeId'
       path: '/schemes/$schemeId'
@@ -192,8 +224,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SchemesSchemeIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/schemes/$schemeId/manager': {
+      id: '/schemes/$schemeId/manager'
+      path: '/manager'
+      fullPath: '/schemes/$schemeId/manager'
+      preLoaderRoute: typeof SchemesSchemeIdManagerRouteImport
+      parentRoute: typeof SchemesSchemeIdRoute
+    }
   }
 }
+
+interface SchemesSchemeIdRouteChildren {
+  SchemesSchemeIdManagerRoute: typeof SchemesSchemeIdManagerRoute
+}
+
+const SchemesSchemeIdRouteChildren: SchemesSchemeIdRouteChildren = {
+  SchemesSchemeIdManagerRoute: SchemesSchemeIdManagerRoute,
+}
+
+const SchemesSchemeIdRouteWithChildren = SchemesSchemeIdRoute._addFileChildren(
+  SchemesSchemeIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -203,7 +254,8 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   WhatAmIPayingRoute: WhatAmIPayingRoute,
-  SchemesSchemeIdRoute: SchemesSchemeIdRoute,
+  SchemesSchemeIdRoute: SchemesSchemeIdRouteWithChildren,
+  TrustSchemeIdRoute: TrustSchemeIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

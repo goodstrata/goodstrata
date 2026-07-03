@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   MessagesSquare,
   Scale,
+  ShieldCheck,
   User,
   Users,
   Wrench,
@@ -20,6 +21,7 @@ import {
 import { useState } from "react";
 import { z } from "zod";
 import { AgentsTab } from "@/components/AgentsTab";
+import { ComplianceTab } from "@/components/ComplianceTab";
 import { DecisionsTab } from "@/components/DecisionsTab";
 import { FinanceTab } from "@/components/FinanceTab";
 import { GrievancesTab } from "@/components/GrievancesTab";
@@ -48,6 +50,7 @@ const SECTIONS = [
   "meetings",
   "decisions",
   "grievances",
+  "compliance",
   "agents",
   "lots",
   "people",
@@ -97,6 +100,7 @@ const NAV_GROUPS: { heading: string | null; items: SectionItem[] }[] = [
       { key: "meetings", label: "Meetings", icon: CalendarDays },
       { key: "decisions", label: "Decisions", icon: Scale },
       { key: "grievances", label: "Grievances", icon: Gavel },
+      { key: "compliance", label: "Compliance", icon: ShieldCheck },
       { key: "committee", label: "Committee", icon: Users },
     ],
   },
@@ -176,6 +180,8 @@ function SectionBody({ schemeId, section }: { schemeId: string; section: Section
       return <DecisionsTab schemeId={schemeId} />;
     case "grievances":
       return <GrievancesTab schemeId={schemeId} />;
+    case "compliance":
+      return <ComplianceTab schemeId={schemeId} />;
     case "agents":
       return <AgentsTab schemeId={schemeId} />;
     case "lots":

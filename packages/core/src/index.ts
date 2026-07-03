@@ -17,6 +17,8 @@ export type {
 } from "./services/community.js";
 export * as communityService from "./services/community.js";
 export { createCommentInput, createPostInput } from "./services/community.js";
+export * as complianceService from "./services/compliance.js";
+export { raiseObligationInput } from "./services/compliance.js";
 export * as decisionsService from "./services/decisions.js";
 export * as documentsService from "./services/documents.js";
 export * as grievancesService from "./services/grievances.js";
@@ -35,6 +37,11 @@ export {
   createRequestInput,
   triageInput,
 } from "./services/maintenance.js";
+export * as managerRegistrationService from "./services/managerRegistration.js";
+export {
+  recordPiPolicyInput,
+  recordRegistrationInput,
+} from "./services/managerRegistration.js";
 export * as meetingsService from "./services/meetings.js";
 export {
   addMotionInput,
@@ -56,3 +63,5 @@ export {
   activateBankAccountInput,
   provisionTrustAccountInput,
 } from "./services/trustAccounts.js";
+export * as trustReconciliationService from "./services/trustReconciliation.js";
+export { reconciliationPeriodInput } from "./services/trustReconciliation.js";

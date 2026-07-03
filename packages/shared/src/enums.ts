@@ -160,11 +160,32 @@ export const COMPLIANCE_KINDS = [
   "bas",
   "valuation",
   "custom",
+  /** Manager's registration lapse (registered-manager path — s147/148 register). */
+  "registration_renewal",
+  /** Manager's professional-indemnity cover expiry (s119(5)/reg10 — ≥$2M held continuously). */
+  "pi_expiry",
 ] as const;
 export type ComplianceKind = (typeof COMPLIANCE_KINDS)[number];
 
 export const COMPLIANCE_STATUSES = ["upcoming", "due", "overdue", "done", "waived"] as const;
 export type ComplianceStatus = (typeof COMPLIANCE_STATUSES)[number];
+
+/**
+ * Escalation band for an obligation as its due date approaches. The sweep
+ * recomputes this from (dueOn − now); crossing into a new notifying band
+ * (t_90/t_60/t_30/due/overdue) fires a `compliance.obligation.due` event.
+ */
+export const COMPLIANCE_ESCALATIONS = ["none", "t_90", "t_60", "t_30", "due", "overdue"] as const;
+export type ComplianceEscalation = (typeof COMPLIANCE_ESCALATIONS)[number];
+
+/** Bands that warrant a notification to the responsible role. */
+export const COMPLIANCE_NOTIFYING_ESCALATIONS: readonly ComplianceEscalation[] = [
+  "t_90",
+  "t_60",
+  "t_30",
+  "due",
+  "overdue",
+];
 
 /**
  * Grievance/dispute lifecycle (OC Act Part 10 — grievance procedure).
