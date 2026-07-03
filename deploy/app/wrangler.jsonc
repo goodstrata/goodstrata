@@ -1,0 +1,20 @@
+{
+  "name": "goodstrata-app",
+  "main": "worker.ts",
+  "compatibility_date": "2026-07-01",
+  "containers": [
+    {
+      "class_name": "GoodstrataApp",
+      "image": "./Dockerfile",
+      "image_build_context": "../..",
+      "max_instances": 1,
+      "instance_type": "standard-1"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "class_name": "GoodstrataApp", "name": "APP" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GoodstrataApp"] }],
+  "routes": [{ "pattern": "my.goodstrata.com.au", "custom_domain": true }],
+  "observability": { "enabled": true }
+}
