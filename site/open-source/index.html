@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open source &amp; self-host — read every line, run it yourself — GoodStrata</title>
+  <meta name="description" content="GoodStrata is Apache-2.0 open source, top to bottom. The self-host floor is PostgreSQL and one Node process — and with a local model, your building's money, minutes, and maintenance never leave hardware you control." />
+  <meta property="og:title" content="Open source & self-host — read every line, export your data, run it yourself" />
+  <meta property="og:description" content="Apache-2.0, the whole platform. PostgreSQL plus one process. Local AI through Ollama — no API key, no data over the wire. No lock-in is a claim you can check." />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
+  <link rel="icon" href="/favicon.ico" sizes="32x32" />
+  <link rel="icon" href="/icon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <link rel="preload" href="/fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<div class="wrap">
+  <header class="site">
+    <a class="logo" href="/">
+      <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
+      <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
+    </a>
+    <nav aria-label="Primary">
+      <a href="/how-it-works/">How it works</a>
+      <a href="/how-we-make-money/">How we make money</a>
+      <a href="/open-source/" aria-current="page">Open source</a>
+      <a href="/for-owners/">Rally your building</a>
+      <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+      <a class="nav-btn" href="https://demo.goodstrata.com.au">Try the demo</a>
+    </nav>
+  </header>
+</div>
+
+<div class="hero interior">
+  <div class="wrap">
+    <p class="eyebrow">
+      <span class="motif" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span class="kicker">Open source &amp; self-host</span>
+    </p>
+    <h1>Read every line. Export your data. <em>Run it yourself.</em></h1>
+    <p class="sub">
+      GoodStrata is Apache-2.0 open source, top to bottom. The self-host floor is PostgreSQL and
+      one Node process — and with a local model, your building's money, minutes, and maintenance
+      never leave hardware you control.
+    </p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/goodstrata/goodstrata">Read the source on GitHub</a>
+      <a class="btn ghost" href="https://my.goodstrata.com.au">Or let us host it</a>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+
+    <div class="feature">
+      <h2>Apache-2.0 — the whole platform, not a teaser</h2>
+      <div class="section-body">
+        <p>
+          GoodStrata is released under the Apache-2.0 licence: permissive, commercial-friendly, and
+          applied to the entire codebase — not an "open core" shell wrapped around a paid engine you
+          can never see. The finance agent, the arrears ladder, the levy apportionment, the decision
+          gates, the event log, the whole web app: it's all on GitHub, and you can read it, fork it,
+          run it, or audit the money math yourself. This matters most for the part that handles your
+          building's cash. Levy apportionment, penalty interest and payment reconciliation are
+          deterministic, tested functions — and because the source is open, "the LLM never computes
+          money" is a claim you can go and verify line by line, not one you have to take on faith.
+        </p>
+      </div>
+      <ul class="checklist">
+        <li><strong>Licence:</strong> Apache-2.0 — permissive, whole platform, no open-core catch.</li>
+        <li><strong>Source:</strong> <a href="https://github.com/goodstrata/goodstrata">github.com/goodstrata/goodstrata</a></li>
+        <li><strong>The end-to-end test</strong> drives a full building — onboarding to AGM — in a real browser on every commit.</li>
+      </ul>
+    </div>
+
+    <div class="feature">
+      <h2>The self-host floor: Postgres and one process</h2>
+      <div class="section-body">
+        <p>
+          The entire platform runs on PostgreSQL and a single Node process. One command —
+          <code>docker compose --profile app up</code> — brings up a database and one container, and
+          you have a working owners corporation. No Kafka, no Redis cluster, no queue service, no
+          managed-cloud dependency to sign up for; the append-only event bus is just Postgres with
+          <code>LISTEN/NOTIFY</code>. And every paid integration ships with an offline default, so
+          you can run a complete building with zero external accounts and zero recurring bills: email
+          falls back to a local sink, payments to a manual rail, hosted AI to a local model. Nothing
+          about the free path is crippled — it's the same code the managed service runs.
+        </p>
+      </div>
+      <ul class="checklist">
+        <li><strong>Email</strong> → local/console sink instead of a paid sending service.</li>
+        <li><strong>Payments</strong> → manual reconciliation instead of the hosted NPP/PayID rail.</li>
+        <li><strong>AI</strong> → a model on your own machine instead of a hosted API.</li>
+      </ul>
+    </div>
+
+    <div class="feature">
+      <h2>Your building's data never has to leave your hardware</h2>
+      <div class="section-body">
+        <p>
+          GoodStrata runs local LLMs through Ollama. Set <code>AI_PROVIDER=local</code>, point it at
+          a model like Qwen3-30B-A3B, and every agent — finance, maintenance, meetings — runs on your
+          own machine with no API key and nothing sent over the wire. We built for the most paranoid
+          deployment first and then proved it: a full month of a 12-lot Fitzroy building, arrears
+          chased to the cent, a roof leak triaged and dispatched, minutes drafted, all on one MacBook
+          with no cloud AI at all. For an owners corporation that isn't a nicety — owner names,
+          ledgers, arrears histories and disputes are exactly the data you don't want sitting on
+          someone else's server. Self-host, and it simply doesn't.
+        </p>
+      </div>
+    </div>
+
+    <div class="feature">
+      <h2>"No lock-in" is a checkable claim</h2>
+      <div class="section-body">
+        <p>
+          Every platform promises no lock-in. Open source is what turns the promise into a property
+          you can actually check, three ways. You can read the code, so there's nowhere to hide a
+          trap. You can export your data — it's your Postgres, holding your ledger, your append-only
+          event log and your documents in open formats you can take anywhere. And you can run it
+          yourself, because the licence says you can, forever. If GoodStrata ever changed its terms,
+          raised a price, or shut down tomorrow, a self-hosted building keeps operating on the last
+          commit without missing a levy. That's the difference between being told you're not locked
+          in and being able to prove it.
+        </p>
+      </div>
+      <ul class="checklist">
+        <li><strong>Read the code</strong> — nothing hidden, including the money math.</li>
+        <li><strong>Export your data</strong> — ledger, event log and documents in open formats.</li>
+        <li><strong>Run it yourself</strong> — the licence guarantees it, permanently.</li>
+      </ul>
+    </div>
+
+    <div class="feature">
+      <h2>Who self-hosts — and who shouldn't bother</h2>
+      <div class="section-body">
+        <p>
+          Self-host is for the privacy-conscious owners corporation that wants its records on
+          hardware it controls, for the technical owner who would rather run one process than pay a
+          manager, and — honestly — for everyone else as well, because it's the receipt. The managed
+          service runs this same open code, so self-host being real is the proof that the hosted
+          version has nothing to hide. But most buildings don't want to run a server, and they
+          shouldn't have to. If that's you, skip the terminal entirely.
+        </p>
+      </div>
+    </div>
+
+    <div class="feature">
+      <h2>For everyone else, we'll host it</h2>
+      <div class="section-body">
+        <p>
+          The managed service is the same open code, hosted for you, with real NPP/PayID levy
+          payments via Monoova — and it's free for owners corporations. We earn only a transparent
+          margin on the payments that actually move, never a hidden insurance commission and never a
+          kickback for the contractors our agents surface; the committee always chooses on the
+          evidence attached, and every dollar sits on the audit log. And because it's the same open
+          platform underneath, the exit is built in: if you ever want your data on your own hardware,
+          export it and self-host. The door is open by design.
+        </p>
+      </div>
+      <div class="lede-links">
+        <a href="/how-we-make-money/">How the margin works, in the open →</a>
+        <a href="https://my.goodstrata.com.au">Start a hosted building →</a>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <p class="kicker">The self-host floor</p>
+    <h2 class="section-head">What it actually takes to run your own.</h2>
+    <ul class="proof-list">
+      <li><strong>Apache-2.0</strong> — permissive, and it covers the whole platform, not an open-core shell</li>
+      <li><strong>Postgres + one process</strong> — the self-host floor. No Kafka, no Redis, no managed cloud</li>
+      <li><strong>One command</strong> — <code>docker compose --profile app up</code> brings up a running building</li>
+      <li><strong>AI_PROVIDER=local</strong> points the agents at a model in Ollama — no API key, no data over the wire</li>
+      <li><strong>Offline defaults</strong> for every paid integration, so you can run with zero external accounts</li>
+      <li><strong>Open formats</strong> — export your ledger, event log and documents any time you like</li>
+      <li><strong>Proven</strong> — a month of a 12-lot building ran on one MacBook with no cloud AI</li>
+    </ul>
+  </div>
+</section>
+
+<section class="closer">
+  <div class="wrap">
+    <h2>Read the source — or skip the server.</h2>
+    <p>Read the source at github.com/goodstrata/goodstrata — or let us host it, free for your owners corporation, at goodstrata.com.au.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/goodstrata/goodstrata">Read the source</a>
+      <a class="btn ghost" href="https://my.goodstrata.com.au">Let us host it</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 GoodStrata · Apache-2.0</span>
+    <span>
+      <a href="/how-it-works/">How it works</a> ·
+      <a href="/how-we-make-money/">How we make money</a> ·
+      <a href="/open-source/">Open source</a> ·
+      <a href="/for-owners/">Rally your building</a> ·
+      <a href="/blog/announcing-goodstrata/">Blog</a> ·
+      <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -507,3 +507,479 @@ article ul.trust li {
 article ul.trust li b {
   color: var(--ink);
 }
+
+/* =====================================================================
+   Multi-page extensions — nav, pillar bands, comparison, downloads.
+   Tokens only; no off-system colour, no external requests.
+   ===================================================================== */
+
+:root {
+  /* oxide — the "we refuse this" tone, from the app's --destructive */
+  --critical: oklch(0.54 0.19 27);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --critical: oklch(0.68 0.16 27);
+  }
+}
+
+/* ---- header nav across pages ---- */
+header.site {
+  flex-wrap: wrap;
+  gap: 14px 0;
+}
+header.site nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 22px;
+  row-gap: 10px;
+}
+header.site nav a {
+  margin-left: 0;
+}
+header.site nav a[aria-current="page"] {
+  color: var(--primary);
+  font-weight: 600;
+}
+header.site nav .nav-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+header.site nav .nav-btn:hover {
+  background: var(--primary-strong);
+  color: var(--on-primary);
+}
+@media (max-width: 620px) {
+  header.site {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  header.site nav {
+    gap: 16px;
+  }
+}
+
+/* ---- section heads & prose ---- */
+.section-head {
+  max-width: 62ch;
+}
+.section-body {
+  margin-top: 18px;
+  font-size: 17px;
+  color: var(--muted-ink);
+  max-width: 68ch;
+}
+.section-body p {
+  margin-top: 15px;
+}
+.section-body p:first-child {
+  margin-top: 0;
+}
+.section-body strong,
+.section-body b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* stack of headed blocks within a pillar page */
+.feature {
+  padding: 40px 0;
+  border-top: 1px solid var(--line);
+}
+.feature:first-child {
+  border-top: none;
+}
+.feature h2 {
+  font-size: clamp(22px, 2.9vw, 29px);
+}
+
+/* ---- checklist — plate-marked affirmative list ---- */
+ul.checklist {
+  list-style: none;
+  margin-top: 26px;
+  display: grid;
+  gap: 15px;
+  max-width: 70ch;
+}
+ul.checklist li {
+  position: relative;
+  padding-left: 30px;
+  font-size: 16px;
+  color: var(--ink);
+}
+ul.checklist li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+ul.checklist li strong,
+ul.checklist li b {
+  font-weight: 600;
+}
+
+/* ---- refusal list — the transparency wedge ---- */
+ul.never {
+  list-style: none;
+  margin-top: 26px;
+  display: grid;
+  gap: 15px;
+  max-width: 70ch;
+}
+ul.never li {
+  position: relative;
+  padding-left: 32px;
+  font-size: 16px;
+  color: var(--ink);
+}
+ul.never li::before {
+  content: "\00d7";
+  position: absolute;
+  left: 0;
+  top: -1px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 18px;
+  line-height: 1.4;
+  color: var(--critical);
+}
+ul.never li strong,
+ul.never li b {
+  font-weight: 600;
+}
+
+/* ---- side-by-side split (earn vs refuse) ---- */
+.split {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 34px;
+}
+.split .col h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.split .col h3 .tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-weight: 500;
+}
+.split .col h3 .tag.earn {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.split .col h3 .tag.refuse {
+  background: color-mix(in oklch, var(--critical) 15%, transparent);
+  color: var(--critical);
+}
+.split .col ul.checklist,
+.split .col ul.never {
+  margin-top: 18px;
+}
+
+/* ---- comparison table ---- */
+.table-scroll {
+  margin-top: 34px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+table.compare {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+table.compare th,
+table.compare td {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+table.compare tr:last-child td {
+  border-bottom: none;
+}
+table.compare thead th {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-ink);
+  white-space: nowrap;
+}
+table.compare thead th.gs {
+  color: var(--primary);
+}
+table.compare td {
+  color: var(--muted-ink);
+}
+table.compare td:first-child {
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+table.compare .gs {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+table.compare td.gs {
+  font-weight: 500;
+}
+
+/* ---- numbered steps ---- */
+ol.steps {
+  list-style: none;
+  counter-reset: step;
+  margin-top: 30px;
+  display: grid;
+  gap: 22px;
+  max-width: 74ch;
+}
+ol.steps li {
+  position: relative;
+  padding-left: 54px;
+}
+ol.steps li::before {
+  counter-increment: step;
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  background: var(--accent);
+  border-radius: 9px;
+  font-size: 15px;
+}
+ol.steps li h4 {
+  font-size: 16.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 5px;
+}
+ol.steps li p {
+  font-size: 15px;
+  color: var(--muted-ink);
+}
+
+/* ---- proof list ---- */
+ul.proof-list {
+  list-style: none;
+  margin-top: 38px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 24px 36px;
+}
+ul.proof-list li {
+  padding-left: 18px;
+  border-left: 2px solid var(--primary);
+  font-size: 15px;
+  color: var(--muted-ink);
+  line-height: 1.55;
+}
+ul.proof-list li strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+
+/* ---- big pitch quote ---- */
+.pitch {
+  margin-top: 30px;
+  padding: 28px 32px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-left: 3px solid var(--primary);
+  border-radius: 12px;
+  max-width: 72ch;
+}
+.pitch p {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.3vw, 22px);
+  line-height: 1.45;
+  margin-top: 16px;
+}
+.pitch p:first-child {
+  margin-top: 0;
+}
+
+/* ---- callout note ---- */
+.note {
+  margin-top: 26px;
+  padding: 18px 22px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--primary);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 15px;
+  color: var(--muted-ink);
+  max-width: 70ch;
+}
+
+/* ---- download cards ---- */
+.download-cards {
+  margin-top: 36px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+  gap: 18px;
+}
+.download-card {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  text-decoration: none;
+  color: var(--ink);
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.download-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  color: var(--ink);
+}
+.download-card .kicker {
+  margin-bottom: 10px;
+}
+.download-card h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+.download-card p {
+  font-size: 14.5px;
+  color: var(--muted-ink);
+  flex: 1;
+}
+.download-card .dl {
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+/* ---- home feature cards (linked bands) ---- */
+.band-cards {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+.band-card {
+  display: flex;
+  flex-direction: column;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  text-decoration: none;
+  color: var(--ink);
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.band-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  color: var(--ink);
+}
+.band-card .rule {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 16px;
+}
+.band-card .rule span {
+  display: block;
+  height: 2px;
+  width: 24px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+.band-card .rule span:nth-child(1) {
+  margin-left: 6px;
+}
+.band-card .rule span:nth-child(2) {
+  margin-left: 3px;
+}
+.band-card h3 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+.band-card p {
+  font-size: 15px;
+  color: var(--muted-ink);
+  flex: 1;
+}
+.band-card .go {
+  margin-top: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+/* ---- inline lede link row ---- */
+.lede-links {
+  margin-top: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  font-size: 15px;
+}
+
+/* smaller hero on interior pages */
+.hero.interior {
+  padding: 48px 0 56px;
+}
+.hero.interior h1 {
+  max-width: 20ch;
+}
+
+/* tighten section rhythm on small screens */
+@media (max-width: 620px) {
+  section {
+    padding: 48px 0;
+  }
+  .feature {
+    padding: 32px 0;
+  }
+}
