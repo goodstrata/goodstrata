@@ -65,6 +65,31 @@
     dismissBtn.innerHTML = '<span aria-hidden="true">✕</span>';
     frame.appendChild(dismissBtn);
 
+    // --- recoverable message line (hidden until something goes wrong) ---
+    // A brief, in-voice line shown over the frame when a play/load fails, so a
+    // tap is never silently eaten and there's always a way forward.
+    var msg = document.createElement("p");
+    msg.className = "clip-msg";
+    msg.hidden = true;
+    msg.setAttribute("role", "status");
+    frame.appendChild(msg);
+    function showMsg(text) {
+      msg.textContent = text;
+      msg.hidden = false;
+    }
+    function hideMsg() {
+      msg.hidden = true;
+    }
+
+    // Pending state: keep the play disc visible but disabled, with a spinner,
+    // from the click until playback actually starts (preload="none" means the
+    // first play() also fetches the file, so there can be a real gap).
+    function setPending(on) {
+      if (on) playBtn.classList.add("is-pending");
+      else playBtn.classList.remove("is-pending");
+      playBtn.disabled = on;
+    }
+
     var spacer = null;
 
     function canDock() {
@@ -97,8 +122,9 @@
     // Opt into sound: unmute, drop the loop, restart from 0, play as a one-shot;
     // dock to the top on mobile so it stays on screen.
     var playWithSound = function () {
-      playBtn.hidden = true;
+      hideMsg();
       if (againBtn) againBtn.hidden = true;
+      setPending(true); // keep the disc visible in a pending state until 'playing'
       video.loop = false;
       video.muted = false;
       try {
@@ -108,7 +134,15 @@
       dock();
       if (p && typeof p.catch === "function")
         p.catch(function () {
+          // Recover instead of leaving a dead poster frame: undock, restore the
+          // ambient (muted/looping) defaults, bring the play affordance back, and
+          // say what happened so the reader can retry.
+          setPending(false);
           undock();
+          video.loop = true;
+          video.muted = true;
+          playBtn.hidden = false;
+          showMsg("That didn’t play — tap play to try again.");
         });
     };
 
@@ -130,12 +164,15 @@
 
     // Reflect real playback state onto the overlays.
     video.addEventListener("playing", function () {
+      setPending(false); // pixels are moving — clear the pending/loading state
+      hideMsg();
       if (againBtn) againBtn.hidden = true;
       // Play button shows over the muted ambient loop, hides once sound is on.
       playBtn.hidden = !video.muted;
       if (video.muted) undock();
     });
     video.addEventListener("pause", function () {
+      setPending(false);
       // A genuine stop (dismiss, scroll-out, tab hide): bring the play button
       // back so the clip can be restarted WITH SOUND. 'ended' handles its own.
       if (!video.ended) playBtn.hidden = false;
@@ -143,9 +180,20 @@
     });
     // A with-sound playthrough finished (loop off) → offer "Watch again".
     video.addEventListener("ended", function () {
+      setPending(false);
       playBtn.hidden = true;
       if (againBtn) againBtn.hidden = false;
       undock();
+    });
+    // Both sources 404 / blocked / network drop mid-load: don't sit on a dead
+    // poster with a silent play button — surface a recoverable line pointing to
+    // the summary + link that already sit just below the frame.
+    video.addEventListener("error", function () {
+      setPending(false);
+      undock();
+      playBtn.hidden = true;
+      if (againBtn) againBtn.hidden = true;
+      showMsg("Couldn’t load the video — the summary and link are just below.");
     });
 
     // Leaving mobile width (rotate / resize to desktop) can't stay docked.

@@ -1618,6 +1618,55 @@ ul.proof-list li strong {
     transition: none;
   }
 }
+/* pending / loading: the disc stays put but swaps its play triangle for a
+   spinner while the clip fetches + buffers, so a tap never looks like a no-op */
+.clip-play.is-pending {
+  cursor: progress;
+}
+.clip-play.is-pending .clip-play-disc::before {
+  display: none;
+}
+.clip-play.is-pending .clip-play-disc::after {
+  content: "";
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in oklab, var(--on-primary) 34%, transparent);
+  border-top-color: var(--on-primary);
+  animation: clip-spin 0.7s linear infinite;
+}
+@keyframes clip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clip-play.is-pending .clip-play-disc::after {
+    animation: none;
+  }
+}
+
+/* recoverable message bar — sits along the bottom of the frame when a clip
+   fails to play or load; plain, in-voice, above the play/again overlays */
+.clip-msg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 11px 16px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  text-align: center;
+  color: #fff;
+  background: rgba(15, 20, 28, 0.74);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+.clip-msg[hidden] {
+  display: none;
+}
 
 /* --- docked state (mobile only, driven by clips.js) ------------------------
    When a clip plays WITH SOUND on mobile it lifts to a full-width bar fixed at
