@@ -97,6 +97,41 @@
       })();
     </script>
   </div>
+  <!-- C1 "The Number" — the flagship explainer, tying the animated number to
+       the live slider above. Muted, looped, self-contained; JS (clips.js) only
+       plays it when ≥50% in view and never loads it for reduced-motion / Save-Data. -->
+  <div class="wrap">
+    <figure class="clip" id="c1-clip">
+      <div class="clip-frame">
+        <video
+          class="clip-video"
+          poster="/clips/c1-poster.jpg"
+          muted
+          loop
+          playsinline
+          preload="none"
+          disablepictureinpicture
+          disableremoteplayback
+          aria-label="Explainer: a typical 12-lot building pays a strata manager about $8,400 a year — a $6,600 base fee plus $1,320 disbursements, $480 meeting fees, and an undisclosed insurance commission — which GoodStrata does for $0. You still approve every decision that spends money.">
+          <source src="/clips/c1-the-number.webm" type="video/webm" />
+          <source src="/clips/c1-the-number.mp4" type="video/mp4" />
+        </video>
+      </div>
+      <figcaption class="clip-cap">
+        <a class="clip-cta" href="/what-am-i-paying/">See your building's real number →</a>
+        <p class="visually-hidden">
+          Transcript: What does your strata manager actually cost you? The base
+          fee is the number they show you — $6,600 for a 12-lot building. Then
+          come the extras: $1,320 in disbursements, $480 in meeting and AGM fees,
+          plus an insurance commission you were never shown. Take a photo of the
+          page and drop it in, and in seconds you see the real number: $8,400 a
+          year. GoodStrata does the same admin for $0 — and you still decide
+          everything that matters. See your number at goodstrata.com.au/what-am-i-paying.
+          It's free, and we don't store your file.
+        </p>
+      </figcaption>
+    </figure>
+  </div>
 </div>
 
 <!-- FEE CHECK -->
@@ -291,5 +326,6 @@
 </footer>
 
 <script src="/nav.js" defer></script>
+<script src="/clips.js" defer></script>
 </body>
 </html>

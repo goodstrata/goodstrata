@@ -1,0 +1,29 @@
+{
+  "name": "@goodstrata/motion-clips",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Build-time only Remotion project rendering the GoodStrata homepage explainer clips. NOT a runtime dependency of apps/api or apps/web.",
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "render": "node scripts/render.mjs",
+    "render:c1": "node scripts/render.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.484",
+    "@remotion/cli": "4.0.484",
+    "@remotion/fonts": "4.0.484",
+    "@remotion/renderer": "4.0.484",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remotion": "4.0.484"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "~6.0.3"
+  }
+}

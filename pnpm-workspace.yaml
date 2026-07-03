@@ -1,5 +1,9 @@
 packages:
   - "apps/*"
+  # motion-clips is a build-time-only Remotion project (like site/downloads/
+  # generate-pdfs); excluded so its heavy deps never enter the root lockfile or
+  # the app/demo container builds.
+  - "!apps/motion-clips"
   - "packages/*"
 
 catalog:

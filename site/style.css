@@ -1372,3 +1372,74 @@ ul.proof-list li strong {
   color: var(--band-fig);
   font-size: 23px;
 }
+
+/* =====================================================================
+   Motion clip embed — the C1 "The Number" explainer under the hero.
+   Self-contained muted <video>; poster reserves the box so there's no CLS.
+   Playback is driven by clips.js (IntersectionObserver + reduced-motion).
+   Tokens only; no external requests.
+   ===================================================================== */
+
+/* screen-reader-only helper (burned-in captions carry the visible narration;
+   this exposes the same words + CTA to assistive tech and no-video users). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.clip {
+  margin: 44px auto 0;
+  max-width: 960px;
+}
+.clip-frame {
+  position: relative;
+  /* reserve the 16:9 box up front — the poster fills it, so no layout shift */
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--band-bg);
+  box-shadow: 0 30px 60px -42px rgba(15, 20, 28, 0.55);
+}
+.clip-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* the poster is a mid-clip band frame; show it edge-to-edge before play */
+  background: var(--band-bg) center / cover no-repeat;
+}
+.clip-cap {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.clip-cta {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary);
+  text-decoration: none;
+}
+.clip-cta:hover {
+  color: var(--primary-strong);
+}
+@media (max-width: 620px) {
+  .clip {
+    margin-top: 34px;
+  }
+  .clip-frame {
+    border-radius: 12px;
+  }
+}
