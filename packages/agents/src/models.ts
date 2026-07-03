@@ -49,6 +49,11 @@ export function createModelResolver(env: AiEnv, mockModel?: () => LanguageModel)
         const local = createOpenAICompatible({
           name: "openai-compatible",
           baseURL: `${base.replace(/\/$/, "")}/v1`,
+          // The vision/extraction path uses generateObject and needs the strict
+          // json_schema response format to reliably conform. Agents stay in
+          // prompt-JSON mode so weaker local models aren't forced into a
+          // structured-output mode they may not support.
+          ...(agentName === "vision" ? { supportsStructuredOutputs: true } : {}),
           ...(apiKey ? { apiKey } : {}),
         });
         return { model: local(modelName), modelId: key };
