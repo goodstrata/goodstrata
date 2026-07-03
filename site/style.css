@@ -386,6 +386,13 @@ h2 em {
   border-color: var(--primary);
   color: var(--primary);
 }
+/* microcopy that belongs to the CTA row above it (e.g. "the demo resets
+   itself") — sits at the moment of deciding to click, not in the fine print */
+.hero .cta-note {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--faint-ink);
+}
 .hero .fine {
   margin-top: 20px;
   font-size: 14px;
@@ -414,6 +421,12 @@ section p.lede {
   font-size: 17.5px;
   color: var(--muted-ink);
   max-width: 68ch;
+}
+/* one bolded anchor per lede lands the eye on the load-bearing claim */
+section p.lede strong,
+section p.lede b {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .points {
@@ -1573,6 +1586,10 @@ ul.proof-list li strong {
 }
 .proof-band .lede {
   color: var(--band-muted);
+}
+.proof-band .lede strong,
+.proof-band .lede b {
+  color: var(--band-ink);
 }
 .proof-band .lede a {
   color: var(--band-fig);
