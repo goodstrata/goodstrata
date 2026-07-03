@@ -1,0 +1,4 @@
+# Build-time tooling that must never be served as public assets.
+downloads/generate-pdfs/
+**/node_modules/
+.DS_Store
