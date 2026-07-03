@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Building2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -100,6 +100,10 @@ function SchemeList() {
 
   const isEmpty = !isLoading && !isError && data?.schemes.length === 0;
 
+  // First run (signed in, no scheme yet): the guided onboarding wizard replaces
+  // the bare empty state and takes over the whole surface — no page header.
+  if (isEmpty) return <OnboardingWizard />;
+
   const newSchemeButton = (
     <Button onClick={() => setCreateOpen(true)}>
       <Plus className="size-4" /> New scheme
@@ -111,7 +115,7 @@ function SchemeList() {
       <PageHeader
         title="Your schemes"
         description="Owners corporations you manage or belong to."
-        actions={isEmpty ? undefined : newSchemeButton}
+        actions={newSchemeButton}
       />
 
       {isLoading && <SchemeGridSkeleton />}
@@ -125,15 +129,6 @@ function SchemeList() {
               : "The register didn't respond. Try again in a moment."
           }
           onRetry={() => void refetch()}
-        />
-      )}
-
-      {isEmpty && (
-        <EmptyState
-          icon={Building2}
-          title="No schemes yet"
-          description="Register your owners corporation to get started."
-          action={newSchemeButton}
         />
       )}
 

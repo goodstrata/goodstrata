@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WhatAmIPayingRouteImport } from './routes/what-am-i-paying'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
@@ -23,6 +24,11 @@ import { Route as SchemesSchemeIdManagerRouteImport } from './routes/schemes.$sc
 const WhatAmIPayingRoute = WhatAmIPayingRouteImport.update({
   id: '/what-am-i-paying',
   path: '/what-am-i-paying',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
   '/trust/$schemeId': typeof TrustSchemeIdRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
   '/trust/$schemeId': typeof TrustSchemeIdRoute
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
   '/trust/$schemeId': typeof TrustSchemeIdRoute
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/settings'
+    | '/signup'
     | '/what-am-i-paying'
     | '/schemes/$schemeId'
     | '/trust/$schemeId'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/settings'
+    | '/signup'
     | '/what-am-i-paying'
     | '/schemes/$schemeId'
     | '/trust/$schemeId'
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/settings'
+    | '/signup'
     | '/what-am-i-paying'
     | '/schemes/$schemeId'
     | '/trust/$schemeId'
@@ -154,6 +166,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
+  SignupRoute: typeof SignupRoute
   WhatAmIPayingRoute: typeof WhatAmIPayingRoute
   SchemesSchemeIdRoute: typeof SchemesSchemeIdRouteWithChildren
   TrustSchemeIdRoute: typeof TrustSchemeIdRoute
@@ -166,6 +179,13 @@ declare module '@tanstack/react-router' {
       path: '/what-am-i-paying'
       fullPath: '/what-am-i-paying'
       preLoaderRoute: typeof WhatAmIPayingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -253,6 +273,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
+  SignupRoute: SignupRoute,
   WhatAmIPayingRoute: WhatAmIPayingRoute,
   SchemesSchemeIdRoute: SchemesSchemeIdRouteWithChildren,
   TrustSchemeIdRoute: TrustSchemeIdRoute,
