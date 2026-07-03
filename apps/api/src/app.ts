@@ -12,6 +12,7 @@ import { devRoutes } from "./routes/dev.js";
 import { estimatorRoutes } from "./routes/estimator.js";
 import { eventsRoutes } from "./routes/events.js";
 import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
+import { grievancesRoutes } from "./routes/grievances.js";
 import { maintenanceRoutes } from "./routes/maintenance.js";
 import { meetingsRoutes } from "./routes/meetings.js";
 import { notificationsRoutes } from "./routes/notifications.js";
@@ -44,6 +45,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", financeRoutes(deps))
     .route("/schemes", decisionsRoutes(deps))
     .route("/schemes", maintenanceRoutes(deps))
+    .route("/schemes", grievancesRoutes(deps))
     .route("/schemes", communityRoutes(deps))
     .route("/schemes", meetingsRoutes(deps))
     .route("/schemes", notificationsRoutes(deps))

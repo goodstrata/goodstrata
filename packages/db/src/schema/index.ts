@@ -5,6 +5,7 @@ export * from "./compliance.js";
 export * from "./contractors.js";
 export * from "./documents.js";
 export * from "./finance.js";
+export * from "./grievances.js";
 export * from "./insurance.js";
 export * from "./maintenance.js";
 export * from "./mcp.js";

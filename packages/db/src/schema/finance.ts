@@ -1,4 +1,5 @@
 import {
+  BANK_ACCOUNT_KINDS,
   BUDGET_STATUSES,
   FUND_KINDS,
   INVOICE_STATUSES,
@@ -34,7 +35,7 @@ export const ledgerEntryKindEnum = pgEnum("ledger_entry_kind", LEDGER_ENTRY_KIND
 export const paymentStatusEnum = pgEnum("payment_status", PAYMENT_STATUSES);
 export const invoiceStatusEnum = pgEnum("invoice_status", INVOICE_STATUSES);
 export const payoutStatusEnum = pgEnum("payout_status", ["queued", "sent", "settled", "failed"]);
-export const bankAccountKindEnum = pgEnum("bank_account_kind", ["virtual_collection", "operating"]);
+export const bankAccountKindEnum = pgEnum("bank_account_kind", BANK_ACCOUNT_KINDS);
 
 /** Admin fund + maintenance (capital works) fund, per OC Act. */
 export const funds = pgTable(
@@ -178,7 +179,7 @@ export const levyNoticeLines = pgTable(
 );
 
 /**
- * Per-lot money ledger — arrears, s89 eligibility, and lot statements all read
+ * Per-lot money ledger — arrears, s 94 eligibility, and lot statements all read
  * from here. Signed cents: charges positive, payments negative.
  */
 export const lotLedgerEntries = pgTable(
@@ -306,6 +307,16 @@ export const payouts = pgTable(
   (t) => [index("payouts_invoice_idx").on(t.invoiceId)],
 );
 
+/**
+ * Per-OC bank accounts. Each owners corporation gets its OWN segregated
+ * account (OC Act s 122 statutory trust accounting for a registered manager) —
+ * enforced by the UNIQUE (schemeId, kind) index.
+ *
+ * NOTE: `providerAccountRef`, `payid`, and `accountNumberMasked` are the legacy
+ * columns from migration 0000; they are retained for additive (non-destructive)
+ * migration only. New code should use `providerAccountId`, `payidRoot`, and
+ * `accountNumber` respectively.
+ */
 export const bankAccounts = pgTable(
   "bank_accounts",
   {
@@ -314,14 +325,26 @@ export const bankAccounts = pgTable(
       .notNull()
       .references(() => schemes.id),
     kind: bankAccountKindEnum().notNull(),
-    provider: text().notNull(),
-    providerAccountRef: text(),
-    payid: text(),
+    provider: text().notNull(), // monoova | mock
+    providerAccountId: text(),
     bsb: text(),
+    accountNumber: text(),
+    /** PayID root for the per-OC virtual collection account (nullable). */
+    payidRoot: text(),
+    status: text().notNull().default("pending"), // pending | active | closed
+    /** @deprecated legacy — retained for additive migration; use providerAccountId. */
+    providerAccountRef: text(),
+    /** @deprecated legacy — retained for additive migration; use payidRoot. */
+    payid: text(),
+    /** @deprecated legacy — retained for additive migration; use accountNumber. */
     accountNumberMasked: text(),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
-  (t) => [index("bank_accounts_scheme_idx").on(t.schemeId)],
+  (t) => [
+    index("bank_accounts_scheme_idx").on(t.schemeId),
+    uniqueIndex("bank_accounts_scheme_kind_idx").on(t.schemeId, t.kind),
+  ],
 );
 
 export const paymentPlans = pgTable(

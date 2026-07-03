@@ -36,6 +36,14 @@ export type OwnershipKind = (typeof OWNERSHIP_KINDS)[number];
 export const FUND_KINDS = ["admin", "maintenance"] as const;
 export type FundKind = (typeof FUND_KINDS)[number];
 
+/** Per-OC bank account kinds (OC Act s 122 segregated trust accounts). */
+export const BANK_ACCOUNT_KINDS = ["virtual_collection", "operating"] as const;
+export type BankAccountKind = (typeof BANK_ACCOUNT_KINDS)[number];
+
+/** Provisioning/lifecycle state of a per-OC bank account. */
+export const BANK_ACCOUNT_STATUSES = ["pending", "active", "closed"] as const;
+export type BankAccountStatus = (typeof BANK_ACCOUNT_STATUSES)[number];
+
 export const BUDGET_STATUSES = ["draft", "committee_review", "adopted", "superseded"] as const;
 export type BudgetStatus = (typeof BUDGET_STATUSES)[number];
 
@@ -158,6 +166,43 @@ export type ComplianceKind = (typeof COMPLIANCE_KINDS)[number];
 export const COMPLIANCE_STATUSES = ["upcoming", "due", "overdue", "done", "waived"] as const;
 export type ComplianceStatus = (typeof COMPLIANCE_STATUSES)[number];
 
+/**
+ * Grievance/dispute lifecycle (OC Act Part 10 — grievance procedure).
+ * received → under_discussion → notice_to_rectify → final_notice → resolved
+ * (or withdrawn / escalated to VCAT).
+ */
+export const COMPLAINT_STATUSES = [
+  "received",
+  "under_discussion",
+  "notice_to_rectify",
+  "final_notice",
+  "resolved",
+  "withdrawn",
+  "vcat",
+] as const;
+export type ComplaintStatus = (typeof COMPLAINT_STATUSES)[number];
+
+/** Breach-notice escalation stages. */
+export const BREACH_NOTICE_TYPES = ["notice_to_rectify", "final_notice"] as const;
+export type BreachNoticeType = (typeof BREACH_NOTICE_TYPES)[number];
+
+export const BREACH_NOTICE_STATUSES = ["issued", "rectified", "escalated", "withdrawn"] as const;
+export type BreachNoticeStatus = (typeof BREACH_NOTICE_STATUSES)[number];
+
+/** Kinds of entry in a complaint's audit trail. */
+export const COMPLAINT_EVENT_KINDS = [
+  "filed",
+  "acknowledged",
+  "discussion",
+  "notice_issued",
+  "rectified",
+  "resolved",
+  "withdrawn",
+  "escalated",
+  "note",
+] as const;
+export type ComplaintEventKind = (typeof COMPLAINT_EVENT_KINDS)[number];
+
 export const MESSAGE_CHANNELS = ["email", "sms", "in_app", "post"] as const;
 export type MessageChannel = (typeof MESSAGE_CHANNELS)[number];
 
@@ -223,11 +268,16 @@ export type ContractorStatus = (typeof CONTRACTOR_STATUSES)[number];
 export const CREDENTIAL_KINDS = ["public_liability", "workcover", "licence"] as const;
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
 
-/** Tier per OC Act: derived from lot count. */
-export function schemeTier(lotCount: number): 1 | 2 | 3 | 4 | 5 {
-  if (lotCount > 100) return 1;
-  if (lotCount > 50) return 2;
-  if (lotCount > 10) return 3;
-  if (lotCount >= 3) return 4;
+/**
+ * CAV tier per OC Act, banded by the number of OCCUPIABLE lots:
+ *   T1 >100, T2 51–100, T3 10–50, T4 3–9, T5 2-lot or services-only.
+ * A services-only OC is always T5 regardless of lot count.
+ */
+export function schemeTier(occupiableLots: number, servicesOnly = false): 1 | 2 | 3 | 4 | 5 {
+  if (servicesOnly) return 5;
+  if (occupiableLots > 100) return 1;
+  if (occupiableLots > 50) return 2;
+  if (occupiableLots >= 10) return 3;
+  if (occupiableLots >= 3) return 4;
   return 5;
 }

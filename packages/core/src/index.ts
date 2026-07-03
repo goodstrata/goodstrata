@@ -19,6 +19,12 @@ export * as communityService from "./services/community.js";
 export { createCommentInput, createPostInput } from "./services/community.js";
 export * as decisionsService from "./services/decisions.js";
 export * as documentsService from "./services/documents.js";
+export * as grievancesService from "./services/grievances.js";
+export {
+  advanceComplaintInput,
+  fileComplaintInput,
+  issueBreachNoticeInput,
+} from "./services/grievances.js";
 export * as invitesService from "./services/invites.js";
 export * as leviesService from "./services/levies.js";
 export { createLevyScheduleInput } from "./services/levies.js";
@@ -45,3 +51,8 @@ export { createPersonInput } from "./services/people.js";
 export * as recoveryService from "./services/recovery.js";
 export * as schemesService from "./services/schemes.js";
 export { createSchemeInput } from "./services/schemes.js";
+export * as trustAccountsService from "./services/trustAccounts.js";
+export {
+  activateBankAccountInput,
+  provisionTrustAccountInput,
+} from "./services/trustAccounts.js";

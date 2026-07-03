@@ -390,7 +390,7 @@ async function stopTranscriptionBestEffort(ctx: ServiceContext, meetingId: strin
 }
 
 // ---------------------------------------------------------------------------
-// Motions + voting (s 89 enforced at cast time)
+// Motions + voting (s 94 enforced at cast time)
 // ---------------------------------------------------------------------------
 
 export const addMotionInput = z.object({
@@ -449,7 +449,7 @@ export type CastVoteInput = z.infer<typeof castVoteInput>;
 
 /**
  * Cast a vote for a lot. The caster must own the lot or hold a current proxy
- * for it. s 89: lots with overdue levies cannot vote on ordinary resolutions.
+ * for it. s 94: lots with overdue levies cannot vote on ordinary resolutions.
  */
 export async function castVote(
   ctx: ServiceContext,
@@ -502,13 +502,13 @@ export async function castVote(
     viaProxyId = proxy.id;
   }
 
-  // s 89: overdue lots are barred from ordinary resolutions.
+  // s 94: overdue lots are barred from ordinary resolutions.
   if (motion.resolutionType === "ordinary") {
     const arrears = await arrearsForScheme(ctx, schemeId);
     if (arrears.some((a) => a.lotId === input.lotId)) {
       throw new DomainError(
-        "S89_INELIGIBLE",
-        "This lot has overdue levies and cannot vote on ordinary resolutions (s 89)",
+        "S94_INELIGIBLE",
+        "This lot has overdue levies and cannot vote on ordinary resolutions (s 94)",
         403,
       );
     }
@@ -573,6 +573,7 @@ export async function closeMotion(ctx: ServiceContext, schemeId: string, motionI
     ),
     totalEntitlement,
     motion.resolutionType,
+    motion.pollDemanded,
   );
 
   await ctx.db.transaction(async (tx) => {
@@ -591,6 +592,11 @@ export async function closeMotion(ctx: ServiceContext, schemeId: string, motionI
       payload: {
         motionId,
         carried: tally.carried,
+        basis: tally.basis,
+        pollDemanded: tally.pollDemanded,
+        forCount: tally.forCount,
+        againstCount: tally.againstCount,
+        abstainCount: tally.abstainCount,
         forWeight: tally.forWeight,
         againstWeight: tally.againstWeight,
         abstainWeight: tally.abstainWeight,

@@ -24,6 +24,22 @@ export interface InboundPayment {
   raw: unknown;
 }
 
+/**
+ * A scheme's OWN segregated collection account (OC Act s 122). Every PayID for
+ * that scheme's levy notices is registered UNDER this account, never a shared
+ * platform pool — this is the on-the-wire half of per-OC trust segregation.
+ */
+export interface SchemeAccount {
+  /** Provider's opaque id for the account (used for later API calls). */
+  providerAccountId: string;
+  /** e.g. 802-985. */
+  bsb: string;
+  /** The account number PayIDs resolve to; unique per scheme. */
+  accountNumber: string;
+  /** PayID root for the per-OC virtual collection account, when issued. */
+  payidRoot?: string | null;
+}
+
 export interface PaymentsProvider {
   readonly name: string;
   /**
@@ -32,8 +48,21 @@ export interface PaymentsProvider {
    * Monoova signs via `verification-signature`.
    */
   readonly signatureHeader?: string;
-  /** Allocate a unique payment reference (PayID) for a levy notice. */
-  createPaymentReference(input: { schemeId: string; noticeNumber: string }): Promise<string>;
+  /**
+   * Provision the owners corporation's OWN segregated collection account
+   * (OC Act s 122). Distinct per scheme — a registered manager may never pool
+   * OCs' money in one shared account.
+   */
+  createSchemeAccount(input: { schemeId: string }): Promise<SchemeAccount>;
+  /**
+   * Allocate a unique payment reference (PayID) for a levy notice, registered
+   * UNDER the scheme's own trust account (`account`) — never a shared pool.
+   */
+  createPaymentReference(input: {
+    schemeId: string;
+    noticeNumber: string;
+    account: SchemeAccount;
+  }): Promise<string>;
   /** Verify webhook authenticity. */
   verifyWebhook(rawBody: string, signature: string | undefined): boolean;
   /** Parse a verified webhook body into a normalized inbound payment. */
@@ -52,8 +81,21 @@ export function mockPaymentsProvider(secret = "mock-payments-secret"): PaymentsP
 } {
   return {
     name: "mock",
-    async createPaymentReference({ noticeNumber }) {
-      return `mockpay-${noticeNumber.toLowerCase()}`;
+    async createSchemeAccount({ schemeId }) {
+      // Deterministic per scheme so tests (and re-provisioning) are stable, yet
+      // every scheme gets a DISTINCT account — no shared pool.
+      const digits = schemeId.replace(/\D/g, "").padStart(9, "0").slice(-9);
+      return {
+        providerAccountId: `mock-acct-${schemeId}`,
+        bsb: "802-985",
+        accountNumber: digits,
+        payidRoot: `oc.${digits}@goodstrata.mock`,
+      };
+    },
+    async createPaymentReference({ noticeNumber, account }) {
+      // The reference lives UNDER the scheme's own account: encode the account
+      // so two schemes reusing a notice number can never collide on the PayID.
+      return `mockpay-${account.providerAccountId}-${noticeNumber.toLowerCase()}`;
     },
     verifyWebhook(rawBody, signature) {
       if (!signature) return false;
@@ -91,13 +133,18 @@ export function mockPaymentsProvider(secret = "mock-payments-secret"): PaymentsP
 // ---------------------------------------------------------------------------
 // Monoova (NPP / PayID) — the real driver.
 //
-// Model (mirrors the proven old implementation): one shared platform NPP bank
-// account; one auto-generated PayID registered per levy notice. Every PayID
-// points at the same BSB + account, so reconciliation is purely by the unique
-// PayID string — exactly what recordInboundPayment matches on.
+// Per-OC model (OC Act s 122): each owners corporation gets its OWN virtual
+// collection account (`createSchemeAccount`), and every PayID for that scheme's
+// levy notices is registered UNDER that account (`createPaymentReference`). The
+// platform NPP account (`bankAccountNumber`) is only the master/funding account
+// the virtual accounts hang off — OCs' money is never pooled into it.
+// Reconciliation remains by the unique PayID string, which now resolves to the
+// scheme's own account — exactly what recordInboundPayment matches on.
 //
 // Verified against the live API (https://api.m-pay.com.au):
 //   - Auth: Basic base64(`${apiKey}:`) — API key as username, empty password.
+//   - POST /financial/v2/accounts/create → a per-OC mAccount (virtual collection
+//       account) with its own BsbNumber + AccountNumber.
 //   - POST /receivables/v1/payid/registerpayid → { status:"Ok",
 //       PayIdDetails:{ PayId, PayIdName, PayIdStatus, BankAccountNumber } }.
 //   - Webhooks are signed RSA-SHA256 over the raw body; the public key comes
@@ -109,7 +156,7 @@ export interface MonoovaConfig {
   /** e.g. https://api.m-pay.com.au */
   apiBaseUrl: string;
   apiKey: string;
-  /** Shared platform NPP account every PayID resolves to. */
+  /** Master/funding NPP account the per-OC virtual accounts hang off. */
   bankAccountNumber: string;
   /** e.g. 802-985 */
   bsb: string;
@@ -133,6 +180,22 @@ interface MonoovaPayIdResponse {
     BankAccountNumber?: string;
   } | null;
   PayId?: string;
+}
+
+interface MonoovaAccountResponse {
+  status?: string;
+  statusDescription?: string;
+  /** Monoova returns the new mAccount under a few observed shapes. */
+  Token?: string;
+  AccountNumber?: string;
+  BankAccountNumber?: string;
+  BsbNumber?: string;
+  Bsb?: string;
+  mAccount?: {
+    Token?: string;
+    AccountNumber?: string;
+    BsbNumber?: string;
+  } | null;
 }
 
 /** Coerce Monoova's hex-DER-or-PEM public key into a verifiable KeyObject. */
@@ -226,13 +289,46 @@ export function monoovaPaymentsProvider(cfg: MonoovaConfig): PaymentsProvider {
     name: "monoova",
     signatureHeader: "verification-signature",
 
-    async createPaymentReference({ noticeNumber }) {
+    async createSchemeAccount({ schemeId }) {
+      // Create the OC's own virtual collection account (mAccount). PayIDs for
+      // this scheme's levies register under it, so its money never pools into
+      // the platform master account.
+      const res = await fetch(`${cfg.apiBaseUrl}/financial/v2/accounts/create`, {
+        method: "POST",
+        headers: monoovaHeaders(cfg.apiKey),
+        body: JSON.stringify({
+          accountType: "Automatcher",
+          nppEnabled: true,
+          uniqueReference: schemeId,
+          accountName: `GoodStrata OC ${schemeId}`,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as MonoovaAccountResponse;
+      const providerAccountId = data.Token ?? data.mAccount?.Token;
+      const accountNumber =
+        data.AccountNumber ?? data.BankAccountNumber ?? data.mAccount?.AccountNumber;
+      const bsb = data.BsbNumber ?? data.Bsb ?? data.mAccount?.BsbNumber ?? cfg.bsb;
+      if (
+        !res.ok ||
+        (data.status && data.status !== "Ok") ||
+        !providerAccountId ||
+        !accountNumber
+      ) {
+        throw new Error(
+          `Monoova account creation failed for scheme ${schemeId} (HTTP ${res.status}): ${JSON.stringify(data)}`,
+        );
+      }
+      return { providerAccountId, bsb, accountNumber };
+    },
+
+    async createPaymentReference({ noticeNumber, account }) {
       const res = await fetch(`${cfg.apiBaseUrl}/receivables/v1/payid/registerpayid`, {
         method: "POST",
         headers: monoovaHeaders(cfg.apiKey),
         body: JSON.stringify({
-          bankAccountNumber: cfg.bankAccountNumber.padStart(9, "0"),
-          bsb: cfg.bsb,
+          // Register the PayID against the SCHEME's own account, not the pool.
+          bankAccountNumber: account.accountNumber.padStart(9, "0"),
+          bsb: account.bsb,
           payIdName: `${payIdNamePrefix} ${noticeNumber}`,
           // Blank → Monoova auto-generates a check-digited PayID on @monoova.me.
           payId: "",

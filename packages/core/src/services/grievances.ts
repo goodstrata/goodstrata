@@ -1,0 +1,453 @@
+/**
+ * P0-3 — Grievance / dispute module (OC Act Part 10; Model Rule 7).
+ *
+ * Every owners corporation must run an approved grievance procedure. A
+ * complaint must be dealt with within 28 days of receipt (`meetByDate`);
+ * unresolved matters escalate through a notice to rectify (s 155/156, 28-day
+ * rectify clock), a final notice (s 157/158), and ultimately VCAT. Every state
+ * change is recorded in `complaint_events` for the audit trail, and every
+ * mutation publishes a domain event in the same transaction.
+ */
+import { breachNotices, complaintEvents, complaints, lots, people } from "@goodstrata/db";
+import { publishEvent } from "@goodstrata/events";
+import {
+  addDays,
+  BREACH_NOTICE_TYPES,
+  COMPLAINT_STATUSES,
+  type ComplaintEventKind,
+  type ComplaintStatus,
+  toDateOnly,
+} from "@goodstrata/shared";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
+import { causationFields, type ServiceContext } from "../context.js";
+import { DomainError, notFound } from "../errors.js";
+
+export type Complaint = typeof complaints.$inferSelect;
+export type BreachNotice = typeof breachNotices.$inferSelect;
+export type ComplaintEvent = typeof complaintEvents.$inferSelect;
+
+/** Statutory clock: complaints must be dealt with, and breaches rectified, within 28 days. */
+const STATUTORY_DAYS = 28;
+
+export const fileComplaintInput = z.object({
+  /** Defaults to the filer's own person record when omitted (self-service intake). */
+  complainantPersonId: z.string().uuid().optional(),
+  respondentPersonId: z.string().uuid().optional(),
+  subject: z.string().min(3).max(200),
+  details: z.string().min(3).max(5000),
+  approvedForm: z.boolean().default(false),
+});
+export type FileComplaintInput = z.infer<typeof fileComplaintInput>;
+
+export const advanceComplaintInput = z.object({
+  status: z.enum(COMPLAINT_STATUSES),
+  note: z.string().max(5000).optional(),
+});
+export type AdvanceComplaintInput = z.infer<typeof advanceComplaintInput>;
+
+export const issueBreachNoticeInput = z
+  .object({
+    complaintId: z.string().uuid().optional(),
+    subjectLotId: z.string().uuid().optional(),
+    subjectPersonId: z.string().uuid().optional(),
+    ruleRef: z.string().min(1),
+    type: z.enum(BREACH_NOTICE_TYPES),
+    details: z.string().min(3).max(5000),
+  })
+  .refine((v) => v.subjectLotId || v.subjectPersonId, {
+    message: "A breach notice must name a subject lot or person",
+  });
+export type IssueBreachNoticeInput = z.infer<typeof issueBreachNoticeInput>;
+
+// ---------------------------------------------------------------------------
+// Grievance state machine (received → … → resolved/withdrawn/vcat).
+// ---------------------------------------------------------------------------
+
+/** Which statuses a complaint may legally move to from each state. */
+const ALLOWED_TRANSITIONS: Record<ComplaintStatus, readonly ComplaintStatus[]> = {
+  received: ["under_discussion", "resolved", "withdrawn"],
+  under_discussion: ["notice_to_rectify", "resolved", "withdrawn", "vcat"],
+  notice_to_rectify: ["final_notice", "resolved", "withdrawn", "vcat"],
+  final_notice: ["vcat", "resolved", "withdrawn"],
+  resolved: [],
+  withdrawn: [],
+  vcat: ["resolved", "withdrawn"],
+};
+
+/** Audit-trail kind recorded when a complaint enters a given status. */
+const STATUS_EVENT_KIND: Record<ComplaintStatus, ComplaintEventKind> = {
+  received: "filed",
+  under_discussion: "discussion",
+  notice_to_rectify: "notice_issued",
+  final_notice: "notice_issued",
+  resolved: "resolved",
+  withdrawn: "withdrawn",
+  vcat: "escalated",
+};
+
+/** Statuses that close out a complaint's active clock. */
+const CLOSED_STATUSES: readonly ComplaintStatus[] = ["resolved", "withdrawn"];
+
+/** Resolve the filer's person record in this scheme (self-service intake). */
+async function personIdForActor(ctx: ServiceContext, schemeId: string): Promise<string> {
+  if (ctx.actor.kind !== "user") {
+    throw new DomainError(
+      "ACTOR_NOT_PERSON",
+      "Only a signed-in member can file a complaint on their own behalf",
+      403,
+    );
+  }
+  const person = await ctx.db.query.people.findFirst({
+    where: and(eq(people.schemeId, schemeId), eq(people.userId, ctx.actor.id)),
+  });
+  if (!person) {
+    throw new DomainError(
+      "NO_PERSON",
+      "Your login isn't linked to a person in this scheme; name the complainant explicitly",
+      422,
+    );
+  }
+  return person.id;
+}
+
+async function assertPersonInScheme(ctx: ServiceContext, schemeId: string, personId: string) {
+  const person = await ctx.db.query.people.findFirst({
+    where: and(eq(people.id, personId), eq(people.schemeId, schemeId)),
+  });
+  if (!person) throw notFound("Person");
+}
+
+/**
+ * File a complaint (approved-form intake). Sets receivedAt = now and
+ * meetByDate = received + 28 days, records a `filed` complaint event, and
+ * publishes `complaint.filed`.
+ */
+export async function fileComplaint(
+  ctx: ServiceContext,
+  schemeId: string,
+  input: FileComplaintInput,
+): Promise<Complaint> {
+  const complainantPersonId = input.complainantPersonId ?? (await personIdForActor(ctx, schemeId));
+  await assertPersonInScheme(ctx, schemeId, complainantPersonId);
+  if (input.respondentPersonId) {
+    await assertPersonInScheme(ctx, schemeId, input.respondentPersonId);
+  }
+
+  const now = ctx.clock.now();
+  const meetByDate = toDateOnly(addDays(now, STATUTORY_DAYS));
+
+  return await ctx.db.transaction(async (tx) => {
+    const rows = await tx
+      .insert(complaints)
+      .values({
+        schemeId,
+        complainantPersonId,
+        respondentPersonId: input.respondentPersonId ?? null,
+        subject: input.subject,
+        details: input.details,
+        approvedForm: input.approvedForm,
+        status: "received",
+        receivedAt: now,
+        meetByDate,
+      })
+      .returning();
+    const complaint = rows[0]!;
+
+    await tx.insert(complaintEvents).values({
+      complaintId: complaint.id,
+      kind: "filed",
+      actor: ctx.actor,
+      note: input.approvedForm
+        ? "Lodged on the owners corporation's approved grievance form."
+        : "Lodged (not on the approved form).",
+    });
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `complaint:${complaint.id}`,
+      type: "complaint.filed",
+      payload: {
+        complaintId: complaint.id,
+        complainantPersonId,
+        subject: complaint.subject,
+        meetByDate,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return complaint;
+  });
+}
+
+export async function listComplaints(ctx: ServiceContext, schemeId: string): Promise<Complaint[]> {
+  return await ctx.db.query.complaints.findMany({
+    where: eq(complaints.schemeId, schemeId),
+    orderBy: (t, { desc }) => desc(t.receivedAt),
+  });
+}
+
+export async function getComplaint(
+  ctx: ServiceContext,
+  schemeId: string,
+  complaintId: string,
+): Promise<Complaint | null> {
+  const complaint = await ctx.db.query.complaints.findFirst({
+    where: and(eq(complaints.id, complaintId), eq(complaints.schemeId, schemeId)),
+  });
+  return complaint ?? null;
+}
+
+export interface ComplaintDetail {
+  complaint: Complaint;
+  events: ComplaintEvent[];
+  breachNotices: BreachNotice[];
+}
+
+/** A complaint with its audit trail and any breach notices — for the detail view. */
+export async function getComplaintDetail(
+  ctx: ServiceContext,
+  schemeId: string,
+  complaintId: string,
+): Promise<ComplaintDetail> {
+  const complaint = await getComplaint(ctx, schemeId, complaintId);
+  if (!complaint) throw notFound("Complaint");
+
+  const events = await ctx.db.query.complaintEvents.findMany({
+    where: eq(complaintEvents.complaintId, complaintId),
+    orderBy: (t, { asc }) => asc(t.at),
+  });
+  const notices = await ctx.db.query.breachNotices.findMany({
+    where: and(eq(breachNotices.schemeId, schemeId), eq(breachNotices.complaintId, complaintId)),
+    orderBy: (t, { desc }) => desc(t.issuedAt),
+  });
+
+  return { complaint, events, breachNotices: notices };
+}
+
+/**
+ * Transition a complaint's status (with the 28-day meet-and-discuss clock),
+ * append an audit event, and publish `complaint.advanced`. Illegal jumps are
+ * rejected; closing statuses stamp resolvedAt.
+ */
+export async function advanceComplaint(
+  ctx: ServiceContext,
+  schemeId: string,
+  complaintId: string,
+  input: AdvanceComplaintInput,
+): Promise<Complaint> {
+  return await ctx.db.transaction(async (tx) => {
+    const complaint = await tx.query.complaints.findFirst({
+      where: and(eq(complaints.id, complaintId), eq(complaints.schemeId, schemeId)),
+    });
+    if (!complaint) throw notFound("Complaint");
+
+    const from = complaint.status;
+    const to = input.status;
+    if (from === to) {
+      throw new DomainError("NO_CHANGE", `Complaint is already ${to}`, 409);
+    }
+    if (!ALLOWED_TRANSITIONS[from].includes(to)) {
+      throw new DomainError(
+        "INVALID_TRANSITION",
+        `A complaint cannot move from ${from} to ${to}`,
+        409,
+      );
+    }
+
+    await tx
+      .update(complaints)
+      .set({
+        status: to,
+        resolvedAt: CLOSED_STATUSES.includes(to) ? ctx.clock.now() : complaint.resolvedAt,
+      })
+      .where(eq(complaints.id, complaintId));
+
+    await tx.insert(complaintEvents).values({
+      complaintId,
+      kind: STATUS_EVENT_KIND[to],
+      actor: ctx.actor,
+      note: input.note ?? null,
+    });
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `complaint:${complaintId}`,
+      type: "complaint.advanced",
+      payload: { complaintId, fromStatus: from, toStatus: to },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    const updated = await tx.query.complaints.findFirst({
+      where: eq(complaints.id, complaintId),
+    });
+    return updated!;
+  });
+}
+
+/**
+ * Issue a breach notice — a notice to rectify (s 155/156) or a final notice
+ * (s 157/158). Sets rectifyByDate = issuedAt + 28 days, records the step on
+ * any linked complaint's trail, and publishes `breach_notice.issued`.
+ */
+export async function issueBreachNotice(
+  ctx: ServiceContext,
+  schemeId: string,
+  input: IssueBreachNoticeInput,
+): Promise<BreachNotice> {
+  if (input.subjectPersonId) {
+    await assertPersonInScheme(ctx, schemeId, input.subjectPersonId);
+  }
+  if (input.subjectLotId) {
+    const lot = await ctx.db.query.lots.findFirst({
+      where: and(eq(lots.id, input.subjectLotId), eq(lots.schemeId, schemeId)),
+    });
+    if (!lot) throw notFound("Lot");
+  }
+
+  const now = ctx.clock.now();
+  const rectifyByDate = toDateOnly(addDays(now, STATUTORY_DAYS));
+
+  return await ctx.db.transaction(async (tx) => {
+    if (input.complaintId) {
+      const complaint = await tx.query.complaints.findFirst({
+        where: and(eq(complaints.id, input.complaintId), eq(complaints.schemeId, schemeId)),
+      });
+      if (!complaint) throw notFound("Complaint");
+    }
+
+    const rows = await tx
+      .insert(breachNotices)
+      .values({
+        schemeId,
+        complaintId: input.complaintId ?? null,
+        subjectLotId: input.subjectLotId ?? null,
+        subjectPersonId: input.subjectPersonId ?? null,
+        ruleRef: input.ruleRef,
+        type: input.type,
+        issuedAt: now,
+        rectifyByDate,
+        status: "issued",
+        details: input.details,
+      })
+      .returning();
+    const notice = rows[0]!;
+
+    if (input.complaintId) {
+      await tx.insert(complaintEvents).values({
+        complaintId: input.complaintId,
+        kind: "notice_issued",
+        actor: ctx.actor,
+        note: `${
+          input.type === "final_notice" ? "Final notice" : "Notice to rectify"
+        } issued (${input.ruleRef}); 28 days to comply.`,
+      });
+    }
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `breach_notice:${notice.id}`,
+      type: "breach_notice.issued",
+      payload: {
+        breachNoticeId: notice.id,
+        complaintId: notice.complaintId,
+        type: notice.type,
+        ruleRef: notice.ruleRef,
+        rectifyByDate,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return notice;
+  });
+}
+
+export async function listBreachNotices(
+  ctx: ServiceContext,
+  schemeId: string,
+): Promise<BreachNotice[]> {
+  return await ctx.db.query.breachNotices.findMany({
+    where: eq(breachNotices.schemeId, schemeId),
+    orderBy: (t, { desc }) => desc(t.issuedAt),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// s 159 report — grievances handled in the period, for the AGM.
+// ---------------------------------------------------------------------------
+
+export interface S159Report {
+  schemeId: string;
+  periodStart: string | null;
+  periodEnd: string;
+  generatedAt: string;
+  complaints: {
+    total: number;
+    resolved: number;
+    unresolved: number;
+    byStatus: Record<ComplaintStatus, number>;
+    items: Complaint[];
+  };
+  breachNotices: {
+    total: number;
+    items: BreachNotice[];
+  };
+}
+
+/**
+ * The s 159 grievance report for the AGM: complaints and breach notices dealt
+ * with in the period (defaults to all-time when no window is given). Exposed
+ * here; wiring it into the AGM agenda is a later item.
+ */
+export async function generateS159Report(
+  ctx: ServiceContext,
+  schemeId: string,
+  period?: { from?: string; to?: string },
+): Promise<S159Report> {
+  const fromMs = period?.from ? new Date(period.from).getTime() : null;
+  const toMs = period?.to ? new Date(period.to).getTime() : null;
+
+  const inWindow = (at: Date | null): boolean => {
+    if (!at) return false;
+    const t = at.getTime();
+    if (fromMs !== null && t < fromMs) return false;
+    if (toMs !== null && t > toMs) return false;
+    return true;
+  };
+
+  const allComplaints = await listComplaints(ctx, schemeId);
+  const allNotices = await listBreachNotices(ctx, schemeId);
+
+  const scopedComplaints = allComplaints.filter((c) => inWindow(c.receivedAt));
+  const scopedNotices = allNotices.filter((n) => inWindow(n.issuedAt));
+
+  const byStatus = Object.fromEntries(COMPLAINT_STATUSES.map((s) => [s, 0])) as Record<
+    ComplaintStatus,
+    number
+  >;
+  for (const c of scopedComplaints) byStatus[c.status] += 1;
+
+  const resolved = byStatus.resolved;
+  const unresolved = scopedComplaints.length - resolved - byStatus.withdrawn;
+
+  return {
+    schemeId,
+    periodStart: period?.from ?? null,
+    periodEnd: period?.to ?? toDateOnly(ctx.clock.now()),
+    generatedAt: ctx.clock.now().toISOString(),
+    complaints: {
+      total: scopedComplaints.length,
+      resolved,
+      unresolved,
+      byStatus,
+      items: scopedComplaints,
+    },
+    breachNotices: {
+      total: scopedNotices.length,
+      items: scopedNotices,
+    },
+  };
+}

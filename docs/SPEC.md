@@ -78,7 +78,7 @@ The model follows AgentDesk's pattern: agents execute, humans decide, everything
   4. **Day 60 overdue:** Committee notified with recommendation to commence recovery; committee approves/declines via vote
   5. **Day 90+ overdue:** If approved, system generates formal demand letter (template) and optionally refers to integrated debt recovery partner API
 - **Interest calculation:** Auto-calculate penalty interest at the rate resolved by the OC (or default statutory rate), applied daily, added to lot statement
-- **Voting restriction enforcement:** Automatically flag lot owners with outstanding levies as ineligible to vote on ordinary resolutions per s 89 of the Act
+- **Voting restriction enforcement:** Automatically flag lot owners with outstanding levies as ineligible to vote on ordinary resolutions per s 94 of the Act
 
 ### 2.4 Accounts Payable
 - **Invoice capture:** Contractors/suppliers submit invoices via email (parsed by AI) or upload portal

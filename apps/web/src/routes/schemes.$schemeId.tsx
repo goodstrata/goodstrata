@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Ellipsis,
   FolderOpen,
+  Gavel,
   Landmark,
   Layers,
   LayoutDashboard,
@@ -21,6 +22,7 @@ import { z } from "zod";
 import { AgentsTab } from "@/components/AgentsTab";
 import { DecisionsTab } from "@/components/DecisionsTab";
 import { FinanceTab } from "@/components/FinanceTab";
+import { GrievancesTab } from "@/components/GrievancesTab";
 import { MaintenanceTab } from "@/components/MaintenanceTab";
 import { MeetingsTab } from "@/components/MeetingsTab";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -45,6 +47,7 @@ const SECTIONS = [
   "maintenance",
   "meetings",
   "decisions",
+  "grievances",
   "agents",
   "lots",
   "people",
@@ -93,6 +96,7 @@ const NAV_GROUPS: { heading: string | null; items: SectionItem[] }[] = [
     items: [
       { key: "meetings", label: "Meetings", icon: CalendarDays },
       { key: "decisions", label: "Decisions", icon: Scale },
+      { key: "grievances", label: "Grievances", icon: Gavel },
       { key: "committee", label: "Committee", icon: Users },
     ],
   },
@@ -170,6 +174,8 @@ function SectionBody({ schemeId, section }: { schemeId: string; section: Section
       return <MeetingsTab schemeId={schemeId} />;
     case "decisions":
       return <DecisionsTab schemeId={schemeId} />;
+    case "grievances":
+      return <GrievancesTab schemeId={schemeId} />;
     case "agents":
       return <AgentsTab schemeId={schemeId} />;
     case "lots":

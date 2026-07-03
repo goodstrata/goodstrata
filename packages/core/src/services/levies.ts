@@ -18,6 +18,7 @@ import { calculateLevyRun } from "../engines/levy-calc.js";
 import { DomainError, notFound } from "../errors.js";
 import { getAdoptedBudgetFunds } from "./budgets.js";
 import { sendEmail } from "./comms.js";
+import { ensureSchemeTrustAccount } from "./trustAccounts.js";
 
 const INSTALMENTS: Record<LevyFrequency, number> = {
   quarterly: 4,
@@ -108,6 +109,17 @@ export async function issueLevyRun(
     schedule.instalments,
   ).filter((r) => r.instalment === instalment);
 
+  // Per-OC trust segregation (OC Act s 122): the scheme must have its OWN
+  // collection account before any PayID is allocated — references register
+  // under it, never a shared platform pool.
+  const trustAccount = await ensureSchemeTrustAccount(ctx, schemeId);
+  const account = {
+    providerAccountId: trustAccount.providerAccountId ?? "",
+    bsb: trustAccount.bsb ?? "",
+    accountNumber: trustAccount.accountNumber ?? "",
+    payidRoot: trustAccount.payidRoot,
+  };
+
   const dueOn = addMonthsDateOnly(
     schedule.firstDueOn,
     (instalment - 1) * MONTHS_BETWEEN[schedule.frequency],
@@ -132,6 +144,7 @@ export async function issueLevyRun(
       const payid = await ctx.integrations.payments.createPaymentReference({
         schemeId,
         noticeNumber,
+        account,
       });
 
       const noticeRows = await tx

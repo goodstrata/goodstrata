@@ -29,6 +29,13 @@ export const eventDefs = {
   "committee.assigned": z.object({ userId: z.string(), role: z.string() }),
 
   // finance
+  /** A scheme's own segregated trust/collection account was provisioned (s 122). */
+  "trust_account.provisioned": z.object({
+    bankAccountId: z.string(),
+    kind: z.string(),
+    provider: z.string(),
+    providerAccountId: z.string().nullable(),
+  }),
   "budget.drafted": z.object({
     budgetId: z.string(),
     fiscalYearStart: z.string(),
@@ -199,6 +206,26 @@ export const eventDefs = {
     userId: z.string(),
     title: z.string(),
     category: z.string(),
+  }),
+
+  // grievances / disputes (OC Act Part 10 — grievance procedure)
+  "complaint.filed": z.object({
+    complaintId: z.string(),
+    complainantPersonId: z.string(),
+    subject: z.string(),
+    meetByDate: z.string(),
+  }),
+  "complaint.advanced": z.object({
+    complaintId: z.string(),
+    fromStatus: z.string(),
+    toStatus: z.string(),
+  }),
+  "breach_notice.issued": z.object({
+    breachNoticeId: z.string(),
+    complaintId: z.string().nullable(),
+    type: z.string(),
+    ruleRef: z.string(),
+    rectifyByDate: z.string(),
   }),
 
   // decisions (the human gate)

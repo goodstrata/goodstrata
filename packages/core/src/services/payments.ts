@@ -16,6 +16,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { causationFields, type ServiceContext } from "../context.js";
 import { matchPayment, type OpenNotice } from "../engines/reconcile.js";
 import { sendEmail } from "./comms.js";
+import { trustAccountForInboundPayment } from "./trustAccounts.js";
 
 export interface RecordPaymentResult {
   paymentId: string;
@@ -48,6 +49,11 @@ export async function recordInboundPayment(
     );
   }
   const schemeId = noticeByRef.schemeId;
+
+  // Per-OC segregation guard (OC Act s 122): the money posts against THIS
+  // scheme's own trust account, never a shared pool. Resolving it here binds
+  // the reconciliation to the reference's scheme and to no other.
+  await trustAccountForInboundPayment(ctx, schemeId);
 
   const result = await ctx.db.transaction(async (tx) => {
     const inserted = await tx

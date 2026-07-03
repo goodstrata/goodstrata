@@ -89,6 +89,11 @@ export const motions = pgTable(
     opensAt: timestamp({ withTimezone: true }),
     closesAt: timestamp({ withTimezone: true }),
     status: motionStatusEnum().notNull().default("draft"),
+    /**
+     * A poll re-tallies an ordinary resolution by lot entitlement rather than a
+     * show of hands (OC Act s 92(3)–(5)). Set true when a poll is demanded.
+     */
+    pollDemanded: boolean().notNull().default(false),
     /** { for, against, abstain } entitlement totals + eligibility snapshot. */
     result: jsonb(),
     createdAt: createdAt(),

@@ -201,7 +201,7 @@ describe("AGM lifecycle", () => {
     ).rejects.toThrow(/already/i);
   });
 
-  it("s 89: a lot in arrears cannot vote on ordinary resolutions", async () => {
+  it("s 94: a lot in arrears cannot vote on ordinary resolutions", async () => {
     // Put Pat's lot 4 into arrears: adopt a budget, issue levies due long ago.
     const mgr = userActor("mgr-agm");
     await tdb.db.insert((await import("@goodstrata/db")).users).values({
@@ -252,7 +252,7 @@ describe("AGM lifecycle", () => {
         lotId: lotByNumber.get("4")!,
         choice: "against",
       }),
-    ).rejects.toThrow(/s 89/i);
+    ).rejects.toThrow(/s 94/i);
   });
 
   it("closes the motion with the entitlement-weighted tally", async () => {
@@ -278,7 +278,7 @@ describe("AGM lifecycle", () => {
     specialMotionId = motion.id;
     await meetingsService.openMotion(ctx, schemeId, specialMotionId);
 
-    // Pat CAN vote on a special resolution despite arrears (s 89 covers ordinary only).
+    // Pat CAN vote on a special resolution despite arrears (s 94 covers ordinary only).
     await meetingsService.castVote(ctx, schemeId, personByName.get("Pat")!, {
       motionId: specialMotionId,
       lotId: lotByNumber.get("4")!,
