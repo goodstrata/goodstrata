@@ -87,11 +87,16 @@
         <p>
           Yes — and you don't have to take our word for it, which is the point. GoodStrata is open
           source under Apache-2.0, so anyone can read exactly what the code does with your building's
-          information. You can self-host it on your own PostgreSQL database, where nothing ever leaves
+          information.
+        </p>
+        <p>
+          You can self-host it on your own PostgreSQL database, where nothing ever leaves
           your machine — the AI can even run locally, with no API key and no data sent anywhere. We
           proved that at launch by running a whole 12-lot building on a single laptop with a
           local model. If you'd rather not run servers, the hosted service keeps data in Australia
           under the Australian Privacy Principles, with each owners corporation's records segregated.
+        </p>
+        <p>
           Either way, every read and write lands on an append-only event log, so "who touched what"
           is a question with an exact answer.
         </p>
@@ -126,8 +131,10 @@
           So how does GoodStrata survive? Two honest ways. One: a small, transparent margin on the
           payments that actually move through the platform — the inbound levy payments and the
           outbound payments to contractors — every cent of it visible on the audit log. Two: a paid
-          managed-hosting service for buildings that don't want to run it themselves. That's it. What
-          GoodStrata refuses to take is the invisible money that defines traditional strata
+          managed-hosting service for buildings that don't want to run it themselves. That's it.
+        </p>
+        <p>
+          What GoodStrata refuses to take is the invisible money that defines traditional strata
           management: commissions on the insurance the manager places, and kickbacks from the
           contractors the manager appoints. The AI never ranks a contractor by what GoodStrata
           earns — there is nothing to earn there; the committee chooses on the quotes and evidence
@@ -148,7 +155,10 @@
           is never done by the AI at all. Levy apportionment, penalty interest, payment reconciliation
           and vote weighting are deterministic, tested code — if every language model on earth were
           swapped for a random number generator tomorrow, your levies would still sum to the budget to
-          the cent. Second, the AI's judgement calls — drafting a notice, triaging a leak — can only
+          the cent.
+        </p>
+        <p>
+          Second, the AI's judgement calls — drafting a notice, triaging a leak — can only
           propose. Anything with consequences stops at a decision gate and waits for a human: no agent
           moves money or signs off works on its own. And because every model tool-call is on the log,
           when the AI does get something wrong you see it and correct it before it matters — not
