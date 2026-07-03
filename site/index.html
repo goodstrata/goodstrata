@@ -116,10 +116,9 @@
           <source src="/clips/c1-the-number.webm" type="video/webm" />
           <source src="/clips/c1-the-number.mp4" type="video/mp4" />
         </video>
-        <!-- Ambient hint: the clip autoplays muted; a tap unmutes + restarts.
-             Hidden once sound is on (clips.js adds .clip-sound-on) or for the
-             reduced-motion / Save-Data static fallback. -->
-        <button type="button" class="clip-sound" hidden>tap for sound 🔊</button>
+        <!-- clips.js injects the centred "play with sound" button over the
+             muted ambient loop, and a ✕ dismiss control for the docked state.
+             Neither is rendered for the reduced-motion / Save-Data fallback. -->
         <!-- Shown by clips.js on the 'ended' event of a with-sound playthrough
              (the loop is turned off once the viewer opts into audio). -->
         <button type="button" class="clip-again" hidden aria-label="Watch the clip again with sound">
@@ -316,21 +315,38 @@
   </div>
 </section>
 
-<footer>
-  <div class="wrap">
-    <span>© 2026 GoodStrata · Apache-2.0</span>
-    <span>
-      <a href="/how-it-works/">How it works</a> ·
-      <a href="/how-we-make-money/">How we make money</a> ·
-      <a href="/open-source/">Open source</a>
-      <a href="/tools/">Tools</a> ·
-      <a href="/for-owners/">Rally your building</a> ·
-      <a href="/blog/announcing-goodstrata/">Blog</a> ·
-      <a href="https://github.com/goodstrata/goodstrata">GitHub</a> ·
-      <a href="https://my.goodstrata.com.au/login">Sign in</a> ·
-      <a href="/terms/">Terms</a> ·
-      <a href="/privacy/">Privacy</a>
-    </span>
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <img class="footer-mark" src="/icon.png" alt="GoodStrata" width="32" height="32" />
+      <p class="footer-tag">Free, open-source strata management that shows its working — every levy, every dollar, on the record.</p>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <h2>Product</h2>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/how-we-make-money/">How we make money</a>
+        <a href="/open-source/">Open source</a>
+        <a href="/tools/">Tools</a>
+        <a href="/what-am-i-paying/">What am I paying?</a>
+      </div>
+      <div class="footer-col">
+        <h2>Company</h2>
+        <a href="/for-owners/">Rally your building</a>
+        <a href="/blog/announcing-goodstrata/">Blog</a>
+        <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+        <a href="https://my.goodstrata.com.au/login">Sign in</a>
+      </div>
+      <div class="footer-col">
+        <h2>Legal</h2>
+        <a href="/terms/">Terms</a>
+        <a href="/privacy/">Privacy</a>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap footer-base">
+    <span>© 2026 Good Strata Pty Ltd · Apache-2.0</span>
+    <span class="footer-base-meta">Made in Australia · No hidden commissions</span>
   </div>
 </footer>
 

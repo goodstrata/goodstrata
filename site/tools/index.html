@@ -54,7 +54,9 @@
       background: var(--accent); color: var(--accent-ink);
       padding: 8px 12px; border-radius: 8px;
       border: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+      min-width: 0; max-width: 100%; word-break: break-all;
     }
+    .asks .ask { min-width: 0; overflow-wrap: anywhere; }
     .copybtn {
       font-family: var(--font-sans); font-size: 13px; font-weight: 600;
       padding: 8px 12px; border-radius: 8px; cursor: pointer;
@@ -153,15 +155,38 @@
   </div>
 </section>
 
-<footer>
-  <div class="wrap">
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <img class="footer-mark" src="/icon.png" alt="GoodStrata" width="32" height="32" />
+      <p class="footer-tag">Free, open-source strata management that shows its working — every levy, every dollar, on the record.</p>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <h2>Product</h2>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/how-we-make-money/">How we make money</a>
+        <a href="/open-source/">Open source</a>
+        <a href="/tools/">Tools</a>
+        <a href="/what-am-i-paying/">What am I paying?</a>
+      </div>
+      <div class="footer-col">
+        <h2>Company</h2>
+        <a href="/for-owners/">Rally your building</a>
+        <a href="/blog/announcing-goodstrata/">Blog</a>
+        <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+        <a href="https://my.goodstrata.com.au/login">Sign in</a>
+      </div>
+      <div class="footer-col">
+        <h2>Legal</h2>
+        <a href="/terms/">Terms</a>
+        <a href="/privacy/">Privacy</a>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap footer-base">
     <span>© 2026 Good Strata Pty Ltd · Apache-2.0</span>
-    <span>
-      <a href="/how-we-make-money/">How we make money</a> ·
-      <a href="/for-owners/">Rally your building</a> ·
-      <a href="/terms/">Terms</a> · <a href="/privacy/">Privacy</a> ·
-      <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
-    </span>
+    <span class="footer-base-meta">Made in Australia · No hidden commissions</span>
   </div>
 </footer>
 

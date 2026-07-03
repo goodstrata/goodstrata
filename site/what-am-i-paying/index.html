@@ -111,34 +111,86 @@
     <div id="result" class="result hidden"></div>
 
     <div id="sample">
-      <p class="sample-lead">No papers handy? Here's exactly what you get back.</p>
-      <div class="sample" aria-label="Example fee check for a sample building">
-        <span class="sample-badge">Example · a typical Australian building · 12 lots</span>
-        <div class="headline-num">$8,400<span style="font-size:.4em"> / year</span></div>
-        <div class="headline-sub">in strata management fees, on this building's own AGM numbers.</div>
-        <div class="rows">
-          <div class="row"><span>Base management fee</span><span class="amt">$6,600</span></div>
-          <div class="row"><span>Disbursements &amp; sundries</span><span class="amt">$1,320</span></div>
-          <div class="row"><span>AGM &amp; extra meeting fees</span><span class="amt">$480</span></div>
+      <p class="sample-lead">No papers handy? Drag the slider to your building's size.</p>
+      <div class="sample" aria-label="Example: what a typical Australian building pays a strata manager">
+        <span class="sample-badge">Example · a typical Australian building</span>
+        <div class="receipt-slider">
+          <label for="lotSlider">Your building — <b><span id="lotCount">12</span> lots</b></label>
+          <input type="range" id="lotSlider" min="2" max="60" value="12" step="1"
+                 aria-label="Number of lots in your building" />
         </div>
-        <p class="meta">That's about <b>$700</b> per lot, per year across 12 lots.</p>
-        <div class="flag">Heads up: this AGM also lists an <b>insurance commission</b> — money the manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>
-        <p class="sample-note">A worked example so you can see the format. Drop in your own document above for your building's real number — GoodStrata does this same job for $0.</p>
+        <div class="receipt-hero">
+          <span class="receipt-label">A strata manager charges about</span>
+          <span class="receipt-big struck"><span id="rTotal">$8,400</span><span class="yr"> /yr</span></span>
+        </div>
+        <div class="receipt-lines">
+          <div class="rl"><span>Base management fee</span><span id="rMgmt">$6,600</span></div>
+          <div class="rl"><span>Disbursements &amp; sundries</span><span id="rAdmin">$1,320</span></div>
+          <div class="rl"><span>AGM &amp; extra meeting fees</span><span id="rMeet">$480</span></div>
+          <div class="rl comm"><span>Insurance commission</span><span>undisclosed</span></div>
+        </div>
+        <div class="receipt-total">
+          <span class="receipt-label">With GoodStrata</span>
+          <span class="receipt-big zero">$0<span class="yr"> /yr</span></span>
+        </div>
+        <div class="flag">Heads up: a typical AGM also lists an <b>insurance commission</b> — money the manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>
+        <p class="sample-note">Based on about <b>$700</b> per lot, per year — the Australian average. Drop in your own document above for your building's real number — GoodStrata does this same job for $0.</p>
       </div>
     </div>
   </div>
 </div>
 
-<footer>
-  <div class="wrap">
+<script>
+  (function () {
+    var s = document.getElementById("lotSlider");
+    if (!s) return;
+    var money = function (n) { return "$" + Math.round(n).toLocaleString("en-AU"); };
+    var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    function update() {
+      var lots = +s.value;
+      set("lotCount", lots);
+      set("rMgmt", money(lots * 550));
+      set("rAdmin", money(lots * 110));
+      set("rMeet", money(lots * 40));
+      set("rTotal", money(lots * 700));
+    }
+    s.addEventListener("input", update);
+    update();
+  })();
+</script>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <img class="footer-mark" src="/icon.png" alt="GoodStrata" width="32" height="32" />
+      <p class="footer-tag">Free, open-source strata management that shows its working — every levy, every dollar, on the record.</p>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <h2>Product</h2>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/how-we-make-money/">How we make money</a>
+        <a href="/open-source/">Open source</a>
+        <a href="/tools/">Tools</a>
+        <a href="/what-am-i-paying/">What am I paying?</a>
+      </div>
+      <div class="footer-col">
+        <h2>Company</h2>
+        <a href="/for-owners/">Rally your building</a>
+        <a href="/blog/announcing-goodstrata/">Blog</a>
+        <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+        <a href="https://my.goodstrata.com.au/login">Sign in</a>
+      </div>
+      <div class="footer-col">
+        <h2>Legal</h2>
+        <a href="/terms/">Terms</a>
+        <a href="/privacy/">Privacy</a>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap footer-base">
     <span>© 2026 Good Strata Pty Ltd · Apache-2.0</span>
-    <span>
-      <a href="/how-we-make-money/">How we make money</a> ·
-      <a href="/for-owners/">Rally your building</a> ·
-      <a href="/terms/">Terms</a> · <a href="/privacy/">Privacy</a> ·
-      <a href="https://github.com/goodstrata/goodstrata">GitHub</a> ·
-      <a href="https://my.goodstrata.com.au/login">Sign in</a>
-    </span>
+    <span class="footer-base-meta">Made in Australia · No hidden commissions</span>
   </div>
 </footer>
 

@@ -474,23 +474,108 @@ section p.lede {
   justify-content: center;
 }
 
-footer {
-  padding: 30px 0 46px;
-  font-size: 14px;
-  color: var(--faint-ink);
+/* =====================================================================
+   Site footer — one refined footer across every page. The small icon mark
+   (not the wordmark), a one-line tagline, organised link columns, and a
+   hairline base line. Registry tokens only; responsive; dark-mode aware.
+   ===================================================================== */
+.site-footer {
+  margin-top: 0;
   border-top: 1px solid var(--line);
+  background: var(--card);
+  color: var(--faint-ink);
+  font-size: 14px;
 }
-footer .wrap {
+.site-footer .footer-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 2fr);
+  gap: 40px 48px;
+  padding-top: 52px;
+  padding-bottom: 38px;
+}
+.site-footer .footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 34ch;
+}
+.site-footer .footer-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  /* the icon carries its own gradient tile, so it reads on both paper and
+     after-hours; a hairline ring keeps its edge crisp on either background */
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--ink) 12%, transparent);
+}
+.site-footer .footer-tag {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+.site-footer .footer-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 26px 24px;
+}
+.site-footer .footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.site-footer .footer-col h2 {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--faint-ink);
+  margin: 0 0 3px;
+  max-width: none;
+}
+.site-footer .footer-col a {
+  width: fit-content;
+  color: var(--muted-ink);
+  text-decoration: none;
+  font-size: 14.5px;
+}
+.site-footer .footer-col a:hover {
+  color: var(--primary);
+}
+.site-footer .footer-base {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-}
-footer a {
+  gap: 8px 20px;
+  padding-top: 22px;
+  padding-bottom: 40px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
   color: var(--faint-ink);
 }
-footer a:hover {
-  color: var(--primary);
+.site-footer .footer-base-meta {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--faint-ink);
+}
+@media (max-width: 720px) {
+  .site-footer .footer-inner {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    padding-top: 40px;
+  }
+  .site-footer .footer-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 26px 20px;
+  }
+}
+@media (max-width: 380px) {
+  .site-footer .footer-cols {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- article (blog) ---- */
@@ -1477,36 +1562,109 @@ ul.proof-list li strong {
   color: var(--primary-strong);
 }
 
-/* --- tap-to-unmute affordance ---------------------------------------------
+/* --- play-with-sound button ------------------------------------------------
    The clip autoplays muted (browser policy) and loops as ambient motion.
-   clips.js reveals this pill; a tap unmutes, restarts from 0, and plays with
-   sound. Once sound is on, .clip-sound-on hides the pill. */
-.clip-sound {
+   clips.js injects this full-frame button with a centred eucalypt play disc;
+   pressing it plays the clip WITH SOUND from the start and hides the button. It
+   returns (via [hidden] toggling) whenever the clip is paused. */
+.clip-play {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  inset: 0;
   z-index: 2;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background: color-mix(in oklab, var(--band-bg) 30%, transparent);
+  transition: background 0.15s ease;
+}
+.clip-play:hover {
+  background: color-mix(in oklab, var(--band-bg) 44%, transparent);
+}
+.clip-play[hidden] {
+  display: none;
+}
+.clip-play-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 14px 34px -12px rgba(9, 91, 65, 0.85);
+  transition: transform 0.15s ease;
+}
+.clip-play:hover .clip-play-disc {
+  transform: scale(1.05);
+}
+/* CSS play triangle, optically centred in the disc */
+.clip-play-disc::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 13px 0 13px 22px;
+  border-color: transparent transparent transparent var(--on-primary);
+  margin-left: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .clip-play,
+  .clip-play-disc {
+    transition: none;
+  }
+}
+
+/* --- docked state (mobile only, driven by clips.js) ------------------------
+   When a clip plays WITH SOUND on mobile it lifts to a full-width bar fixed at
+   the top of the viewport so it stays visible while scrolling; a .clip-spacer
+   of the exact frame height holds its place (zero layout shift). Corners are
+   squared, side/top borders dropped, with a soft bottom shadow, above the
+   sticky header. */
+.clip-docked .clip-frame {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  z-index: 120;
+  border-radius: 0;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  box-shadow: 0 12px 26px -8px rgba(15, 20, 28, 0.55);
+}
+.clip-spacer {
+  width: 100%;
+}
+/* ✕ dismiss — only visible while docked (pause + undock) */
+.clip-dismiss {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 4;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
   color: #fff;
   background: rgba(15, 20, 28, 0.62);
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 999px;
-  padding: 8px 14px;
   cursor: pointer;
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
-.clip-sound:hover {
-  background: rgba(15, 20, 28, 0.8);
-}
-.clip-sound[hidden] {
-  display: none;
-}
-.clip-sound-on .clip-sound {
-  display: none;
+.clip-docked .clip-dismiss {
+  display: inline-flex;
 }
 
 /* --- "Watch again" overlay -------------------------------------------------
@@ -1563,6 +1721,11 @@ ul.proof-list li strong {
   }
   .hero > .clip-wrap .clip {
     margin-top: 0;
+  }
+  /* The clip is the first thing under the sticky header on mobile — keep only a
+     small gap so it reads as the hero, not a floating block below empty space. */
+  .hero:has(> .clip-wrap) {
+    padding-top: 14px;
   }
   /* Breathing room between the clip's "real number" CTA and the hero heading. */
   .hero-grid {
