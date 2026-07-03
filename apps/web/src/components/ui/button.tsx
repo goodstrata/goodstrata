@@ -64,8 +64,14 @@ function Button({
       disabled={disabled || pending}
       {...props}
     >
-      {pending && !asChild && <Spinner aria-hidden="true" />}
-      {children}
+      {asChild ? (
+        children
+      ) : (
+        <>
+          {pending && <Spinner aria-hidden="true" />}
+          {children}
+        </>
+      )}
     </Comp>
   );
 }
