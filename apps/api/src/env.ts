@@ -48,6 +48,18 @@ const envSchema = z.object({
   /** Daily.co (VIDEO_PROVIDER=daily). */
   DAILY_API_KEY: z.string().optional(),
 
+  /** Monoova NPP / PayID (PAYMENTS_PROVIDER=monoova). */
+  MONOOVA_API_BASE_URL: z.string().optional(),
+  MONOOVA_API_KEY: z.string().optional(),
+  MONOOVA_ACCOUNT_ID: z.string().optional(),
+  MONOOVA_BANK_ACCOUNT_NUMBER: z.string().optional(),
+  MONOOVA_BSB: z.string().optional(),
+  MONOOVA_PAYID_NAME: z.string().optional(),
+  /** PEM or hex-DER of Monoova's webhook-signing public key. */
+  MONOOVA_WEBHOOK_PUBLIC_KEY: z.string().optional(),
+  /** securityToken echoed on webhook subscription (setup script). */
+  MONOOVA_WEBHOOK_SECRET: z.string().optional(),
+
   /** Serve the built web app from this directory (production single-image mode). */
   WEB_DIST: z.string().optional(),
 

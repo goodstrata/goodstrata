@@ -81,6 +81,32 @@ export function createAuth(opts: {
         });
       },
     },
+    user: {
+      changeEmail: {
+        enabled: true,
+        // better-auth 1.6.23 names this callback sendChangeEmailConfirmation
+        // (the "sendChangeEmailVerification" of older docs). It fires when the
+        // current address is verified — the confirmation link goes to the OLD
+        // address so a hijacked session can't silently move the account. For an
+        // unverified address better-auth falls through to sendVerificationEmail
+        // (above), mailing the NEW address. Either way the change only lands
+        // once a link is clicked, which the UI surfaces as a pending state.
+        sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+          void opts.email.send({
+            to: user.email,
+            subject: "Confirm your GoodStrata email change",
+            text: `We received a request to change your GoodStrata email address to ${newEmail}.\n\nConfirm the change:\n${url}\n\nIf you didn't ask for this, ignore this email — your address stays ${user.email}.`,
+          });
+        },
+      },
+      // Deletion is immediate: no sendDeleteAccountVerification callback, so the
+      // /delete-user endpoint removes the account in-band. The web flow gates it
+      // behind a typed confirmation plus the current password (which also
+      // satisfies better-auth's fresh-session requirement for a stale cookie).
+      deleteUser: {
+        enabled: true,
+      },
+    },
     rateLimit: {
       enabled: true,
       window: 60,

@@ -1,9 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, Link, Outlet, useParams } from "@tanstack/react-router";
-import { ChevronLeft, LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { ChevronLeft, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { NotificationsBell } from "@/components/NotificationsBell";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -79,6 +79,7 @@ function RootLayout() {
                     aria-label="Account menu"
                   >
                     <Avatar className="size-7">
+                      {session.user.image ? <AvatarImage src={session.user.image} alt="" /> : null}
                       <AvatarFallback className="bg-accent text-xs font-semibold text-accent-foreground">
                         {initials(session.user.name, session.user.email)}
                       </AvatarFallback>
@@ -93,6 +94,12 @@ function RootLayout() {
                     <p className="text-sm font-medium">{session.user.name}</p>
                     <p className="truncate text-xs text-muted-foreground">{session.user.email}</p>
                   </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings">
+                      <Settings className="size-4" /> Settings
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
                     Theme

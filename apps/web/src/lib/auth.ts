@@ -14,4 +14,12 @@ export const {
   requestPasswordReset,
   resetPassword,
   sendVerificationEmail,
+  // Account settings surface (routes/settings.tsx).
+  updateUser,
+  changeEmail,
+  changePassword,
+  listSessions,
+  revokeSession,
+  revokeOtherSessions,
+  deleteUser,
 } = authClient;

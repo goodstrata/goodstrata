@@ -1,5 +1,6 @@
 import { DomainError } from "@goodstrata/core";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import type { AppDeps } from "./deps.js";
@@ -8,6 +9,7 @@ import { type AppEnv, requireAuth } from "./middleware.js";
 import { agentRunsRoutes } from "./routes/agents.js";
 import { communityRoutes } from "./routes/community.js";
 import { devRoutes } from "./routes/dev.js";
+import { estimatorRoutes } from "./routes/estimator.js";
 import { eventsRoutes } from "./routes/events.js";
 import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
 import { maintenanceRoutes } from "./routes/maintenance.js";
@@ -22,6 +24,7 @@ import {
   peopleRoutes,
   publicInviteRoutes,
 } from "./routes/onboarding.js";
+import { profileRoutes } from "./routes/profile.js";
 import { schemesRoutes } from "./routes/schemes.js";
 import { type SseHub, sseRoutes } from "./sse.js";
 import { paymentWebhookRoutes } from "./webhooks.js";
@@ -45,10 +48,22 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", meetingsRoutes(deps))
     .route("/schemes", notificationsRoutes(deps))
     .route("/schemes", agentRunsRoutes(deps))
-    .route("/invites", invitesRoutes(deps));
+    .route("/invites", invitesRoutes(deps))
+    .route("/profile", profileRoutes(deps));
 
   const app = new Hono()
     .use("*", logger())
+    // Public "what am I paying my strata manager?" tool — called cross-origin
+    // from the static marketing site, so this one path is CORS-open to it.
+    .use(
+      "/api/tools/*",
+      cors({
+        origin: ["https://goodstrata.com.au", "https://www.goodstrata.com.au"],
+        allowMethods: ["POST", "OPTIONS"],
+        maxAge: 86400,
+      }),
+    )
+    .route("/api", estimatorRoutes(deps))
     .get("/api/health", (c) => c.json({ ok: true }))
     // Public sandbox descriptor: the login page renders one-click demo entry
     // buttons from this. Only ever populated when DEMO_MODE=1.

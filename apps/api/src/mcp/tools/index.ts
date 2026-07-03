@@ -30,6 +30,7 @@ import { registerFinancialPositionTool } from "./financial.js";
 import { registerPortfolioTools } from "./portfolio.js";
 import { registerSchemeHealthTool } from "./scheme-health.js";
 import { registerSchemeTools } from "./schemes.js";
+import { registerWriteTools } from "./writes.js";
 
 export function registerTools(server: McpServer, ctx: McpToolContext): void {
   // Entry-point + single-scheme + cross-scheme composite read tools.
@@ -37,6 +38,11 @@ export function registerTools(server: McpServer, ctx: McpToolContext): void {
   registerPortfolioTools(server, ctx); // get_portfolio_briefing, find_my_pending_actions
   registerSchemeHealthTool(server, ctx); // get_scheme_health
   registerFinancialPositionTool(server, ctx); // get_financial_position
+
+  // Mutating tools — every one gated on the `mcp:write` scope (see writes.ts).
+  // create_scheme, create_maintenance_request, create_community_post,
+  // add_community_comment, invite_person, draft_budget (opens a decision gate).
+  registerWriteTools(server, ctx);
 
   // Scaffold/health tool: confirms the OAuth token resolved and reports the
   // granted scopes.

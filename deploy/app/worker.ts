@@ -21,8 +21,16 @@ interface Env {
   STORAGE_SECRET_ACCESS_KEY?: string;
   // Daily.co (committee video)
   DAILY_API_KEY?: string;
-  // Monoova (real payments) — driver lands in a later phase
+  // Monoova NPP / PayID (real payments). Presence of MONOOVA_API_KEY flips the
+  // driver on; the rest tune it. MONOOVA_WEBHOOK_PUBLIC_KEY (PEM or hex-DER)
+  // gates webhook verification.
   MONOOVA_API_KEY?: string;
+  MONOOVA_API_BASE_URL?: string;
+  MONOOVA_BANK_ACCOUNT_NUMBER?: string;
+  MONOOVA_BSB?: string;
+  MONOOVA_PAYID_NAME?: string;
+  MONOOVA_WEBHOOK_PUBLIC_KEY?: string;
+  MONOOVA_WEBHOOK_SECRET?: string;
 }
 
 const APP_URL = "https://my.goodstrata.com.au";
@@ -81,6 +89,19 @@ export class GoodstrataApp extends Container<Env> {
       ? { VIDEO_PROVIDER: "daily", DAILY_API_KEY: env.DAILY_API_KEY }
       : {};
 
+    const payments = env.MONOOVA_API_KEY
+      ? {
+          PAYMENTS_PROVIDER: "monoova",
+          MONOOVA_API_BASE_URL: env.MONOOVA_API_BASE_URL ?? "https://api.m-pay.com.au",
+          MONOOVA_API_KEY: env.MONOOVA_API_KEY,
+          MONOOVA_BANK_ACCOUNT_NUMBER: env.MONOOVA_BANK_ACCOUNT_NUMBER ?? "",
+          MONOOVA_BSB: env.MONOOVA_BSB ?? "802-985",
+          MONOOVA_PAYID_NAME: env.MONOOVA_PAYID_NAME ?? "GoodStrata Levies",
+          MONOOVA_WEBHOOK_PUBLIC_KEY: env.MONOOVA_WEBHOOK_PUBLIC_KEY ?? "",
+          MONOOVA_WEBHOOK_SECRET: env.MONOOVA_WEBHOOK_SECRET ?? "",
+        }
+      : {}; // falls back to the mock provider until Monoova creds are added
+
     super(ctx, env, {
       envVars: {
         DATABASE_URL: env.DATABASE_URL,
@@ -93,6 +114,7 @@ export class GoodstrataApp extends Container<Env> {
         ...email,
         ...storage,
         ...video,
+        ...payments,
       },
     });
   }

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>What are you paying your strata manager? — GoodStrata</title>
+  <meta name="description" content="Drop in your strata AGM, budget or financial statement and see — in plain dollars — what you're paying your strata manager each year. Free, and we don't store your document." />
+  <meta property="og:title" content="What are you really paying your strata manager?" />
+  <meta property="og:description" content="Drop in your AGM or budget. See the management fees in plain dollars. GoodStrata does the same job for $0." />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
+  <link rel="icon" href="/favicon.ico" sizes="32x32" />
+  <link rel="icon" href="/icon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <link rel="preload" href="/fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .estimator { padding: 52px 0 72px; }
+    .dropzone {
+      margin-top: 32px; border: 2px dashed var(--line); border-radius: 14px;
+      background: var(--card); padding: 44px 24px; text-align: center;
+      cursor: pointer; transition: border-color .15s ease, background .15s ease;
+    }
+    .dropzone:hover, .dropzone:focus-visible { border-color: var(--primary); outline: none; }
+    .dropzone.drag { border-color: var(--primary); background: var(--accent); }
+    .dropzone .dz-mark { display: inline-flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .dropzone .dz-mark span { display: block; height: 3px; width: 30px; border-radius: 2px; background: var(--primary); }
+    .dropzone .dz-mark span:nth-child(1) { margin-left: 8px; width: 22px; }
+    .dropzone .dz-mark span:nth-child(2) { margin-left: 4px; width: 26px; }
+    .dropzone h3 { font-size: 19px; font-weight: 600; }
+    .dropzone p { color: var(--muted-ink); font-size: 15px; margin-top: 6px; }
+    .dropzone .pick { color: var(--primary); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+    .privacy-line { margin-top: 14px; font-size: 13.5px; color: var(--faint-ink); text-align: center; }
+    .result { margin-top: 32px; }
+    .result .headline-num {
+      font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+      font-weight: 600; font-size: clamp(40px, 8vw, 68px); letter-spacing: -0.02em;
+      color: var(--primary); line-height: 1;
+    }
+    .result .headline-sub { font-family: var(--font-display); font-size: clamp(20px, 3vw, 26px); margin-top: 8px; }
+    .result .rows { margin-top: 28px; border-top: 1px solid var(--line); }
+    .result .row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 15.5px; }
+    .result .row .amt { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .result .meta { margin-top: 18px; font-size: 14px; color: var(--muted-ink); }
+    .result .flag { margin-top: 16px; padding: 14px 18px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 15px; border-left: 2px solid var(--primary); }
+    .estimator .status { margin-top: 28px; color: var(--muted-ink); font-size: 16px; }
+    .estimator .status.err { color: oklch(0.54 0.19 27); }
+    .est-cta { margin-top: 40px; padding: 32px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+    .est-cta h3 { font-family: var(--font-display); font-weight: 500; font-size: clamp(21px, 3vw, 27px); }
+    .est-cta p { color: var(--muted-ink); margin-top: 8px; }
+    .spin { display: inline-block; width: 15px; height: 15px; border: 2px solid var(--line); border-top-color: var(--primary); border-radius: 50%; animation: sp .7s linear infinite; vertical-align: -2px; margin-right: 8px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="site">
+    <a class="logo" href="/">
+      <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
+      <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
+    </a>
+    <nav aria-label="Primary">
+      <a href="/how-it-works/">How it works</a>
+      <a href="/how-we-make-money/">How we make money</a>
+      <a href="/open-source/">Open source</a>
+      <a href="/for-owners/">Rally your building</a>
+      <a class="nav-btn" href="https://demo.goodstrata.com.au">Try the demo</a>
+    </nav>
+  </header>
+</div>
+
+<div class="hero estimator">
+  <div class="wrap">
+    <p class="eyebrow">
+      <span class="motif" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span class="kicker">Free · nothing stored</span>
+    </p>
+    <h1>What are you <em>really</em> paying your strata manager?</h1>
+    <p class="sub">
+      Drop in your owners corporation's AGM papers, budget, or annual financial statement — a PDF or
+      even a phone photo — and we'll read the numbers and show you, in plain dollars, what your
+      strata manager charges each year. Then you can decide whether that's worth it.
+    </p>
+
+    <div id="dropzone" class="dropzone" role="button" tabindex="0"
+         aria-label="Upload your strata AGM, budget or financial statement">
+      <span class="dz-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+      <h3>Drop your AGM, budget or financial statement here</h3>
+      <p>PDF or an image — or <span class="pick">choose a file</span></p>
+      <input id="fileInput" type="file" accept="application/pdf,image/*" class="hidden" />
+    </div>
+    <p class="privacy-line">
+      We read the numbers in your document to answer this one question, and we don't store it.
+    </p>
+
+    <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+    <div id="result" class="result hidden"></div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Good Strata Pty Ltd · Apache-2.0</span>
+    <span>
+      <a href="/how-we-make-money/">How we make money</a> ·
+      <a href="/for-owners/">Rally your building</a> ·
+      <a href="/terms/">Terms</a> · <a href="/privacy/">Privacy</a> ·
+      <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+  const API = "https://my.goodstrata.com.au/api/tools/strata-estimate";
+  const dz = document.getElementById("dropzone");
+  const input = document.getElementById("fileInput");
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+
+  const money = (cents) =>
+    cents == null ? null :
+    "$" + Math.round(cents / 100).toLocaleString("en-AU");
+
+  function setStatus(html, isErr) {
+    statusEl.className = "status" + (isErr ? " err" : "");
+    statusEl.innerHTML = html;
+    statusEl.classList.remove("hidden");
+  }
+  function clearStatus() { statusEl.classList.add("hidden"); statusEl.innerHTML = ""; }
+
+  dz.addEventListener("click", () => input.click());
+  dz.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
+  ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
+  ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
+  dz.addEventListener("drop", (e) => { const f = e.dataTransfer?.files?.[0]; if (f) upload(f); });
+  input.addEventListener("change", () => { const f = input.files?.[0]; if (f) upload(f); });
+
+  async function upload(file) {
+    resultEl.classList.add("hidden");
+    resultEl.innerHTML = "";
+    if (file.size > 12 * 1024 * 1024) { setStatus("That file is over 12 MB — try a smaller export or a single page.", true); return; }
+    setStatus('<span class="spin" aria-hidden="true"></span>Reading your document…');
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const res = await fetch(API, { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = data?.error?.message || "We couldn't read that document. Try a clearer PDF or photo.";
+        setStatus(msg, true);
+        return;
+      }
+      render(data);
+    } catch (err) {
+      setStatus("Something went wrong reaching the reader. Please try again.", true);
+    }
+  }
+
+  function render(d) {
+    clearStatus();
+    if (!d.isStrataFinancialDoc) {
+      setStatus(
+        "That doesn't look like a strata financial statement. Try your AGM papers, the annual budget, or the financial statement your manager sends each year.",
+        true,
+      );
+      return;
+    }
+    const total = d.totalManagerCostAnnualCents ?? d.managementFeeAnnualCents;
+    const items = (d.lineItems || []).filter((i) => i && i.amountCents != null);
+    const rows = items.map((i) =>
+      `<div class="row"><span>${escapeHtml(i.label)}</span><span class="amt">${money(i.amountCents)}</span></div>`
+    ).join("");
+    const perLot = d.perLotAnnualCents != null
+      ? `<p class="meta">That's about <b>${money(d.perLotAnnualCents)}</b> per lot, per year${d.lotCount ? ` across ${d.lotCount} lots` : ""}.</p>` : "";
+    const commission = d.insuranceCommissionNoted
+      ? `<div class="flag">Heads up: this document mentions an <b>insurance commission</b> — money your manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>` : "";
+    const conf = d.confidence === "low"
+      ? `<p class="meta">Low confidence — the document was hard to read, so treat this as a rough guide.</p>` : "";
+    resultEl.innerHTML = `
+      <p class="kicker">What you're paying your manager</p>
+      <div class="headline-num">${total != null ? money(total) : "—"}<span style="font-size:.4em"> / year</span></div>
+      <div class="headline-sub">${total != null ? "in strata management fees, on your own numbers." : "We found manager charges but couldn't total them — see the lines below."}</div>
+      ${rows ? `<div class="rows">${rows}</div>` : ""}
+      ${perLot}
+      ${commission}
+      ${conf}
+      ${d.notes ? `<p class="meta">${escapeHtml(d.notes)}</p>` : ""}
+      <div class="est-cta">
+        <h3>GoodStrata does all of this for $0 — and every dollar is on the record.</h3>
+        <p>Free for your owners corporation. We earn only a transparent margin on payments that move — no management fee, no insurance commission, no contractor kickbacks.</p>
+        <div class="cta-row">
+          <a class="btn primary" href="https://demo.goodstrata.com.au">Try the live demo</a>
+          <a class="btn ghost" href="https://my.goodstrata.com.au">Start your building</a>
+        </div>
+      </div>`;
+    resultEl.classList.remove("hidden");
+    resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+</script>
+</body>
+</html>

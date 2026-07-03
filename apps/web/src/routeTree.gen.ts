@@ -9,6 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WhatAmIPayingRouteImport } from './routes/what-am-i-paying'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as JoinRouteImport } from './routes/join'
@@ -16,6 +18,16 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SchemesSchemeIdRouteImport } from './routes/schemes.$schemeId'
 
+const WhatAmIPayingRoute = WhatAmIPayingRouteImport.update({
+  id: '/what-am-i-paying',
+  path: '/what-am-i-paying',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
@@ -53,6 +65,8 @@ export interface FileRoutesByFullPath {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/settings': typeof SettingsRoute
+  '/what-am-i-paying': typeof WhatAmIPayingRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +75,8 @@ export interface FileRoutesByTo {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/settings': typeof SettingsRoute
+  '/what-am-i-paying': typeof WhatAmIPayingRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRoute
 }
 export interface FileRoutesById {
@@ -70,6 +86,8 @@ export interface FileRoutesById {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/settings': typeof SettingsRoute
+  '/what-am-i-paying': typeof WhatAmIPayingRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRoute
 }
 export interface FileRouteTypes {
@@ -80,6 +98,8 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/reset-password'
+    | '/settings'
+    | '/what-am-i-paying'
     | '/schemes/$schemeId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -88,6 +108,8 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/reset-password'
+    | '/settings'
+    | '/what-am-i-paying'
     | '/schemes/$schemeId'
   id:
     | '__root__'
@@ -96,6 +118,8 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/reset-password'
+    | '/settings'
+    | '/what-am-i-paying'
     | '/schemes/$schemeId'
   fileRoutesById: FileRoutesById
 }
@@ -105,11 +129,27 @@ export interface RootRouteChildren {
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SettingsRoute: typeof SettingsRoute
+  WhatAmIPayingRoute: typeof WhatAmIPayingRoute
   SchemesSchemeIdRoute: typeof SchemesSchemeIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/what-am-i-paying': {
+      id: '/what-am-i-paying'
+      path: '/what-am-i-paying'
+      fullPath: '/what-am-i-paying'
+      preLoaderRoute: typeof WhatAmIPayingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reset-password': {
       id: '/reset-password'
       path: '/reset-password'
@@ -161,6 +201,8 @@ const rootRouteChildren: RootRouteChildren = {
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SettingsRoute: SettingsRoute,
+  WhatAmIPayingRoute: WhatAmIPayingRoute,
   SchemesSchemeIdRoute: SchemesSchemeIdRoute,
 }
 export const routeTree = rootRouteImport

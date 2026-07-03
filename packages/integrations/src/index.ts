@@ -10,7 +10,11 @@ import {
   memoryEmailProvider,
   sesEmailProvider,
 } from "./email.js";
-import { mockPaymentsProvider, type PaymentsProvider } from "./payments.js";
+import {
+  mockPaymentsProvider,
+  monoovaPaymentsProvider,
+  type PaymentsProvider,
+} from "./payments.js";
 import {
   consoleSmsProvider,
   memorySmsProvider,
@@ -58,6 +62,13 @@ export interface IntegrationsEnv {
   TWILIO_PHONE_NUMBER?: string;
   // Daily.co (VIDEO_PROVIDER=daily)
   DAILY_API_KEY?: string;
+  // Monoova NPP / PayID (PAYMENTS_PROVIDER=monoova)
+  MONOOVA_API_BASE_URL?: string;
+  MONOOVA_API_KEY?: string;
+  MONOOVA_BANK_ACCOUNT_NUMBER?: string;
+  MONOOVA_BSB?: string;
+  MONOOVA_PAYID_NAME?: string;
+  MONOOVA_WEBHOOK_PUBLIC_KEY?: string;
 }
 
 function required(env: IntegrationsEnv, key: keyof IntegrationsEnv, provider: string): string {
@@ -126,7 +137,21 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
     }
   })();
 
-  const payments = mockPaymentsProvider(env.MOCK_PAYMENTS_SECRET);
+  const payments = (() => {
+    switch (env.PAYMENTS_PROVIDER ?? "mock") {
+      case "monoova":
+        return monoovaPaymentsProvider({
+          apiBaseUrl: env.MONOOVA_API_BASE_URL ?? "https://api.m-pay.com.au",
+          apiKey: required(env, "MONOOVA_API_KEY", "monoova"),
+          bankAccountNumber: required(env, "MONOOVA_BANK_ACCOUNT_NUMBER", "monoova"),
+          bsb: env.MONOOVA_BSB ?? "802-985",
+          payIdName: env.MONOOVA_PAYID_NAME,
+          webhookPublicKey: env.MONOOVA_WEBHOOK_PUBLIC_KEY,
+        });
+      default:
+        return mockPaymentsProvider(env.MOCK_PAYMENTS_SECRET);
+    }
+  })();
 
   const video = (() => {
     switch (env.VIDEO_PROVIDER ?? "console") {

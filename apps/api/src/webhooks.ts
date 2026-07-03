@@ -20,7 +20,7 @@ export function paymentWebhookRoutes(deps: AppDeps) {
     }
 
     const rawBody = await c.req.text();
-    const signature = c.req.header("x-signature");
+    const signature = c.req.header(provider.signatureHeader ?? "x-signature");
     const valid = provider.verifyWebhook(rawBody, signature);
 
     const inbound = valid ? provider.parseWebhook(rawBody) : null;
