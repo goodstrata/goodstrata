@@ -86,6 +86,9 @@ export class GoodstrataApp extends Container<Env> {
         DATABASE_URL: env.DATABASE_URL,
         BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
         APP_URL,
+        // The MCP resource server + protected-resource metadata host. The same
+        // container serves both my.* and mcp.*; host-routing lives in the app.
+        MCP_URL: "https://mcp.goodstrata.com.au",
         ...ai,
         ...email,
         ...storage,

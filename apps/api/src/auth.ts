@@ -1,8 +1,18 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { accounts, type Database, sessions, users, verifications } from "@goodstrata/db";
+import {
+  accounts,
+  type Database,
+  jwks,
+  oauthAccessTokens,
+  oauthApplications,
+  oauthConsents,
+  sessions,
+  users,
+  verifications,
+} from "@goodstrata/db";
 import type { EmailProvider } from "@goodstrata/integrations";
 import { betterAuth } from "better-auth";
-import { magicLink } from "better-auth/plugins";
+import { jwt, magicLink, mcp } from "better-auth/plugins";
 
 export type Auth = ReturnType<typeof createAuth>;
 
@@ -12,6 +22,11 @@ export function createAuth(opts: {
   appUrl: string;
   email: EmailProvider;
   /**
+   * Public origin serving the MCP endpoint + protected-resource metadata.
+   * Defaults to appUrl (same-origin local dev). In prod: mcp.goodstrata.com.au.
+   */
+  mcpUrl?: string;
+  /**
    * Block sign-in until the address is verified. Off by default so the demo
    * (console/memory email) and local dev stay one-click; turn on in prod once
    * SES delivers real mail.
@@ -20,10 +35,14 @@ export function createAuth(opts: {
   /** Rate limiting is enabled by default in production; force it on here. */
   production?: boolean;
 }) {
+  const mcpResource = `${(opts.mcpUrl ?? opts.appUrl).replace(/\/$/, "")}/mcp`;
+  const loginPage = `${opts.appUrl.replace(/\/$/, "")}/login`;
   return betterAuth({
     secret: opts.secret,
     baseURL: `${opts.appUrl}/api/auth`,
-    trustedOrigins: [opts.appUrl],
+    // claude.ai is the MCP client; loopback covers local MCP inspectors and
+    // native clients doing the loopback OAuth redirect.
+    trustedOrigins: [opts.appUrl, "https://claude.ai", "http://localhost", "http://127.0.0.1"],
     database: drizzleAdapter(opts.db, {
       provider: "pg",
       schema: {
@@ -31,6 +50,11 @@ export function createAuth(opts: {
         session: sessions,
         account: accounts,
         verification: verifications,
+        // better-auth mcp/oidc-provider + jwt plugin tables (see schema/mcp.ts).
+        oauthApplication: oauthApplications,
+        oauthAccessToken: oauthAccessTokens,
+        oauthConsent: oauthConsents,
+        jwks,
       },
     }),
     emailAndPassword: {
@@ -70,6 +94,15 @@ export function createAuth(opts: {
         "/forget-password": { window: 60, max: 5 },
         "/request-password-reset": { window: 60, max: 5 },
         "/sign-in/magic-link": { window: 60, max: 5 },
+        // OAuth 2.1 / MCP authorization-server endpoints. Dynamic client
+        // registration is the cheapest to abuse, so it gets the tightest cap.
+        "/mcp/register": { window: 60, max: 5 },
+        "/mcp/authorize": { window: 60, max: 20 },
+        "/mcp/token": { window: 60, max: 30 },
+        "/oauth2/register": { window: 60, max: 5 },
+        "/oauth2/authorize": { window: 60, max: 20 },
+        "/oauth2/token": { window: 60, max: 30 },
+        "/oauth2/consent": { window: 60, max: 20 },
       },
     },
     plugins: [
@@ -80,6 +113,25 @@ export function createAuth(opts: {
             subject: "Sign in to GoodStrata",
             text: `Click to sign in: ${url}\n\nThis link expires shortly. If you didn't request it, ignore this email.`,
           });
+        },
+      }),
+      // Signs OIDC id_tokens and exposes /api/auth/jwks (referenced by the
+      // OAuth discovery metadata). Must precede mcp() which sets useJWTPlugin.
+      jwt(),
+      // OAuth 2.1 Authorization Server for MCP. The mcp plugin internally
+      // instantiates oidc-provider, so it is NOT added separately. DCR + PKCE
+      // (OAuth 2.1) are enabled; scopes are the GoodStrata MCP tiers plus the
+      // OIDC defaults (openid/profile/email/offline_access) that the plugin
+      // always merges in.
+      mcp({
+        loginPage,
+        resource: mcpResource,
+        oidcConfig: {
+          loginPage,
+          allowDynamicClientRegistration: true,
+          requirePKCE: true,
+          useJWTPlugin: true,
+          scopes: ["mcp:read", "mcp:write", "mcp:govern"],
         },
       }),
     ],

@@ -7,6 +7,7 @@ export * from "./documents.js";
 export * from "./finance.js";
 export * from "./insurance.js";
 export * from "./maintenance.js";
+export * from "./mcp.js";
 export * from "./meetings.js";
 export * from "./notifications.js";
 export * from "./spine.js";

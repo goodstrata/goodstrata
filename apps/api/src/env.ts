@@ -7,6 +7,12 @@ const envSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(16),
   /** Public origin of the web app (dev: the Vite server proxying /api). */
   APP_URL: z.string().url().default("http://localhost:5173"),
+  /**
+   * Public origin that serves the MCP endpoint (`/mcp`) and its
+   * protected-resource metadata. In prod this is https://mcp.goodstrata.com.au;
+   * locally everything is same-origin, so it defaults to APP_URL.
+   */
+  MCP_URL: z.string().url().optional(),
 
   AI_PROVIDER: z.enum(["anthropic", "local", "mock"]).default("mock"),
   AI_DEFAULT_MODEL: z.string().optional(),

@@ -23,6 +23,7 @@ async function main() {
     db,
     secret: env.BETTER_AUTH_SECRET,
     appUrl: env.APP_URL,
+    mcpUrl: env.MCP_URL,
     email: integrations.email,
     requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION === "1",
     production: env.NODE_ENV === "production",

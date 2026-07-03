@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import type { AppDeps } from "./deps.js";
+import { mcpRoutes } from "./mcp/index.js";
 import { type AppEnv, requireAuth } from "./middleware.js";
 import { agentRunsRoutes } from "./routes/agents.js";
 import { communityRoutes } from "./routes/community.js";
@@ -73,6 +74,10 @@ export function createApp(deps: AppDeps, hub: SseHub) {
       ),
     )
     .on(["POST", "GET"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw))
+    // MCP server: OAuth-bearer /mcp transport + discovery metadata at the root.
+    // Mounted outside /api because it carries its own auth (not the session
+    // cookie). Host-aware, degrades to same-origin locally.
+    .route("/", mcpRoutes(deps))
     .route("/api/invites", publicInviteRoutes(deps))
     .route("/webhooks", paymentWebhookRoutes(deps))
     .route("/api", api);

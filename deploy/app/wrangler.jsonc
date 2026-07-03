@@ -15,6 +15,9 @@
     "bindings": [{ "class_name": "GoodstrataApp", "name": "APP" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GoodstrataApp"] }],
-  "routes": [{ "pattern": "my.goodstrata.com.au", "custom_domain": true }],
+  "routes": [
+    { "pattern": "my.goodstrata.com.au", "custom_domain": true },
+    { "pattern": "mcp.goodstrata.com.au", "custom_domain": true }
+  ],
   "observability": { "enabled": true }
 }

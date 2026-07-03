@@ -23,6 +23,7 @@
     "@goodstrata/shared": "workspace:*",
     "@hono/node-server": "catalog:",
     "@hono/zod-validator": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
     "better-auth": "catalog:",
     "hono": "catalog:",
     "pg-boss": "catalog:",
