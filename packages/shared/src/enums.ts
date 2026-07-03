@@ -140,6 +140,10 @@ export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
 export const DOCUMENT_ACCESS_LEVELS = ["owners", "committee", "admin"] as const;
 export type DocumentAccessLevel = (typeof DOCUMENT_ACCESS_LEVELS)[number];
 
+/** Community board moderation status. "removed" is the soft-delete tombstone. */
+export const COMMUNITY_POST_STATUSES = ["visible", "hidden", "removed"] as const;
+export type CommunityPostStatus = (typeof COMMUNITY_POST_STATUSES)[number];
+
 export const COMPLIANCE_KINDS = [
   "agm_due",
   "insurance_renewal",

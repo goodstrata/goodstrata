@@ -161,6 +161,39 @@ export const eventDefs = {
     template: z.string().nullable(),
   }),
   "announcement.published": lax,
+
+  // community board
+  "community.post.created": z.object({
+    postId: z.string(),
+    authorUserId: z.string(),
+    imageCount: z.number().int(),
+  }),
+  "community.post.removed": z.object({ postId: z.string(), removedBy: z.string() }),
+  "community.comment.created": z.object({
+    commentId: z.string(),
+    postId: z.string(),
+    authorUserId: z.string(),
+  }),
+  "community.comment.removed": z.object({
+    commentId: z.string(),
+    postId: z.string(),
+    removedBy: z.string(),
+  }),
+  /** active=true is a like, false an unlike — one event covers both toggle directions. */
+  "community.post.reacted": z.object({
+    postId: z.string(),
+    userId: z.string(),
+    reaction: z.string(),
+    active: z.boolean(),
+  }),
+  "community.comment.reacted": z.object({
+    commentId: z.string(),
+    postId: z.string(),
+    userId: z.string(),
+    reaction: z.string(),
+    active: z.boolean(),
+  }),
+
   "notification.created": z.object({
     notificationId: z.string(),
     userId: z.string(),

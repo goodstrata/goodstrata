@@ -9,6 +9,14 @@ export * as budgetsService from "./services/budgets.js";
 export { createBudgetInput } from "./services/budgets.js";
 export * as committeeService from "./services/committee.js";
 export * as commsService from "./services/comms.js";
+export type {
+  CommentView,
+  PostImageUpload,
+  PostSummary,
+  ThreadView,
+} from "./services/community.js";
+export * as communityService from "./services/community.js";
+export { createCommentInput, createPostInput } from "./services/community.js";
 export * as decisionsService from "./services/decisions.js";
 export * as documentsService from "./services/documents.js";
 export * as invitesService from "./services/invites.js";

@@ -10,6 +10,7 @@ import {
   Landmark,
   Layers,
   LayoutDashboard,
+  MessagesSquare,
   Scale,
   User,
   Users,
@@ -25,6 +26,7 @@ import { MeetingsTab } from "@/components/MeetingsTab";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ActivitySection } from "@/components/sections/ActivitySection";
 import { CommitteeSection } from "@/components/sections/CommitteeSection";
+import { CommunitySection } from "@/components/sections/CommunitySection";
 import { DocumentsSection } from "@/components/sections/DocumentsSection";
 import { LotsSection } from "@/components/sections/LotsSection";
 import { OverviewSection } from "@/components/sections/OverviewSection";
@@ -49,6 +51,7 @@ const SECTIONS = [
   "committee",
   "documents",
   "activity",
+  "community",
 ] as const;
 type Section = (typeof SECTIONS)[number];
 
@@ -101,6 +104,10 @@ const NAV_GROUPS: { heading: string | null; items: SectionItem[] }[] = [
       { key: "documents", label: "Documents", icon: FolderOpen },
       { key: "activity", label: "Activity", icon: Activity },
     ],
+  },
+  {
+    heading: "Community",
+    items: [{ key: "community", label: "Community", icon: MessagesSquare }],
   },
   {
     heading: "Automation",
@@ -175,6 +182,8 @@ function SectionBody({ schemeId, section }: { schemeId: string; section: Section
       return <DocumentsSection schemeId={schemeId} />;
     case "activity":
       return <ActivitySection schemeId={schemeId} />;
+    case "community":
+      return <CommunitySection schemeId={schemeId} />;
   }
 }
 

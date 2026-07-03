@@ -5,6 +5,7 @@ import { logger } from "hono/logger";
 import type { AppDeps } from "./deps.js";
 import { type AppEnv, requireAuth } from "./middleware.js";
 import { agentRunsRoutes } from "./routes/agents.js";
+import { communityRoutes } from "./routes/community.js";
 import { devRoutes } from "./routes/dev.js";
 import { eventsRoutes } from "./routes/events.js";
 import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
@@ -39,6 +40,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", financeRoutes(deps))
     .route("/schemes", decisionsRoutes(deps))
     .route("/schemes", maintenanceRoutes(deps))
+    .route("/schemes", communityRoutes(deps))
     .route("/schemes", meetingsRoutes(deps))
     .route("/schemes", notificationsRoutes(deps))
     .route("/schemes", agentRunsRoutes(deps))

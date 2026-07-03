@@ -1,5 +1,6 @@
 export * from "./auth.js";
 export * from "./comms.js";
+export * from "./community.js";
 export * from "./compliance.js";
 export * from "./contractors.js";
 export * from "./documents.js";

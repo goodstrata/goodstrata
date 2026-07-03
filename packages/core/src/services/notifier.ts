@@ -1,4 +1,4 @@
-import { lots, memberships, ownerships, people, users } from "@goodstrata/db";
+import { communityPosts, lots, memberships, ownerships, people, users } from "@goodstrata/db";
 import type { EventRecord } from "@goodstrata/events";
 import { formatCents, type MembershipRole } from "@goodstrata/shared";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -18,6 +18,7 @@ export const NOTIFIER_EVENT_TYPES = [
   "arrears.stage.reached",
   "minutes.drafted",
   "maintenance.request.created",
+  "community.comment.created",
 ] as const;
 
 /** Roles considered "the committee" for notification fan-out. */
@@ -202,6 +203,26 @@ export async function handleEventForNotifications(
         body: "A new maintenance request has been lodged and needs triage.",
         category: "maintenance",
         related: { type: "maintenance_request", id: payload.requestId },
+      });
+      return { created: created.length };
+    }
+
+    case "community.comment.created": {
+      const payload = event.payload as {
+        commentId: string;
+        postId: string;
+        authorUserId: string;
+      };
+      const post = await ctx.db.query.communityPosts.findFirst({
+        where: eq(communityPosts.id, payload.postId),
+      });
+      // Don't notify the author about their own comment.
+      if (!post || post.authorUserId === payload.authorUserId) return { created: 0 };
+      const created = await notifyUsers(ctx, schemeId, [post.authorUserId], {
+        title: "New comment on your post",
+        body: "Someone replied to your community board post.",
+        category: "general",
+        related: { type: "community_post", id: payload.postId },
       });
       return { created: created.length };
     }
