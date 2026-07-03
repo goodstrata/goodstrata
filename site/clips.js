@@ -49,6 +49,30 @@
       return; // no video load, no controls (they ship `hidden`)
     }
 
+    // Make sure the video actually loads before it's needed: preload="none"
+    // defers every byte, so an ambient play() at 50%-visible used to race the
+    // network (posters that never started, long dead frames). Start fetching
+    // once the clip is within ~600px of the viewport — by the time it's half
+    // visible, frames are ready. Skipped if playback already began.
+    if ("IntersectionObserver" in window) {
+      var warm = new IntersectionObserver(
+        function (entries, obs) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return;
+            if (video.readyState === 0 && video.paused) {
+              video.preload = "auto";
+              try {
+                video.load();
+              } catch (e) {}
+            }
+            obs.disconnect();
+          });
+        },
+        { rootMargin: "600px 0px" },
+      );
+      warm.observe(clip);
+    }
+
     // --- Play-with-sound button (generic: built for every clip) ---
     var playBtn = document.createElement("button");
     playBtn.type = "button";

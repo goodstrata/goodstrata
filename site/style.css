@@ -493,6 +493,10 @@ section p.lede {
   color: var(--faint-ink);
   font-size: 14px;
 }
+/* Footer spans the same width as the header bar, not the 880px prose column. */
+.site-footer .wrap {
+  max-width: 1280px;
+}
 .site-footer .footer-inner {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 2fr);
@@ -697,11 +701,14 @@ article ul.trust li b {
 }
 
 /* ---- header nav across pages ---- */
-/* The wrap that holds the header becomes a slim sticky bar. */
+/* The wrap that holds the header becomes a slim sticky bar. Wider than the
+   880px prose column so the full menu fits on one line on desktop; the
+   homepage hero matches this width (.wrap.hero-grid). */
 .wrap:has(> header.site) {
   position: sticky;
   top: 0;
   z-index: 60;
+  max-width: 1280px;
   background: transparent;
   transition:
     background 0.2s ease,
@@ -711,7 +718,6 @@ article ul.trust li b {
   background: color-mix(in oklab, var(--paper) 88%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
   -webkit-backdrop-filter: saturate(1.4) blur(12px);
-  box-shadow: 0 1px 0 var(--line);
 }
 header.site {
   gap: 16px;
@@ -732,6 +738,10 @@ header.site nav a {
   transition:
     color 0.15s ease,
     background 0.15s ease;
+}
+/* A touch of air between the quiet links and the loud CTA on desktop. */
+header.site nav .nav-btn {
+  margin-left: 14px;
 }
 header.site nav a:hover {
   color: var(--ink);
@@ -813,7 +823,7 @@ header.site nav .nav-btn:active {
   transform: translateY(-9px) rotate(-45deg);
 }
 
-@media (max-width: 820px) {
+@media (max-width: 1120px) {
   .nav-toggle {
     display: inline-flex;
   }
@@ -852,6 +862,7 @@ header.site nav .nav-btn:active {
   }
   header.site nav .nav-btn {
     margin-top: 6px;
+    margin-left: 0;
     text-align: center;
   }
 }
@@ -1307,15 +1318,42 @@ ul.proof-list li strong {
   }
 }
 
-/* ---- two-column hero: headline column + fee-receipt card ---- */
+/* ---- hero: the clip on top, then headline + fee-receipt card ----
+   The hero matches the header's 1280px width. The C1 clip takes the grid's
+   full first row — the video leads on desktop exactly as it does on mobile —
+   with the copy and the receipt side by side beneath it. */
+.wrap.hero-grid {
+  max-width: 1280px;
+}
 .hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(278px, 348px);
-  gap: 52px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 48px 56px;
   align-items: start;
 }
 .hero-copy h1 {
   max-width: none;
+}
+.hero-grid > .clip-wrap {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+}
+.hero-grid > .clip-wrap .clip {
+  margin: 0 auto;
+  max-width: 960px;
+}
+.hero-grid .hero-copy {
+  grid-column: 1;
+  grid-row: 2;
+}
+.hero-grid .hero-receipt {
+  grid-column: 2;
+  grid-row: 2;
+}
+/* Video leads the page — keep only a small gap under the sticky header. */
+.hero:has(.clip-wrap) {
+  padding-top: 24px;
 }
 @media (max-width: 880px) {
   .hero-grid {
@@ -1791,29 +1829,26 @@ ul.proof-list li strong {
 }
 
 /* --- mobile: put the clip ABOVE the hero copy + slider --------------------
-   Desktop keeps its natural order (clip below the two-column hero). At the
-   point the hero stacks to one column, flip to a flex column and pull the
-   clip to the top with order — pure CSS, no JS reflow, box already reserved
+   Desktop keeps the grid (copy + clip left, receipt right). At the point the
+   hero stacks to one column, flip the grid to a flex column and pull the clip
+   to the top with order — pure CSS, no JS reflow, box already reserved
    (aspect-ratio) so there's no CLS. */
 @media (max-width: 880px) {
-  .hero {
+  .hero-grid {
     display: flex;
     flex-direction: column;
+    gap: 36px;
   }
-  .hero > .clip-wrap {
+  .hero-grid > .clip-wrap {
     order: -1;
   }
-  .hero > .clip-wrap .clip {
+  .hero-grid > .clip-wrap .clip {
     margin-top: 0;
   }
   /* The clip is the first thing under the sticky header on mobile — keep only a
      small gap so it reads as the hero, not a floating block below empty space. */
-  .hero:has(> .clip-wrap) {
+  .hero:has(.clip-wrap) {
     padding-top: 14px;
-  }
-  /* Breathing room between the clip's "real number" CTA and the hero heading. */
-  .hero-grid {
-    margin-top: 34px;
   }
 }
 @media (max-width: 620px) {

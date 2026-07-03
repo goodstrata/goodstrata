@@ -114,12 +114,13 @@
         update();
       })();
     </script>
-  </div>
-  <!-- C1 "The Number" — the flagship explainer, tying the animated number to
-       the live slider above. Muted, looped, self-contained; JS (clips.js) only
-       plays it when ≥50% in view and never loads it for reduced-motion / Save-Data. -->
-  <div class="wrap clip-wrap">
-    <figure class="clip" id="c1-clip">
+    <!-- C1 "The Number" — the flagship explainer, tying the animated number to
+         the live slider beside it. Lives INSIDE the hero grid so desktop sees it
+         next to the receipt; mobile pulls it to the top (order). Muted, looped,
+         self-contained; clips.js pre-warms it near view and never loads it for
+         reduced-motion / Save-Data. -->
+    <div class="clip-wrap">
+      <figure class="clip" id="c1-clip">
       <div class="clip-frame">
         <video
           class="clip-video"
@@ -156,7 +157,8 @@
           It's free, and we don't store your file.
         </p>
       </figcaption>
-    </figure>
+      </figure>
+    </div>
   </div>
 </div>
 

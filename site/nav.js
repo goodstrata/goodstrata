@@ -23,7 +23,9 @@
     logo.insertBefore(orbit, logo.firstChild);
   }
 
-  var MOBILE = window.matchMedia("(max-width: 820px)");
+  // Must match the style.css nav breakpoint: below this the menu is a
+  // hamburger + dropdown; above it the full link row fits on one line.
+  var MOBILE = window.matchMedia("(max-width: 1120px)");
 
   // Mark the current page (normalise trailing slashes).
   var here = location.pathname.replace(/\/+$/, "") || "/";
