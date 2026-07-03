@@ -28,12 +28,12 @@ function StatCard({ label, value, hint, tone, hero = false, className }: StatCar
   return (
     <div
       data-slot="stat-card"
-      className={cn("rounded-lg border bg-card px-4 py-3 shadow-xs", className)}
+      className={cn("min-w-0 rounded-lg border bg-card px-4 py-3 shadow-xs", className)}
     >
       <p className="eyebrow text-muted-foreground">{label}</p>
       <p
         className={cn(
-          "mt-1.5 text-xl sm:text-2xl",
+          "mt-1.5 text-xl break-words sm:text-2xl",
           hero ? "font-display font-bold tracking-tight" : "font-mono font-bold tabular-nums",
           tone && statToneClasses[tone],
         )}

@@ -1059,10 +1059,9 @@ function MotionCard({
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <Select value={lotId} onValueChange={setLotId}>
                 <SelectTrigger
-                  size="sm"
                   data-testid="vote-lot"
                   aria-label="Choose your lot"
-                  className="w-full sm:w-40"
+                  className="min-h-11 w-full sm:w-40"
                 >
                   <SelectValue placeholder="My lot…" />
                 </SelectTrigger>
@@ -1079,8 +1078,7 @@ function MotionCard({
                   <Button
                     key={choice}
                     variant="outline"
-                    size="sm"
-                    className="flex-1 sm:flex-none"
+                    className="min-h-11 flex-1 sm:flex-none"
                     disabled={!lotId || vote.isPending}
                     pending={vote.isPending && vote.variables === choice}
                     onClick={() => vote.mutate(choice)}
