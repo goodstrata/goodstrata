@@ -83,12 +83,13 @@
           managed-cloud dependency to sign up for; the append-only event bus is just Postgres with
           <code>LISTEN/NOTIFY</code>. And every paid integration ships with an offline default, so
           you can run a complete building with zero external accounts and zero recurring bills: email
-          falls back to a local sink, payments to a manual rail, hosted AI to a local model. Nothing
+          falls back to a local sink (or your own SMTP server), payments to a manual rail, hosted AI
+          to a local model. Nothing
           about the free path is crippled — it's the same code the managed service runs.
         </p>
       </div>
       <ul class="checklist">
-        <li><strong>Email</strong> → local/console sink instead of a paid sending service.</li>
+        <li><strong>Email</strong> → a console sink by default; point it at your own SMTP server (or SES) for real delivery.</li>
         <li><strong>Payments</strong> → manual reconciliation instead of the hosted NPP/PayID rail.</li>
         <li><strong>AI</strong> → a model on your own machine instead of a hosted API.</li>
       </ul>
