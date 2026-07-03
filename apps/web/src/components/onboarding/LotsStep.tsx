@@ -46,6 +46,7 @@ export function LotsStep({
         queryClient.invalidateQueries({ queryKey: ["lots", schemeId] }),
         queryClient.invalidateQueries({ queryKey: ["people", schemeId] }),
         queryClient.invalidateQueries({ queryKey: ["onboarding", schemeId] }),
+        queryClient.invalidateQueries({ queryKey: ["overview", schemeId] }),
         queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] }),
       ]);
       onDone(count);

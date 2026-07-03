@@ -187,6 +187,7 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
       toast.success("Document uploaded");
       void queryClient.invalidateQueries({ queryKey: ["documents", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["onboarding", schemeId] });
+      void queryClient.invalidateQueries({ queryKey: ["overview", schemeId] });
     },
   });
 

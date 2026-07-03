@@ -1,165 +1,55 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CircleAlert, CircleCheck } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery } from "@tanstack/react-query";
+import { OnboardingChecklist } from "@/components/overview/OnboardingChecklist";
+import { OverviewDashboard, type OverviewData } from "@/components/overview/OverviewDashboard";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatCard } from "@/components/ui/stat-card";
 import { api, unwrap } from "@/lib/api";
 import { useIsOfficer } from "@/lib/roles";
-import { cn } from "@/lib/utils";
 
-interface Onboarding {
-  hasLots: boolean;
-  hasInsurance: boolean;
-  ready: boolean;
-  status: string;
-}
-
+/**
+ * The scheme landing screen. Before activation it is the onboarding checklist;
+ * once the owners corporation is active it becomes a useful building dashboard.
+ * Both states are driven by one composed `GET /:schemeId/overview` read.
+ */
 export function OverviewSection({ schemeId }: { schemeId: string }) {
-  const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
   const { data, isError, error, refetch } = useQuery({
-    queryKey: ["onboarding", schemeId],
+    queryKey: ["overview", schemeId],
     queryFn: async () =>
-      unwrap<Onboarding>(await api.schemes[":schemeId"].onboarding.$get({ param: { schemeId } })),
-  });
-  const activate = useMutation({
-    mutationFn: async () =>
-      unwrap(await api.schemes[":schemeId"].activate.$post({ param: { schemeId } })),
-    onSuccess: () => {
-      toast.success("Scheme activated — agents are watching the event bus");
-      void queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
-      void queryClient.invalidateQueries({ queryKey: ["onboarding", schemeId] });
-    },
+      unwrap<OverviewData>(await api.schemes[":schemeId"].overview.$get({ param: { schemeId } })),
   });
 
   if (isError) {
     return (
       <div className="max-w-xl">
         <ErrorState
-          message={
-            error instanceof Error ? error.message : "Couldn't load the onboarding checklist."
-          }
+          message={error instanceof Error ? error.message : "Couldn't load the overview."}
           onRetry={() => void refetch()}
         />
       </div>
     );
   }
-  if (!data) return <Skeleton className="h-48 max-w-xl" />;
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {["admin", "maintenance", "levied", "arrears"].map((key) => (
+            <Skeleton key={key} className="h-[4.75rem] rounded-lg" />
+          ))}
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Skeleton className="h-48 rounded-xl" />
+          <Skeleton className="h-48 rounded-xl" />
+        </div>
+      </div>
+    );
+  }
 
-  const steps = [
-    { label: "Scheme registered", done: true },
-    { label: "Lots imported from plan of subdivision", done: data.hasLots },
-    { label: "Insurance certificate of currency uploaded", done: data.hasInsurance },
-  ];
-  const completed = steps.filter((s) => s.done).length;
-  const isActive = data.status === "active";
+  if (data.scheme.status !== "active") {
+    return (
+      <OnboardingChecklist schemeId={schemeId} onboarding={data.onboarding} isOfficer={isOfficer} />
+    );
+  }
 
-  return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_15rem]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Onboarding checklist</CardTitle>
-          <CardDescription>
-            Everything a compliant owners corporation needs before going live.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ol className="space-y-0" data-testid="onboarding-checklist">
-            {steps.map((step, i) => {
-              const last = i === steps.length - 1;
-              return (
-                <li key={step.label} className="relative flex gap-3 pb-6 last:pb-0">
-                  {!last && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute top-6 left-[11px] h-[calc(100%-1.5rem)] w-px bg-border"
-                    />
-                  )}
-                  <span
-                    className={cn(
-                      "relative z-10 flex size-6 shrink-0 items-center justify-center rounded-full border",
-                      step.done
-                        ? "border-positive/30 bg-positive/10 text-positive"
-                        : "border-border bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {step.done ? (
-                      <Check aria-hidden="true" className="size-3.5" strokeWidth={3} />
-                    ) : (
-                      <span
-                        aria-hidden="true"
-                        className="size-1.5 rounded-full bg-current opacity-40"
-                      />
-                    )}
-                    <span className="sr-only">{step.done ? "complete" : "incomplete"}</span>
-                  </span>
-                  <span
-                    className={cn(
-                      "pt-0.5 text-sm",
-                      step.done ? "font-medium text-foreground" : "text-muted-foreground",
-                    )}
-                  >
-                    {step.label}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-
-          {!isActive && isOfficer && (
-            <div className="mt-6 space-y-2">
-              <Button
-                disabled={!data.ready || activate.isPending}
-                pending={activate.isPending}
-                onClick={() => activate.mutate()}
-              >
-                Activate scheme
-              </Button>
-              <p className="max-w-md text-[13px] text-muted-foreground">
-                What happens when you activate: the scheme goes live and its agents begin recording
-                every levy, meeting and maintenance job on the event bus.
-              </p>
-              {activate.error && (
-                <p className="flex items-start gap-1.5 text-[13px] text-critical">
-                  <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-                  <span>{activate.error.message}</span>
-                </p>
-              )}
-            </div>
-          )}
-
-          {!isActive && !isOfficer && (
-            <p className="mt-6 text-sm text-muted-foreground">
-              An office holder will activate the scheme once the checklist is complete.
-            </p>
-          )}
-
-          {isActive && (
-            <p className="mt-6 flex items-center gap-2 text-sm text-positive">
-              <CircleCheck aria-hidden="true" className="size-4 shrink-0" />
-              This owners corporation is active. Agents are watching the event bus.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <aside className="space-y-4">
-        <StatCard
-          label="Onboarding"
-          value={`${completed} / ${steps.length}`}
-          tone={completed === steps.length ? "positive" : "caution"}
-          hint={
-            isActive
-              ? "Scheme is active"
-              : data.ready
-                ? "Ready to activate"
-                : "Awaiting checklist items"
-          }
-        />
-      </aside>
-    </div>
-  );
+  return <OverviewDashboard schemeId={schemeId} data={data} />;
 }

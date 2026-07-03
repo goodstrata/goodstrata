@@ -28,6 +28,7 @@ import {
   peopleRoutes,
   publicInviteRoutes,
 } from "./routes/onboarding.js";
+import { overviewRoutes } from "./routes/overview.js";
 import { profileRoutes } from "./routes/profile.js";
 import { schemesRoutes } from "./routes/schemes.js";
 import { trustRoutes } from "./routes/trust.js";
@@ -39,6 +40,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
   const api = new Hono<AppEnv>()
     .use("*", requireAuth(deps))
     .route("/schemes", schemesRoutes(deps))
+    .route("/schemes", overviewRoutes(deps))
     .route("/schemes", eventsRoutes(deps))
     .route("/schemes", sseRoutes(deps, hub))
     .route("/schemes", lotsRoutes(deps))

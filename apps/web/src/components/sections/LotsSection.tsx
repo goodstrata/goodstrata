@@ -69,6 +69,7 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
       void queryClient.invalidateQueries({ queryKey: ["lots", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["people", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["onboarding", schemeId] });
+      void queryClient.invalidateQueries({ queryKey: ["overview", schemeId] });
       void queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
     },
   });
