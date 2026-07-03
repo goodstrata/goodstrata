@@ -344,6 +344,16 @@ h2 em {
   gap: 12px;
   flex-wrap: wrap;
 }
+/* Phones: a clean single-column stack beats three ragged-width pills. */
+@media (max-width: 620px) {
+  .cta-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cta-row .btn {
+    text-align: center;
+  }
+}
 .btn {
   display: inline-block;
   padding: 13px 26px;
@@ -511,13 +521,29 @@ section p.lede {
   max-width: 34ch;
 }
 .site-footer .footer-mark {
+  /* The wireframe-cube mark, cropped from the full logo lockup so the footer
+     carries the same drawn cube as the header — icon only, no wordmark. */
   display: block;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  /* the icon carries its own gradient tile, so it reads on both paper and
-     after-hours; a hairline ring keeps its edge crisp on either background */
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--ink) 12%, transparent);
+  width: 37px;
+  height: 34px;
+  overflow: hidden;
+}
+.site-footer .footer-mark img {
+  display: block;
+  height: 34px;
+  width: auto;
+  max-width: none;
+}
+.site-footer .footer-mark .on-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  .site-footer .footer-mark .on-light {
+    display: none;
+  }
+  .site-footer .footer-mark .on-dark {
+    display: block;
+  }
 }
 .site-footer .footer-tag {
   font-size: 14.5px;
@@ -719,7 +745,9 @@ article ul.trust li b {
   margin: 0 auto;
 }
 .wrap:has(> header.site).scrolled {
-  background: color-mix(in oklab, var(--paper) 88%, transparent);
+  /* 94% paper: translucent enough to feel light, opaque enough that video
+     frames and dark bands scrolling beneath never turn the bar muddy. */
+  background: color-mix(in oklab, var(--paper) 94%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
   -webkit-backdrop-filter: saturate(1.4) blur(12px);
 }

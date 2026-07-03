@@ -40,7 +40,8 @@ html { font-size: 10.5pt; }
 body {
   font-family: var(--font-sans);
   color: var(--ink);
-  background: var(--paper);
+  /* No page tint: print margins would leave it inset from the page edge, so
+     the sheet stays plain white and only the accent blocks carry colour. */
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
