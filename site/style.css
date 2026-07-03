@@ -213,7 +213,7 @@ header.site .logo {
   width: 46px;
   height: 46px;
   border: 1.5px solid color-mix(in oklab, var(--primary) 55%, transparent);
-  border-radius: 8px;
+  border-radius: 3px;
   background: color-mix(in oklab, var(--primary) 8%, transparent);
   transform-style: preserve-3d;
   animation: logoOrbit 7s linear infinite;
