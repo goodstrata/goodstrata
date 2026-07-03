@@ -208,10 +208,10 @@ header.site .logo {
 }
 .logo-cube {
   position: absolute;
-  left: -20px;
-  top: -20px;
-  width: 40px;
-  height: 40px;
+  left: -13px;
+  top: -13px;
+  width: 26px;
+  height: 26px;
   transform-style: preserve-3d;
   animation: cubeSpin 9s linear infinite;
 }
@@ -223,22 +223,22 @@ header.site .logo {
   border-radius: 3px;
 }
 .cf-front {
-  transform: translateZ(20px);
+  transform: translateZ(13px);
 }
 .cf-back {
-  transform: rotateY(180deg) translateZ(20px);
+  transform: rotateY(180deg) translateZ(13px);
 }
 .cf-right {
-  transform: rotateY(90deg) translateZ(20px);
+  transform: rotateY(90deg) translateZ(13px);
 }
 .cf-left {
-  transform: rotateY(-90deg) translateZ(20px);
+  transform: rotateY(-90deg) translateZ(13px);
 }
 .cf-top {
-  transform: rotateX(90deg) translateZ(20px);
+  transform: rotateX(90deg) translateZ(13px);
 }
 .cf-bottom {
-  transform: rotateX(-90deg) translateZ(20px);
+  transform: rotateX(-90deg) translateZ(13px);
 }
 @keyframes cubeSpin {
   from {
@@ -1457,11 +1457,112 @@ ul.proof-list li strong {
 .clip-cta:hover {
   color: var(--primary-strong);
 }
+
+/* --- tap-to-unmute affordance ---------------------------------------------
+   The clip autoplays muted (browser policy) and loops as ambient motion.
+   clips.js reveals this pill; a tap unmutes, restarts from 0, and plays with
+   sound. Once sound is on, .clip-sound-on hides the pill. */
+.clip-sound {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: rgba(15, 20, 28, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+.clip-sound:hover {
+  background: rgba(15, 20, 28, 0.8);
+}
+.clip-sound[hidden] {
+  display: none;
+}
+.clip-sound-on .clip-sound {
+  display: none;
+}
+
+/* --- "Watch again" overlay -------------------------------------------------
+   Once the viewer has opted into sound the loop is off; on 'ended' clips.js
+   reveals this full-frame button. Big tap target, on-brand eucalypt. */
+.clip-again {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(9, 91, 65, 0.34);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+}
+.clip-again[hidden] {
+  display: none;
+}
+.clip-again-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--on-primary);
+  background: var(--primary);
+  padding: 17px 32px;
+  border-radius: 12px;
+  box-shadow: 0 20px 44px -18px rgba(9, 91, 65, 0.85);
+}
+.clip-again:hover .clip-again-btn {
+  background: var(--primary-strong);
+}
+
+/* --- mobile: put the clip ABOVE the hero copy + slider --------------------
+   Desktop keeps its natural order (clip below the two-column hero). At the
+   point the hero stacks to one column, flip to a flex column and pull the
+   clip to the top with order — pure CSS, no JS reflow, box already reserved
+   (aspect-ratio) so there's no CLS. */
+@media (max-width: 880px) {
+  .hero {
+    display: flex;
+    flex-direction: column;
+  }
+  .hero > .clip-wrap {
+    order: -1;
+  }
+  .hero > .clip-wrap .clip {
+    margin-top: 0;
+  }
+  .hero-grid {
+    margin-top: 8px;
+  }
+}
 @media (max-width: 620px) {
   .clip {
     margin-top: 34px;
   }
   .clip-frame {
     border-radius: 12px;
+  }
+  .clip-again-btn {
+    font-size: 21px;
+    padding: 21px 36px;
+    border-radius: 14px;
+  }
+  .clip-sound {
+    font-size: 13px;
+    padding: 9px 15px;
   }
 }
