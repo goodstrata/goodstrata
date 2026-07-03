@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tools — GoodStrata</title>
+  <meta name="description" content="GoodStrata's tools: ask Claude about your building through the GoodStrata connector, and check what your strata manager really costs with the fee tool." />
+  <meta property="og:title" content="GoodStrata Tools — ask Claude about your building" />
+  <meta property="og:description" content="Connect GoodStrata to Claude and ask about your building in plain English. Plus the free fee-check tool." />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
+  <link rel="icon" href="/favicon.ico" sizes="32x32" />
+  <link rel="icon" href="/icon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .tool-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--card);
+      padding: 28px;
+      margin-top: 22px;
+    }
+    .tool-card h2 { font-size: clamp(21px, 3vw, 27px); }
+    .tool-card > p { color: var(--muted-ink); margin-top: 8px; max-width: 60ch; }
+    .steps { counter-reset: tstep; margin: 22px 0 0; padding: 0; list-style: none; }
+    .steps li {
+      counter-increment: tstep;
+      position: relative;
+      padding: 4px 0 18px 46px;
+      border-left: 2px solid var(--line);
+      margin-left: 15px;
+    }
+    .steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
+    .steps li::before {
+      content: counter(tstep);
+      position: absolute;
+      left: -16px;
+      top: 0;
+      width: 30px; height: 30px;
+      display: grid; place-items: center;
+      border-radius: 50%;
+      background: var(--primary); color: var(--on-primary);
+      font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    }
+    .steps li b { color: var(--ink); }
+    .copyrow {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      margin: 8px 0 4px;
+    }
+    .copyrow code {
+      font-family: var(--font-mono); font-size: 14px;
+      background: var(--accent); color: var(--accent-ink);
+      padding: 8px 12px; border-radius: 8px;
+      border: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+    }
+    .copybtn {
+      font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+      padding: 8px 12px; border-radius: 8px; cursor: pointer;
+      background: var(--primary); color: var(--on-primary); border: 0;
+    }
+    .asks { margin-top: 14px; display: grid; gap: 8px; }
+    .asks .ask {
+      font-family: var(--font-mono); font-size: 13.5px;
+      color: var(--ink);
+      background: color-mix(in oklab, var(--ink) 4%, transparent);
+      padding: 10px 14px; border-radius: 9px;
+    }
+    .tool-note { margin-top: 18px; font-size: 13.5px; color: var(--muted-ink); }
+    .tool-note b { color: var(--ink); }
+  </style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="site">
+    <a class="logo" href="/">
+      <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
+      <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
+    </a>
+    <nav aria-label="Primary">
+      <a href="/how-it-works/">How it works</a>
+      <a href="/how-we-make-money/">How we make money</a>
+      <a href="/open-source/">Open source</a>
+      <a href="/tools/">Tools</a>
+      <a href="/for-owners/">Rally your building</a>
+      <a href="https://my.goodstrata.com.au/login">Sign in</a>
+      <a class="nav-btn" href="/what-am-i-paying/">What am I paying?</a>
+    </nav>
+  </header>
+</div>
+
+<div class="hero">
+  <div class="wrap">
+    <h1>Tools</h1>
+    <p class="sub">
+      Beyond the app: ask Claude about your building in plain English, and check what your
+      strata manager really costs — free, nothing to install.
+    </p>
+  </div>
+</div>
+
+<section>
+  <div class="wrap" style="max-width: 820px">
+
+    <div class="tool-card">
+      <h2>Ask Claude about your building</h2>
+      <p>
+        GoodStrata plugs into Claude (and other AI assistants that support connectors) as a secure
+        connector. Add it once, sign in with your GoodStrata account, and just ask — no dashboards,
+        no exports. It reads your live building data and answers in plain English.
+      </p>
+
+      <ol class="steps">
+        <li>
+          In Claude, open <b>Settings → Connectors → Add custom connector</b> and paste the GoodStrata URL:
+          <div class="copyrow">
+            <code id="mcpUrl">https://mcp.goodstrata.com.au/mcp</code>
+            <button class="copybtn" id="copyMcp" type="button">Copy</button>
+          </div>
+        </li>
+        <li>When Claude opens a GoodStrata sign-in window, <b>sign in with your GoodStrata account</b> and approve access.</li>
+        <li>
+          That's it — <b>just ask</b>:
+          <div class="asks">
+            <span class="ask">"Give me a briefing on my building."</span>
+            <span class="ask">"What needs my attention this week?"</span>
+            <span class="ask">"What's our financial position — any lots in arrears?"</span>
+          </div>
+        </li>
+      </ol>
+
+      <p class="tool-note">
+        <b>Read-only for now.</b> The connector can read your building — it can't change anything,
+        approve decisions, or move money. Those always stay a human tap inside the app. It uses the
+        same sign-in and the same permissions you already have.
+      </p>
+    </div>
+
+    <div class="tool-card">
+      <h2>What am I paying my strata manager?</h2>
+      <p>
+        Drop in your AGM papers, budget, or a photo of your financial statement, and we'll read the
+        numbers and show you — in plain dollars — what your manager charges each year. Free, and we
+        don't store your document.
+      </p>
+      <div class="cta-row" style="margin-top: 18px">
+        <a class="btn primary" href="/what-am-i-paying/">Check what you're paying →</a>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Good Strata Pty Ltd · Apache-2.0</span>
+    <span>
+      <a href="/how-we-make-money/">How we make money</a> ·
+      <a href="/for-owners/">Rally your building</a> ·
+      <a href="/terms/">Terms</a> · <a href="/privacy/">Privacy</a> ·
+      <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("copyMcp");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var url = document.getElementById("mcpUrl").textContent.trim();
+      navigator.clipboard.writeText(url).then(function () {
+        var old = btn.textContent;
+        btn.textContent = "Copied ✓";
+        setTimeout(function () { btn.textContent = old; }, 1600);
+      });
+    });
+  })();
+</script>
+<script src="/nav.js" defer></script>
+</body>
+</html>

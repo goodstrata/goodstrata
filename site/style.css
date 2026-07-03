@@ -1159,6 +1159,54 @@ ul.proof-list li strong {
   background: var(--accent);
   color: var(--accent-ink);
 }
+.receipt-slider {
+  margin-bottom: 20px;
+}
+.receipt-slider label {
+  display: block;
+  font-size: 14px;
+  color: var(--muted-ink);
+  margin-bottom: 11px;
+}
+.receipt-slider label b {
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.receipt-slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--primary) 24%, var(--line));
+  cursor: pointer;
+}
+.receipt-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 3px solid var(--card);
+  box-shadow: 0 2px 9px -1px rgb(9 91 65 / 55%);
+  cursor: pointer;
+}
+.receipt-slider input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--card);
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+}
+.receipt-note {
+  margin-top: 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--faint-ink);
+}
 .receipt-hero,
 .receipt-total {
   display: flex;

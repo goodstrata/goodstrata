@@ -27,8 +27,8 @@
       <a href="/how-it-works/">How it works</a>
       <a href="/how-we-make-money/">How we make money</a>
       <a href="/open-source/">Open source</a>
+      <a href="/tools/">Tools</a>
       <a href="/for-owners/">Rally your building</a>
-      <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
       <a href="https://my.goodstrata.com.au/login">Sign in</a>
       <a class="nav-btn" href="/what-am-i-paying/">What am I paying?</a>
     </nav>
@@ -56,23 +56,46 @@
       </p>
     </div>
     <aside class="hero-receipt" aria-label="What a typical building pays before and after GoodStrata">
-      <span class="receipt-badge">Typical 12-lot building · per year</span>
+      <div class="receipt-slider">
+        <label for="lotSlider">Your building — <b><span id="lotCount">12</span> lots</b></label>
+        <input type="range" id="lotSlider" min="2" max="60" value="12" step="1"
+               aria-label="Number of lots in your building" />
+      </div>
       <div class="receipt-hero">
-        <span class="receipt-label">Your strata manager charges</span>
-        <span class="receipt-big struck">$8,400<span class="yr"> /yr</span></span>
+        <span class="receipt-label">A strata manager charges about</span>
+        <span class="receipt-big struck"><span id="rTotal">$8,400</span><span class="yr"> /yr</span></span>
       </div>
       <div class="receipt-lines">
-        <div class="rl"><span>Base management fee</span><span>$6,600</span></div>
-        <div class="rl"><span>Disbursements &amp; sundries</span><span>$1,320</span></div>
-        <div class="rl"><span>Meeting &amp; AGM fees</span><span>$480</span></div>
+        <div class="rl"><span>Base management fee</span><span id="rMgmt">$6,600</span></div>
+        <div class="rl"><span>Disbursements &amp; sundries</span><span id="rAdmin">$1,320</span></div>
+        <div class="rl"><span>Meeting &amp; AGM fees</span><span id="rMeet">$480</span></div>
         <div class="rl comm"><span>Insurance commission</span><span>undisclosed</span></div>
       </div>
       <div class="receipt-total">
         <span class="receipt-label">With GoodStrata</span>
         <span class="receipt-big zero">$0<span class="yr"> /yr</span></span>
       </div>
+      <p class="receipt-note">Based on the Australian average of about $700 per lot, per year. Your real number is in your AGM papers — check it below.</p>
       <a class="receipt-cta" href="/what-am-i-paying/">Check your building's real number →</a>
     </aside>
+    <script>
+      (function () {
+        var s = document.getElementById("lotSlider");
+        if (!s) return;
+        var money = function (n) { return "$" + Math.round(n).toLocaleString("en-AU"); };
+        var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+        function update() {
+          var lots = +s.value;
+          set("lotCount", lots);
+          set("rMgmt", money(lots * 550));
+          set("rAdmin", money(lots * 110));
+          set("rMeet", money(lots * 40));
+          set("rTotal", money(lots * 700));
+        }
+        s.addEventListener("input", update);
+        update();
+      })();
+    </script>
   </div>
 </div>
 
@@ -191,7 +214,7 @@
   <div class="wrap">
     <h2 class="section-head">We ran a whole building on one laptop, with a local model.</h2>
     <p class="lede">
-      A seeded 12-lot Fitzroy walk-up, a full month of management: arrears chased correct to the
+      A seeded 12-lot walk-up, a full month of management: arrears chased correct to the
       cent, a roof leak triaged and dispatched under a code-enforced threshold, minutes drafted
       without inventing a word, and exactly one committee approval for the only thing that needed
       a human. <a href="/blog/announcing-goodstrata/">The full story, with transcripts →</a>
@@ -255,7 +278,8 @@
     <span>
       <a href="/how-it-works/">How it works</a> ·
       <a href="/how-we-make-money/">How we make money</a> ·
-      <a href="/open-source/">Open source</a> ·
+      <a href="/open-source/">Open source</a>
+      <a href="/tools/">Tools</a> ·
       <a href="/for-owners/">Rally your building</a> ·
       <a href="/blog/announcing-goodstrata/">Blog</a> ·
       <a href="https://github.com/goodstrata/goodstrata">GitHub</a> ·
