@@ -1,6 +1,7 @@
-import { Bot, User } from "lucide-react";
+import { Activity, Bot, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -43,35 +44,42 @@ export function ActivitySection({ schemeId }: { schemeId: string }) {
       <p className="text-sm text-muted-foreground">
         Live event feed — every domain event on this scheme's bus, as it happens.
       </p>
-      <ol
-        className="relative mt-4 space-y-0 border-l border-border pl-6"
-        data-testid="event-feed"
-        aria-live="polite"
-      >
-        {events.length === 0 && (
-          <li className="py-2 text-sm text-muted-foreground">Waiting for events…</li>
-        )}
-        {events.map((evt) => (
-          <li key={evt.id} className="relative pb-5 last:pb-0">
-            <span
-              aria-hidden="true"
-              className={cn(
-                "absolute top-1.5 -left-[30px] size-2.5 rounded-full ring-4 ring-background",
-                evt.actor.kind === "agent" ? "bg-agent" : "bg-foreground",
-              )}
-            />
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="min-w-0 flex-1 truncate font-mono text-sm font-medium">
-                {evt.type}
-              </span>
-              <ActorBadge actor={evt.actor} />
-              <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-                #{evt.seq} · {formatTime(evt.occurredAt)}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ol>
+      {events.length === 0 ? (
+        <div className="mt-4" data-testid="event-feed" aria-live="polite">
+          <EmptyState
+            icon={Activity}
+            title="No activity yet"
+            description="Every levy, meeting and maintenance job on the scheme's bus will appear here."
+          />
+        </div>
+      ) : (
+        <ol
+          className="relative mt-4 space-y-0 border-l border-border pl-6"
+          data-testid="event-feed"
+          aria-live="polite"
+        >
+          {events.map((evt) => (
+            <li key={evt.id} className="relative pb-5 last:pb-0">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute top-1.5 -left-[30px] size-2.5 rounded-full ring-4 ring-background",
+                  evt.actor.kind === "agent" ? "bg-agent" : "bg-foreground",
+                )}
+              />
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="min-w-0 flex-1 truncate font-mono text-sm font-medium">
+                  {evt.type}
+                </span>
+                <ActorBadge actor={evt.actor} />
+                <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+                  #{evt.seq} · {formatTime(evt.occurredAt)}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }

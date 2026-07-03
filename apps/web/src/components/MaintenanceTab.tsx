@@ -73,7 +73,7 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
         description="Report issues, follow the agent's triage, and track work through to completion."
         actions={<ReportIssueDialog schemeId={schemeId} onChange={invalidate} />}
       />
-      <RequestList schemeId={schemeId} />
+      <RequestList schemeId={schemeId} onChange={invalidate} />
       <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       {isOfficer && <ContractorSection schemeId={schemeId} onChange={invalidate} />}
     </div>
@@ -176,7 +176,7 @@ function ReportIssueDialog({ schemeId, onChange }: { schemeId: string; onChange:
   );
 }
 
-function RequestList({ schemeId }: { schemeId: string }) {
+function RequestList({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["maintenance", schemeId],
     queryFn: async () =>
@@ -205,6 +205,7 @@ function RequestList({ schemeId }: { schemeId: string }) {
             icon={Wrench}
             title="No maintenance requests yet"
             description="Report an issue and the maintenance agent triages it automatically."
+            action={<ReportIssueDialog schemeId={schemeId} onChange={onChange} />}
           />
         )}
         {data?.requests.map((r) => (

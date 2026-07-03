@@ -220,19 +220,20 @@ export function GrievancesTab({ schemeId }: { schemeId: string }) {
           />
         </>
       ) : (
-        <MemberNotice />
+        <MemberNotice schemeId={schemeId} onChange={invalidate} />
       )}
     </div>
   );
 }
 
 /** Non-officers can lodge a complaint but don't see the register. */
-function MemberNotice() {
+function MemberNotice({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
   return (
     <EmptyState
       icon={ShieldAlert}
       title="Raise a complaint in confidence"
       description="Lodged complaints go to your committee, who must meet and discuss the matter within 28 days. You'll be contacted about the outcome."
+      action={<RaiseComplaintDialog schemeId={schemeId} onChange={onChange} />}
     />
   );
 }

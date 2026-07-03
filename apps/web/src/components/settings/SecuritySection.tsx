@@ -303,7 +303,11 @@ function SessionsCard() {
             onRetry={() => void refetch()}
           />
         ) : sessions.length === 0 ? (
-          <EmptyState icon={Monitor} title="No active sessions" />
+          <EmptyState
+            icon={Monitor}
+            title="No active sessions"
+            description="Signed-in devices and browsers will appear here — sign in elsewhere to see a session listed."
+          />
         ) : (
           <ul className="divide-y">
             {ordered.map((s) => {
