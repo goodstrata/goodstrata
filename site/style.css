@@ -701,18 +701,22 @@ article ul.trust li b {
 }
 
 /* ---- header nav across pages ---- */
-/* The wrap that holds the header becomes a slim sticky bar. Wider than the
-   880px prose column so the full menu fits on one line on desktop; the
-   homepage hero matches this width (.wrap.hero-grid). */
+/* The wrap that holds the header becomes a slim sticky bar. The BAR bleeds the
+   full viewport width; the header content inside stays centered at the same
+   1280px the homepage hero and footer use (1232px + the wrap's 2×24 padding). */
 .wrap:has(> header.site) {
   position: sticky;
   top: 0;
   z-index: 60;
-  max-width: 1280px;
+  max-width: none;
   background: transparent;
   transition:
     background 0.2s ease,
     box-shadow 0.2s ease;
+}
+.wrap:has(> header.site) > header.site {
+  max-width: 1232px;
+  margin: 0 auto;
 }
 .wrap:has(> header.site).scrolled {
   background: color-mix(in oklab, var(--paper) 88%, transparent);
