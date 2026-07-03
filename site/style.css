@@ -74,7 +74,7 @@
   --card: oklch(1 0 0);
   --ink: oklch(0.21 0.035 260);
   --muted-ink: oklch(0.44 0.024 258);
-  --faint-ink: oklch(0.55 0.018 256);
+  --faint-ink: oklch(0.47 0.02 256);
   --line: oklch(0.905 0.008 250);
   /* eucalypt */
   --primary: oklch(0.42 0.085 165);

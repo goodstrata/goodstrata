@@ -21,7 +21,8 @@
       background: var(--card); padding: 44px 24px; text-align: center;
       cursor: pointer; transition: border-color .15s ease, background .15s ease;
     }
-    .dropzone:hover, .dropzone:focus-visible { border-color: var(--primary); outline: none; }
+    .dropzone:hover { border-color: var(--primary); }
+    .dropzone:focus-visible { border-color: var(--primary); outline: 2px solid var(--primary); outline-offset: 3px; }
     .dropzone.drag { border-color: var(--primary); background: var(--accent); }
     .dropzone .dz-mark { display: inline-flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
     .dropzone .dz-mark span { display: block; height: 3px; width: 30px; border-radius: 2px; background: var(--primary); }
@@ -44,7 +45,8 @@
     .result .meta { margin-top: 18px; font-size: 14px; color: var(--muted-ink); }
     .result .flag { margin-top: 16px; padding: 14px 18px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 15px; border-left: 2px solid var(--primary); }
     .estimator .status { margin-top: 28px; color: var(--muted-ink); font-size: 16px; }
-    .estimator .status.err { color: oklch(0.54 0.19 27); }
+    .estimator .status.err { color: oklch(0.47 0.18 27); }
+    @media (prefers-color-scheme: dark) { .estimator .status.err { color: oklch(0.74 0.16 27); } }
     .est-cta { margin-top: 40px; padding: 32px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
     .est-cta h3 { font-family: var(--font-display); font-weight: 500; font-size: clamp(21px, 3vw, 27px); }
     .est-cta p { color: var(--muted-ink); margin-top: 8px; }
@@ -116,14 +118,13 @@
         <span class="sample-badge">Example · a typical Australian building</span>
         <div class="receipt-slider">
           <label for="lotSlider">Your building — <b><span id="lotCount">12</span> lots</b></label>
-          <input type="range" id="lotSlider" min="2" max="60" value="12" step="1"
-                 aria-label="Number of lots in your building" />
+          <input type="range" id="lotSlider" min="2" max="60" value="12" step="1" />
         </div>
-        <div class="receipt-hero">
+        <div class="receipt-hero" aria-live="polite">
           <span class="receipt-label">A strata manager charges about</span>
           <span class="receipt-big struck"><span id="rTotal">$8,400</span><span class="yr"> /yr</span></span>
         </div>
-        <div class="receipt-lines">
+        <div class="receipt-lines" aria-live="polite">
           <div class="rl"><span>Base management fee</span><span id="rMgmt">$6,600</span></div>
           <div class="rl"><span>Disbursements &amp; sundries</span><span id="rAdmin">$1,320</span></div>
           <div class="rl"><span>AGM &amp; extra meeting fees</span><span id="rMeet">$480</span></div>

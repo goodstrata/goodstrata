@@ -58,14 +58,13 @@
     <aside class="hero-receipt" aria-label="What a typical building pays before and after GoodStrata">
       <div class="receipt-slider">
         <label for="lotSlider">Your building — <b><span id="lotCount">12</span> lots</b></label>
-        <input type="range" id="lotSlider" min="2" max="60" value="12" step="1"
-               aria-label="Number of lots in your building" />
+        <input type="range" id="lotSlider" min="2" max="60" value="12" step="1" />
       </div>
-      <div class="receipt-hero">
+      <div class="receipt-hero" aria-live="polite">
         <span class="receipt-label">A strata manager charges about</span>
         <span class="receipt-big struck"><span id="rTotal">$8,400</span><span class="yr"> /yr</span></span>
       </div>
-      <div class="receipt-lines">
+      <div class="receipt-lines" aria-live="polite">
         <div class="rl"><span>Base management fee</span><span id="rMgmt">$6,600</span></div>
         <div class="rl"><span>Disbursements &amp; sundries</span><span id="rAdmin">$1,320</span></div>
         <div class="rl"><span>Meeting &amp; AGM fees</span><span id="rMeet">$480</span></div>
