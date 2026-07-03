@@ -28,7 +28,14 @@ function PageHeader({
       className={cn("flex flex-col gap-3 md:flex-row md:items-start md:justify-between", className)}
     >
       <div className="min-w-0 space-y-1">
-        <Heading className="font-display text-2xl font-bold tracking-tight md:text-[1.75rem]">
+        <Heading
+          className={cn(
+            "font-display tracking-tight",
+            Heading === "h2"
+              ? "text-xl font-semibold"
+              : "text-2xl font-bold md:text-[1.75rem]",
+          )}
+        >
           {title}
         </Heading>
         {description && <p className="text-sm text-muted-foreground">{description}</p>}

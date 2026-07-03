@@ -47,7 +47,7 @@ function RegistryPlate({
     <header data-slot="registry-plate" className={cn("min-w-0", className)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className={cn("eyebrow text-muted-foreground", compact && "text-[10px]")}>{eyebrow}</p>
+          <p className={cn(compact ? "eyebrow-sm" : "eyebrow", "text-muted-foreground")}>{eyebrow}</p>
           <Name
             className={cn(
               "mt-0.5 truncate font-display font-bold tracking-tight",

@@ -253,7 +253,7 @@ function NavGroups({
       {NAV_GROUPS.map((group) => (
         <div key={group.heading ?? "overview"}>
           {group.heading && (
-            <Eyebrow className="mb-1 block px-2.5 text-[11px]">{group.heading}</Eyebrow>
+            <Eyebrow size="sm" className="mb-1 block px-2.5">{group.heading}</Eyebrow>
           )}
           <ul className="space-y-0.5">
             {group.items.map((item) => (

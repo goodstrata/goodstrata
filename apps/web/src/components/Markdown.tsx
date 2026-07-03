@@ -13,7 +13,7 @@ export function Markdown({ children, className }: { children: string; className?
   return (
     <div
       className={cn(
-        "prose prose-sm prose-neutral max-w-none dark:prose-invert",
+        "prose prose-sm prose-neutral max-w-[70ch] dark:prose-invert",
         "prose-headings:font-semibold prose-headings:tracking-tight",
         "prose-p:leading-relaxed prose-li:my-0.5",
         "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:font-normal prose-code:before:content-none prose-code:after:content-none",
