@@ -8,6 +8,16 @@
   var nav = header.querySelector("nav");
   if (!nav) return;
 
+  // Decorative: a translucent 3D square that rotates around the logo's icon.
+  var logo = header.querySelector(".logo");
+  if (logo) {
+    var orbit = document.createElement("span");
+    orbit.className = "logo-orbit";
+    orbit.setAttribute("aria-hidden", "true");
+    orbit.innerHTML = '<span class="logo-orbit-sq"></span>';
+    logo.insertBefore(orbit, logo.firstChild);
+  }
+
   var MOBILE = window.matchMedia("(max-width: 820px)");
 
   // Mark the current page (normalise trailing slashes).

@@ -190,9 +190,47 @@ header.site {
   padding: 24px 0;
 }
 header.site .logo {
+  position: relative;
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+}
+/* A translucent 3D square that slowly rotates around the logo's icon mark. */
+.logo-orbit {
+  position: absolute;
+  left: 17px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  perspective: 220px;
+  pointer-events: none;
+}
+.logo-orbit-sq {
+  position: absolute;
+  left: -23px;
+  top: -23px;
+  width: 46px;
+  height: 46px;
+  border: 1.5px solid color-mix(in oklab, var(--primary) 55%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+  transform-style: preserve-3d;
+  animation: logoOrbit 7s linear infinite;
+}
+@keyframes logoOrbit {
+  from {
+    transform: rotateX(16deg) rotateY(0deg);
+  }
+  to {
+    transform: rotateX(16deg) rotateY(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-orbit-sq {
+    animation: none;
+    transform: rotateX(16deg) rotateY(-24deg);
+  }
 }
 header.site .logo img {
   height: 34px;
