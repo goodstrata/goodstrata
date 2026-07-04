@@ -27,7 +27,7 @@ function SignupPage() {
       <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-13 text-muted-foreground">
         <li className="flex items-center gap-1.5">
           <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
-          Free during beta
+          Free forever
         </li>
         <li className="flex items-center gap-1.5">
           <GitBranch className="size-3.5 text-primary" aria-hidden="true" />
