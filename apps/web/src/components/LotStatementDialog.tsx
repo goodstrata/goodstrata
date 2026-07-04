@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { ReceiptText } from "lucide-react";
 import { useState } from "react";
+import { PdfDownloadButton } from "@/components/PdfDownloadButton";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -168,6 +170,19 @@ export function LotStatementDialog({
               </span>
             </div>
           </div>
+        )}
+        {data && rows.length > 0 && (
+          <DialogFooter>
+            <PdfDownloadButton
+              href={`/api/schemes/${schemeId}/documents/lots/${lotId}/statement.pdf`}
+              fallbackFilename={`Statement-Lot-${lotNumber}.pdf`}
+              variant="outline"
+              title={`Download lot ${lotNumber} statement`}
+              data-testid={`statement-pdf-lot-${lotNumber}`}
+            >
+              Download PDF
+            </PdfDownloadButton>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

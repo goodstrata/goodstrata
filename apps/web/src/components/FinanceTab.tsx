@@ -7,7 +7,6 @@ import {
 import {
   AlertTriangle,
   CalendarClock,
-  FileDown,
   HandCoins,
   Landmark,
   Plus,
@@ -18,6 +17,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { LotStatementDialog } from "@/components/LotStatementDialog";
+import { PdfDownloadButton } from "@/components/PdfDownloadButton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -412,16 +412,15 @@ function PaymentsSection({
 
   const receiptLink = (p: PaymentRow, className?: string) =>
     p.receiptNumber ? (
-      <Button asChild variant="ghost" size="sm" className={className}>
-        <a
-          href={`/api/schemes/${schemeId}/documents/payments/${p.id}/receipt.pdf`}
-          target="_blank"
-          rel="noreferrer"
-          title={`Download receipt ${p.receiptNumber}`}
-        >
-          <FileDown className="size-4" /> Receipt
-        </a>
-      </Button>
+      <PdfDownloadButton
+        href={`/api/schemes/${schemeId}/documents/payments/${p.id}/receipt.pdf`}
+        fallbackFilename={`Receipt-${p.receiptNumber}.pdf`}
+        className={className}
+        title={`Download receipt ${p.receiptNumber}`}
+        data-testid={`receipt-pdf-${p.id}`}
+      >
+        Receipt
+      </PdfDownloadButton>
     ) : null;
 
   const matchButton = (p: PaymentRow, className?: string) =>
@@ -1326,6 +1325,18 @@ function NoticesSection({
   // Owners with no notices see nothing (the stat row already summarises levies).
   if (!isOfficer && (notices.isPending || list.length === 0)) return null;
 
+  const noticePdfButton = (n: Notice, className?: string) => (
+    <PdfDownloadButton
+      href={`/api/schemes/${schemeId}/documents/levy-notices/${n.id}/pdf`}
+      fallbackFilename={`Levy-Notice-${n.noticeNumber}.pdf`}
+      className={className}
+      title={`Download levy notice ${n.noticeNumber}`}
+      data-testid={`notice-pdf-${n.id}`}
+    >
+      PDF
+    </PdfDownloadButton>
+  );
+
   const canSimulate = (n: Notice) => isOfficer && n.status !== "paid" && Boolean(n.payid);
   const simulateButton = (n: Notice, className?: string) =>
     canSimulate(n) ? (
@@ -1390,6 +1401,7 @@ function NoticesSection({
                       PayID {n.payid}
                     </div>
                   )}
+                  {noticePdfButton(n, "mt-3 w-full")}
                   {simulateButton(n, "mt-3 w-full")}
                 </li>
               ))}
@@ -1432,7 +1444,12 @@ function NoticesSection({
                     <TableCell>
                       <StatusBadge status={n.status} />
                     </TableCell>
-                    <TableCell className="text-right">{simulateButton(n)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {noticePdfButton(n)}
+                        {simulateButton(n)}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
