@@ -7,7 +7,12 @@ import {
   onboardingService,
   peopleService,
 } from "@goodstrata/core";
-import { DOCUMENT_CATEGORIES, INVITABLE_ROLES, userActor } from "@goodstrata/shared";
+import {
+  DOCUMENT_ACCESS_LEVELS,
+  DOCUMENT_CATEGORIES,
+  INVITABLE_ROLES,
+  userActor,
+} from "@goodstrata/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps } from "../deps.js";
@@ -23,7 +28,9 @@ const officerOrAdmin = requireRole("chair", "secretary", "treasurer");
  * body and have any member's browser execute it same-origin (stored XSS →
  * session-riding). Anything not on this allowlist is served as a non-renderable
  * `application/octet-stream` download, and `nosniff` stops content-sniffing past
- * it — mirroring the community-image handler's defense.
+ * it — mirroring the community-image handler's defense. Plain-text types are
+ * safe (browsers never execute them, and `nosniff` blocks reinterpretation) and
+ * are what the in-app viewer renders as markdown — `text/html` stays banned.
  */
 const INLINE_SAFE_DOC_TYPES: ReadonlySet<string> = new Set([
   "application/pdf",
@@ -31,6 +38,10 @@ const INLINE_SAFE_DOC_TYPES: ReadonlySet<string> = new Set([
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/json",
 ]);
 
 export function lotsRoutes(deps: AppDeps) {
@@ -128,6 +139,32 @@ export function committeeRoutes(deps: AppDeps) {
     );
 }
 
+/**
+ * Public shape of a register entry. Never exposes the internal storage key or
+ * the raw uploader Actor blob — members read files via the content endpoint.
+ */
+function documentDto(d: {
+  id: string;
+  title: string;
+  category: string;
+  mime: string;
+  sizeBytes: number;
+  accessLevel: string;
+  retentionUntil: string | null;
+  createdAt: Date;
+}) {
+  return {
+    id: d.id,
+    title: d.title,
+    category: d.category,
+    mime: d.mime,
+    sizeBytes: d.sizeBytes,
+    accessLevel: d.accessLevel,
+    retentionUntil: d.retentionUntil,
+    createdAt: d.createdAt,
+  };
+}
+
 export function documentsRoutes(deps: AppDeps) {
   return new Hono<AppEnv>()
     .get(
@@ -136,30 +173,31 @@ export function documentsRoutes(deps: AppDeps) {
       zv("query", z.object({ category: z.enum(DOCUMENT_CATEGORIES).optional() })),
       async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
+        // s146 tiers: the register only lists records this member may read,
+        // so an owner never sees a committee record they'd then be refused.
         const docs = await documentsService.listDocuments(
           ctx,
           c.get("schemeId"),
           c.req.valid("query").category,
+          documentsService.accessLevelsForRoles(c.get("roles")),
         );
-        return c.json({ documents: docs });
+        return c.json({ documents: docs.map(documentDto) });
       },
     )
     .get("/:schemeId/documents/:documentId/content", requireSchemeMember(deps), async (c) => {
       const ctx = deps.serviceContext(userActor(c.get("user").id));
-      const docs = await documentsService.listDocuments(ctx, c.get("schemeId"));
-      const doc = docs.find((d) => d.id === c.req.param("documentId"));
+      const doc = await documentsService.getDocument(
+        ctx,
+        c.get("schemeId"),
+        c.req.param("documentId"),
+      );
       if (!doc) {
         return c.json({ error: { code: "NOT_FOUND", message: "Document not found" } }, 404);
       }
       // s146 access levels: committee/admin docs need an officer-tier role.
-      if (doc.accessLevel !== "owners") {
-        const roles = c.get("roles");
-        const officer = roles.some((r) =>
-          ["chair", "secretary", "treasurer", "committee_member", "manager_admin"].includes(r),
-        );
-        if (!officer) {
-          return c.json({ error: { code: "FORBIDDEN", message: "Committee access only" } }, 403);
-        }
+      const allowed = documentsService.accessLevelsForRoles(c.get("roles"));
+      if (!allowed.includes(doc.accessLevel)) {
+        return c.json({ error: { code: "FORBIDDEN", message: "Committee access only" } }, 403);
       }
       const content = await deps.integrations.storage.get(doc.storageKey);
       // Never serve a client-supplied mime inline unless it's a known-safe type;
@@ -183,15 +221,20 @@ export function documentsRoutes(deps: AppDeps) {
         return c.json({ error: { code: "NO_FILE", message: "Attach a file" } }, 422);
       }
       const parsedCategory = z.enum(DOCUMENT_CATEGORIES).catch("other").parse(category);
+      const parsedAccess = z
+        .enum(DOCUMENT_ACCESS_LEVELS)
+        .catch("owners")
+        .parse(typeof body.accessLevel === "string" ? body.accessLevel : "owners");
       const ctx = deps.serviceContext(userActor(c.get("user").id));
       const doc = await documentsService.uploadDocument(ctx, c.get("schemeId"), {
         filename: file.name,
         contentType: file.type || "application/octet-stream",
         content: new Uint8Array(await file.arrayBuffer()),
         category: parsedCategory,
+        accessLevel: parsedAccess,
         title: typeof body.title === "string" && body.title ? body.title : undefined,
       });
-      return c.json({ document: doc }, 201);
+      return c.json({ document: documentDto(doc) }, 201);
     });
 }
 

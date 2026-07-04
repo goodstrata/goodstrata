@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   FileText,
   FolderOpen,
+  Lock,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -44,7 +45,35 @@ interface DocumentRow {
   category: string;
   mime: string;
   sizeBytes: number;
+  accessLevel: string;
+  retentionUntil: string | null;
   createdAt: string;
+}
+
+/** Register categories, in upload-frequency order (mirrors DOCUMENT_CATEGORIES). */
+const CATEGORY_LABELS = {
+  insurance: "Insurance",
+  plan_of_subdivision: "Plan of subdivision",
+  rules: "Rules",
+  financial: "Financial",
+  minutes: "Minutes",
+  contract: "Contract",
+  correspondence: "Correspondence",
+  certificate: "Certificate",
+  levy_notice: "Levy notice",
+  other: "Other",
+} as const;
+
+type Category = keyof typeof CATEGORY_LABELS;
+
+const ACCESS_LABELS: Record<string, string> = {
+  owners: "All owners",
+  committee: "Committee only",
+  admin: "Manager & officers",
+};
+
+function categoryLabel(category: string): string {
+  return (CATEGORY_LABELS as Record<string, string>)[category] ?? category.replace(/_/g, " ");
 }
 
 /** Pick a lucide file icon from a document's mime type. */
@@ -58,38 +87,29 @@ function iconForMime(mime: string): LucideIcon {
 }
 
 /**
- * Probe for document content: a dedicated content endpoint first, then an
- * inline-content detail route. Returns what we can actually show.
+ * Fetch document content from the access-tiered content endpoint. Text renders
+ * as markdown; PDFs and images preview inline via an object URL; anything else
+ * falls back to a download link.
  */
 async function fetchDocumentContent(
   schemeId: string,
   doc: DocumentRow,
-): Promise<
-  | { kind: "text"; text: string }
-  | { kind: "blob"; url: string; mime: string }
-  | { kind: "unavailable" }
-> {
-  const contentRes = await fetch(`/api/schemes/${schemeId}/documents/${doc.id}/content`, {
+): Promise<{ kind: "text"; text: string } | { kind: "blob"; url: string; mime: string }> {
+  const res = await fetch(`/api/schemes/${schemeId}/documents/${doc.id}/content`, {
     credentials: "include",
   });
-  if (contentRes.ok) {
-    const mime = contentRes.headers.get("content-type") ?? doc.mime;
-    if (/^text\/|markdown|json/.test(mime)) {
-      return { kind: "text", text: await contentRes.text() };
-    }
-    return { kind: "blob", url: URL.createObjectURL(await contentRes.blob()), mime };
+  if (!res.ok) {
+    const message = await res
+      .json()
+      .then((b: { error?: { message?: string } }) => b.error?.message)
+      .catch(() => undefined);
+    throw new Error(message ?? "Couldn't load this document.");
   }
-  const docRes = await fetch(`/api/schemes/${schemeId}/documents/${doc.id}`, {
-    credentials: "include",
-  });
-  if (docRes.ok) {
-    const body = (await docRes.json()) as {
-      document?: { content?: string; contentMd?: string };
-    };
-    const text = body.document?.contentMd ?? body.document?.content;
-    if (text) return { kind: "text", text };
+  const mime = res.headers.get("content-type") ?? doc.mime;
+  if (/^text\/|markdown|json/.test(mime)) {
+    return { kind: "text", text: await res.text() };
   }
-  return { kind: "unavailable" };
+  return { kind: "blob", url: URL.createObjectURL(await res.blob()), mime };
 }
 
 function DocumentViewerDialog({
@@ -101,7 +121,7 @@ function DocumentViewerDialog({
   doc: DocumentRow;
   onClose: () => void;
 }) {
-  const { data } = useQuery({
+  const { data, isError, error, refetch } = useQuery({
     queryKey: ["document-view", schemeId, doc.id],
     queryFn: () => fetchDocumentContent(schemeId, doc),
     retry: false,
@@ -118,37 +138,72 @@ function DocumentViewerDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate">{doc.title}</span>
           </DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Badge tone="neutral">{doc.category.replace(/_/g, " ")}</Badge>
+            <Badge tone="neutral">{categoryLabel(doc.category)}</Badge>
+            {doc.accessLevel !== "owners" && (
+              <Badge tone="info">
+                <Lock aria-hidden="true" className="size-3" />
+                {ACCESS_LABELS[doc.accessLevel] ?? doc.accessLevel}
+              </Badge>
+            )}
             <span className="font-mono text-xs tabular-nums">{formatBytes(doc.sizeBytes)}</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono text-xs tabular-nums">{formatDate(doc.createdAt)}</span>
+            {doc.retentionUntil && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-xs">Retain until {formatDate(doc.retentionUntil)}</span>
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
-        {!data && <Skeleton className="h-24" />}
-        {data?.kind === "text" && (
+        {isError ? (
+          <ErrorState
+            message={error instanceof Error ? error.message : "Couldn't load this document."}
+            onRetry={() => void refetch()}
+          />
+        ) : !data ? (
+          <Skeleton className="h-24" />
+        ) : data.kind === "text" ? (
           <div className="overflow-x-auto rounded-lg border bg-muted/30 p-4">
             <Markdown>{data.text}</Markdown>
           </div>
-        )}
-        {data?.kind === "blob" && (
-          <Button asChild className="w-fit">
-            <a href={data.url} download={doc.title}>
-              Download {doc.title}
-            </a>
-          </Button>
-        )}
-        {data?.kind === "unavailable" && (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Preview and download aren't available for this document yet — the file is stored safely
-            and downloads are coming soon.
-          </p>
+        ) : data.mime.startsWith("image/") ? (
+          <img
+            src={data.url}
+            alt={doc.title}
+            className="max-h-[60dvh] w-full rounded-lg border object-contain"
+          />
+        ) : data.mime === "application/pdf" ? (
+          <div className="space-y-3">
+            <iframe
+              src={data.url}
+              title={doc.title}
+              className="h-[60dvh] w-full rounded-lg border bg-white"
+            />
+            <Button asChild variant="outline" size="sm" className="w-fit">
+              <a href={data.url} download={doc.title}>
+                Download
+              </a>
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              This file type can't be previewed here — download it to open it on your device.
+            </p>
+            <Button asChild className="w-fit">
+              <a href={data.url} download={doc.title}>
+                Download {doc.title}
+              </a>
+            </Button>
+          </div>
         )}
       </DialogContent>
     </Dialog>
@@ -159,15 +214,22 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
   const [viewing, setViewing] = useState<DocumentRow | null>(null);
-  const { data, isError, error, refetch } = useQuery({
-    queryKey: ["documents", schemeId],
+  const [filter, setFilter] = useState<"all" | Category>("all");
+  const { data, isError, error, refetch, isPlaceholderData } = useQuery({
+    queryKey: ["documents", schemeId, filter],
     queryFn: async () =>
       unwrap<{ documents: DocumentRow[] }>(
-        await api.schemes[":schemeId"].documents.$get({ param: { schemeId }, query: {} }),
+        await api.schemes[":schemeId"].documents.$get({
+          param: { schemeId },
+          query: filter === "all" ? {} : { category: filter },
+        }),
       ),
+    // Keep the previous register on screen while a category filter loads.
+    placeholderData: (prev) => prev,
   });
   const fileRef = useRef<HTMLInputElement>(null);
-  const [category, setCategory] = useState("insurance");
+  const [category, setCategory] = useState<Category>("insurance");
+  const [accessLevel, setAccessLevel] = useState("owners");
   const upload = useMutation({
     mutationFn: async () => {
       const file = fileRef.current?.files?.[0];
@@ -175,6 +237,7 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
       const form = new FormData();
       form.set("file", file);
       form.set("category", category);
+      form.set("accessLevel", accessLevel);
       const res = await fetch(`/api/schemes/${schemeId}/documents`, {
         method: "POST",
         body: form,
@@ -206,9 +269,9 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
               <Field className="sm:flex-1" label="File">
                 <Input ref={fileRef} type="file" data-testid="doc-file" />
               </Field>
-              <Field className="sm:w-52" label="Category">
+              <Field className="sm:w-44" label="Category">
                 {(control) => (
-                  <Select value={category} onValueChange={setCategory}>
+                  <Select value={category} onValueChange={(v) => setCategory(v as Category)}>
                     <SelectTrigger
                       id={control.id}
                       aria-describedby={control["aria-describedby"]}
@@ -218,12 +281,36 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="insurance">Insurance</SelectItem>
-                      <SelectItem value="plan_of_subdivision">Plan of subdivision</SelectItem>
-                      <SelectItem value="rules">Rules</SelectItem>
-                      <SelectItem value="financial">Financial</SelectItem>
-                      <SelectItem value="minutes">Minutes</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+              <Field
+                className="sm:w-44"
+                label="Visible to"
+                hint={accessLevel === "owners" ? undefined : "Hidden from ordinary owners"}
+              >
+                {(control) => (
+                  <Select value={accessLevel} onValueChange={setAccessLevel}>
+                    <SelectTrigger
+                      id={control.id}
+                      aria-describedby={control["aria-describedby"]}
+                      className="w-full"
+                      data-testid="doc-access"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(ACCESS_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
@@ -244,6 +331,23 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
         </Card>
       )}
 
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">Document register</h2>
+        <Select value={filter} onValueChange={(v) => setFilter(v as "all" | Category)}>
+          <SelectTrigger size="sm" className="w-44" aria-label="Filter by category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {isError ? (
         <ErrorState
           message={error instanceof Error ? error.message : "Couldn't load the document register."}
@@ -252,13 +356,21 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
       ) : !data ? (
         <Skeleton className="h-24" />
       ) : data.documents.length === 0 ? (
-        <EmptyState
-          icon={FolderOpen}
-          title="No documents yet"
-          description="Insurance certificates, plans, rules and minutes will appear here."
-        />
+        filter === "all" ? (
+          <EmptyState
+            icon={FolderOpen}
+            title="No documents yet"
+            description="Insurance certificates, plans, rules and minutes will appear here."
+          />
+        ) : (
+          <EmptyState
+            icon={FolderOpen}
+            title={`No ${categoryLabel(filter).toLowerCase()} documents`}
+            description="Nothing filed under this category yet — try another category."
+          />
+        )
       ) : (
-        <div className="space-y-2">
+        <div className={isPlaceholderData ? "space-y-2 opacity-60" : "space-y-2"}>
           {data.documents.map((d) => {
             const Icon = iconForMime(d.mime);
             return (
@@ -274,7 +386,15 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
-                    <Badge tone="neutral">{d.category.replace(/_/g, " ")}</Badge>
+                    {d.accessLevel !== "owners" && (
+                      <Badge tone="info" className="max-sm:hidden">
+                        <Lock aria-hidden="true" className="size-3" />
+                        {ACCESS_LABELS[d.accessLevel] ?? d.accessLevel}
+                      </Badge>
+                    )}
+                    <Badge tone="neutral" className="max-sm:hidden">
+                      {categoryLabel(d.category)}
+                    </Badge>
                     <Button
                       variant="ghost"
                       size="sm"
