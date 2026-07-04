@@ -32,6 +32,7 @@ import { overviewRoutes } from "./routes/overview.js";
 import { profileRoutes } from "./routes/profile.js";
 import { schemesRoutes } from "./routes/schemes.js";
 import { trustRoutes } from "./routes/trust.js";
+import { securityHeaders } from "./security-headers.js";
 import { type SseHub, sseRoutes } from "./sse.js";
 import { paymentWebhookRoutes } from "./webhooks.js";
 
@@ -64,6 +65,9 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/profile", profileRoutes(deps));
 
   const app = new Hono()
+    // Baseline security headers on every response — API, MCP, and the static
+    // SPA/assets mounted later in index.ts. Registered first so it wraps them all.
+    .use("*", securityHeaders())
     .use("*", logger())
     // Public "what am I paying my strata manager?" tool — called cross-origin
     // from the static marketing site, so this one path is CORS-open to it.

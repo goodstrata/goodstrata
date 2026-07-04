@@ -1,0 +1,22 @@
+# Security headers for the goodstrata.com.au marketing site (Cloudflare Workers
+# Assets honours this file — https://developers.cloudflare.com/workers/static-assets/headers/).
+# Applied to HTML/CSS/JS/font/image responses served straight from the asset
+# store. NOTE: /clips/* is served by worker.js (run_worker_first) and builds its
+# own Response, so these headers may not attach there — see the audit note.
+#
+# CSP is ENFORCED here (unlike the app, which is report-only): the site is hand-
+# written static HTML with no user-rendered input, and every resource it needs is
+# explicitly allowed, so it cannot break the site. Inline <script>/<style> blocks
+# (nav toggle, clip player, MCP-copy button, estimator, inline styles) require
+# 'unsafe-inline'; the residual XSS risk is minimal on a no-auth static site, and
+# the policy still blocks off-domain scripts, framing, plugins and form hijacking.
+# The /tools estimator POSTs to the API host, hence connect-src lists it.
+
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), bluetooth=(), midi=(), serial=()
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; media-src 'self'; connect-src 'self' https://my.goodstrata.com.au; object-src 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests
