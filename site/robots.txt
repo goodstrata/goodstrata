@@ -1,0 +1,6 @@
+# goodstrata.com.au — free, open-source strata management.
+# Crawlers are welcome across the whole marketing site.
+User-agent: *
+Allow: /
+
+Sitemap: https://goodstrata.com.au/sitemap.xml

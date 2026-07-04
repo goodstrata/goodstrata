@@ -3,10 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GoodStrata — free, open-source strata management that shows its working.</title>
-  <meta name="description" content="Free, open-source strata management for Australia. AI agents issue levies, reconcile payments, chase arrears, dispatch contractors, and draft minutes — committee members only approve, vote, or escalate. Every action on an append-only audit log. No hidden insurance commissions, no contractor kickbacks." />
+  <title>GoodStrata — free, open-source AI strata management</title>
+  <meta name="description" content="Free, open-source strata management for Australia. AI agents run levies, arrears, repairs and minutes; humans approve. No hidden insurance commissions or contractor kickbacks." />
   <meta property="og:title" content="GoodStrata — strata management, run by agents. Humans decide." />
   <meta property="og:description" content="Free for owners corporations. Open source. Every fee on the audit log — no hidden commissions, no kickbacks. Try the live demo." />
+  <link rel="canonical" href="https://goodstrata.com.au/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://goodstrata.com.au/" />
+  <meta property="og:site_name" content="GoodStrata" />
+  <meta property="og:locale" content="en_AU" />
+  <meta property="og:image" content="https://goodstrata.com.au/icon.png" />
+  <meta property="og:image:width" content="180" />
+  <meta property="og:image:height" content="180" />
+  <meta property="og:image:alt" content="GoodStrata" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="GoodStrata — strata management, run by agents. Humans decide." />
+  <meta name="twitter:description" content="Free for owners corporations. Open source. Every fee on the audit log — no hidden commissions, no kickbacks. Try the live demo." />
+  <meta name="twitter:image" content="https://goodstrata.com.au/icon.png" />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
   <link rel="icon" href="/favicon.ico" sizes="32x32" />
@@ -14,6 +27,55 @@
   <link rel="apple-touch-icon" href="/icon.png" />
   <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/style.css" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://goodstrata.com.au/#organization",
+        "name": "GoodStrata",
+        "legalName": "Good Strata Pty Ltd",
+        "url": "https://goodstrata.com.au/",
+        "logo": "https://goodstrata.com.au/icon.png",
+        "foundingLocation": {
+          "@type": "Place",
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Melbourne",
+            "addressRegion": "VIC",
+            "addressCountry": "AU"
+          }
+        },
+        "identifier": [
+          { "@type": "PropertyValue", "propertyID": "ABN", "value": "55 684 135 760" },
+          { "@type": "PropertyValue", "propertyID": "ACN", "value": "684 135 760" }
+        ],
+        "sameAs": ["https://github.com/goodstrata/goodstrata"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://goodstrata.com.au/#website",
+        "url": "https://goodstrata.com.au/",
+        "name": "GoodStrata",
+        "inLanguage": "en-AU",
+        "publisher": { "@id": "https://goodstrata.com.au/#organization" }
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "GoodStrata",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web, Linux, macOS",
+        "url": "https://goodstrata.com.au/",
+        "description": "Free, open-source strata (owners corporation) management for Australia. AI agents run the day-to-day while humans approve, vote, or escalate; every dollar is computed by deterministic, tested code and written to an append-only audit log.",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "isAccessibleForFree": true,
+        "publisher": { "@id": "https://goodstrata.com.au/#organization" },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "AUD" }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
 
@@ -514,7 +576,7 @@
     </nav>
   </div>
   <div class="wrap footer-base">
-    <span>© 2026 Good Strata Pty Ltd · Apache-2.0</span>
+    <span>© 2026 Good Strata Pty Ltd · ABN 55 684 135 760 · Apache-2.0</span>
     <span class="footer-base-meta">Made in Australia · No hidden commissions</span>
   </div>
 </footer>

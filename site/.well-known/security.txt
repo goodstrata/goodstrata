@@ -1,0 +1,7 @@
+# Security contact for goodstrata.com.au (Good Strata Pty Ltd).
+# GoodStrata is open source — the fastest path is a private report on GitHub.
+Contact: https://github.com/goodstrata/goodstrata/security/advisories/new
+Contact: https://goodstrata.com.au/
+Expires: 2027-07-04T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://goodstrata.com.au/.well-known/security.txt
