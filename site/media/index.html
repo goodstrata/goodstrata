@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Media — GoodStrata</title>
+  <meta name="description" content="GoodStrata's explainer clips and ads in one place: what your strata manager really costs, how the money stays deterministic code, and how one owner can move a whole building. Free to watch, free to share." />
+  <meta property="og:title" content="GoodStrata media — the explainers, in one place" />
+  <meta property="og:description" content="Watch the clips: the real cost of your strata manager, the money as code, one laptop running a whole building — and the ads. Share them with your committee." />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
+  <link rel="icon" href="/favicon.ico" sizes="32x32" />
+  <link rel="icon" href="/icon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    /* Media library — native controls so people can scrub, fullscreen, share. */
+    .media-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 34px 28px;
+      margin-top: 28px;
+    }
+    .media-card video {
+      display: block;
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--card);
+    }
+    .media-card.wide video { aspect-ratio: 16 / 9; }
+    .media-card.tall video { aspect-ratio: 9 / 16; }
+    .media-card h3 { margin-top: 14px; font-size: 17.5px; }
+    .media-card p { margin-top: 4px; font-size: 14.5px; color: var(--muted-ink); max-width: 46ch; }
+    .media-card .row {
+      margin-top: 8px;
+      display: flex;
+      gap: 16px;
+      font-size: 13.5px;
+      font-family: var(--font-mono);
+    }
+    .media-featured { margin-top: 28px; }
+    .media-featured video {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: var(--card);
+    }
+    .ads-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+      margin-top: 28px;
+    }
+    @media (max-width: 880px) {
+      .media-grid { grid-template-columns: 1fr; }
+      .ads-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 520px) {
+      .ads-grid { grid-template-columns: 1fr; }
+      .ads-grid .media-card video { max-width: 320px; margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="site">
+    <a class="logo" href="/">
+      <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
+      <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
+    </a>
+    <nav aria-label="Primary">
+      <a href="/how-it-works/">How it works</a>
+      <a href="/how-we-make-money/">How we make money</a>
+      <a href="/open-source/">Open source</a>
+      <a href="/tools/">Tools</a>
+      <a href="/for-owners/">Rally your building</a>
+      <a href="https://my.goodstrata.com.au/login">Sign in</a>
+      <a class="nav-btn" href="/what-am-i-paying/">What am I paying?</a>
+    </nav>
+  </header>
+</div>
+
+<div class="hero">
+  <div class="wrap">
+    <h1>Media</h1>
+    <p class="sub">
+      Every clip in one place — what your strata manager really costs, how the money stays
+      deterministic code, and how one owner can move a whole building. Watch them, share them,
+      forward them to your committee.
+    </p>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-head">The explainers</h2>
+    <p class="section-body">Thirty seconds each. The same numbers as the live tools on this site.</p>
+
+    <div class="media-featured media-card wide">
+      <video controls playsinline preload="none" poster="/clips/c1-poster.jpg">
+        <source src="/clips/c1-the-number.webm" type="video/webm" />
+        <source src="/clips/c1-the-number.mp4" type="video/mp4" />
+      </video>
+      <h3>The Number</h3>
+      <p>Somewhere in your AGM papers is what your strata manager really costs you. A typical 12-lot building: $8,400 a year — which GoodStrata does for $0.</p>
+      <div class="row">
+        <a href="/what-am-i-paying/">Check your building →</a>
+        <a href="/clips/c1-the-number.mp4" download>Download</a>
+      </div>
+    </div>
+
+    <div class="media-grid">
+      <div class="media-card wide">
+        <video controls playsinline preload="none" poster="/clips/c2-money-is-code-poster.jpg">
+          <source src="/clips/c2-money-is-code.webm" type="video/webm" />
+          <source src="/clips/c2-money-is-code.mp4" type="video/mp4" />
+        </video>
+        <h3>The money is code</h3>
+        <p>Trust an AI with the building's money? You shouldn't — so we didn't build it that way. Every dollar is deterministic, tested code.</p>
+        <div class="row">
+          <a href="https://demo.goodstrata.com.au">See the demo →</a>
+          <a href="/clips/c2-money-is-code.mp4" download>Download</a>
+        </div>
+      </div>
+      <div class="media-card wide">
+        <video controls playsinline preload="none" poster="/clips/c3-one-laptop-poster.jpg">
+          <source src="/clips/c3-one-laptop.webm" type="video/webm" />
+          <source src="/clips/c3-one-laptop.mp4" type="video/mp4" />
+        </video>
+        <h3>One laptop, one building, one decision</h3>
+        <p>A real 12-lot walk-up, a full month of management on one laptop with a local model. 110 audited events. One human decision.</p>
+        <div class="row">
+          <a href="/blog/announcing-goodstrata/">Read the story →</a>
+          <a href="/clips/c3-one-laptop.mp4" download>Download</a>
+        </div>
+      </div>
+      <div class="media-card wide">
+        <video controls playsinline preload="none" poster="/clips/c4-schedule-b-poster.jpg">
+          <source src="/clips/c4-schedule-b.webm" type="video/webm" />
+          <source src="/clips/c4-schedule-b.mp4" type="video/mp4" />
+        </video>
+        <h3>The Schedule B autopsy</h3>
+        <p>The fee that won the tender was never the real fee. Meeting charges, arrears notices, a $945 safety report recycled from 2015.</p>
+        <div class="row">
+          <a href="/what-am-i-paying/">See what you're paying →</a>
+          <a href="/clips/c4-schedule-b.mp4" download>Download</a>
+        </div>
+      </div>
+      <div class="media-card wide">
+        <video controls playsinline preload="none" poster="/clips/c5-handbook-poster.jpg">
+          <source src="/clips/c5-handbook.webm" type="video/webm" />
+          <source src="/clips/c5-handbook.mp4" type="video/mp4" />
+        </video>
+        <h3>There was no handbook</h3>
+        <p>Most Victorian buildings are small enough to run themselves. There was never a handbook for it — so we built one that runs itself.</p>
+        <div class="row">
+          <a href="/for-owners/">Rally your building →</a>
+          <a href="/clips/c5-handbook.mp4" download>Download</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2 class="section-head">The short cuts</h2>
+    <p class="section-body">
+      Made for phones — fifteen to twenty seconds, sound on. Share them anywhere an owner might
+      finally look at their strata bill.
+    </p>
+    <div class="ads-grid">
+      <div class="media-card tall">
+        <video controls playsinline preload="none" poster="/clips/ad1-screwed-poster.jpg">
+          <source src="/clips/ad1-screwed.mp4" type="video/mp4" />
+        </video>
+        <h3>Do something about it</h3>
+        <div class="row"><a href="/clips/ad1-screwed.mp4" download>Download</a></div>
+      </div>
+      <div class="media-card tall">
+        <video controls playsinline preload="none" poster="/clips/ad2-commission-poster.jpg">
+          <source src="/clips/ad2-commission.mp4" type="video/mp4" />
+        </video>
+        <h3>The commission</h3>
+        <div class="row"><a href="/clips/ad2-commission.mp4" download>Download</a></div>
+      </div>
+      <div class="media-card tall">
+        <video controls playsinline preload="none" poster="/clips/ad3-pov-poster.jpg">
+          <source src="/clips/ad3-pov.mp4" type="video/mp4" />
+        </video>
+        <h3>POV: your AGM papers</h3>
+        <div class="row"><a href="/clips/ad3-pov.mp4" download>Download</a></div>
+      </div>
+      <div class="media-card tall">
+        <video controls playsinline preload="none" poster="/clips/ad4-zero-poster.jpg">
+          <source src="/clips/ad4-zero.mp4" type="video/mp4" />
+        </video>
+        <h3>$8,400 → $0</h3>
+        <div class="row"><a href="/clips/ad4-zero.mp4" download>Download</a></div>
+      </div>
+    </div>
+    <p class="tool-note" style="margin-top: 26px; font-size: 13.5px; color: var(--muted-ink)">
+      All clips are yours to share — noticeboards, group chats, committee emails. The numbers in
+      them match the <a href="/what-am-i-paying/">live fee-check tool</a>.
+    </p>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <span class="footer-mark" aria-hidden="true"><img class="on-light" src="/logo-on-light.svg" alt="" /><img class="on-dark" src="/logo-on-dark.svg" alt="" /></span>
+      <p class="footer-tag">Free, open-source strata management that shows its working — every levy, every dollar, on the record.</p>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <h2>Product</h2>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/how-we-make-money/">How we make money</a>
+        <a href="/open-source/">Open source</a>
+        <a href="/tools/">Tools</a>
+        <a href="/what-am-i-paying/">What am I paying?</a>
+      </div>
+      <div class="footer-col">
+        <h2>Company</h2>
+        <a href="/for-owners/">Rally your building</a>
+        <a href="/media/">Media</a>
+        <a href="/blog/announcing-goodstrata/">Blog</a>
+        <a href="https://github.com/goodstrata/goodstrata">GitHub</a>
+        <a href="https://my.goodstrata.com.au/login">Sign in</a>
+      </div>
+      <div class="footer-col">
+        <h2>Legal</h2>
+        <a href="/terms/">Terms</a>
+        <a href="/privacy/">Privacy</a>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap footer-base">
+    <span>© 2026 Good Strata Pty Ltd · Apache-2.0</span>
+    <span class="footer-base-meta">Made in Australia · No hidden commissions</span>
+  </div>
+</footer>
+
+<script src="/nav.js" defer></script>
+</body>
+</html>
