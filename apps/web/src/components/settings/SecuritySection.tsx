@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Laptop, LogOut, Monitor, Smartphone, TriangleAlert } from "lucide-react";
+import { KeyRound, Laptop, LogOut, Mail, Monitor, Smartphone, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { GoogleMark, useAuthPageInfo } from "@/components/auth/social-sign-in";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,7 @@ import {
   linkSocial,
   listAccounts,
   listSessions,
+  requestPasswordReset,
   revokeOtherSessions,
   revokeSession,
   signOut,
@@ -47,6 +49,28 @@ interface SettingsUser {
   id: string;
   name: string;
   email: string;
+}
+
+interface LinkedAccount {
+  id: string;
+  /** better-auth provider id — "credential" is email/password. */
+  providerId: string;
+}
+
+/**
+ * The user's linked auth methods. Shared (same query key) between the
+ * password, connected-accounts and delete cards so each can adapt to
+ * whether a password ("credential" account) exists.
+ */
+function useLinkedAccounts() {
+  return useQuery({
+    queryKey: ["settings-accounts"],
+    queryFn: async () => {
+      const res = await listAccounts();
+      if (res.error) throw new Error(res.error.message ?? "Couldn't load connected accounts");
+      return (res.data ?? []) as LinkedAccount[];
+    },
+  });
 }
 
 interface SessionRow {
@@ -62,7 +86,7 @@ interface SessionRow {
 export function SecuritySection({ user }: { user: SettingsUser }) {
   return (
     <div className="space-y-6">
-      <ChangePasswordCard />
+      <PasswordCard user={user} />
       <ConnectedAccountsCard />
       <SessionsCard />
       <DangerCard user={user} />
@@ -88,6 +112,90 @@ const passwordSchema = z
     path: ["newPassword"],
     message: "Choose a password you haven't used here.",
   });
+
+/**
+ * Adapts to how the account authenticates: users with a password get the
+ * change form; social-only users (e.g. signed up with Google) get an emailed
+ * link to set one — asking them for a "current password" would dead-end.
+ */
+function PasswordCard({ user }: { user: SettingsUser }) {
+  const accounts = useLinkedAccounts();
+
+  if (accounts.isPending) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Password</CardTitle>
+          <CardDescription>Checking how you sign in…</CardDescription>
+        </CardHeader>
+        <CardContent className="max-w-sm space-y-3">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const hasPassword =
+    !accounts.isSuccess || accounts.data.some((a) => a.providerId === "credential");
+  // On error we fall back to the change form — it's the safe default and
+  // better-auth still enforces the current password server-side.
+  return hasPassword ? <ChangePasswordCard /> : <SetPasswordCard email={user.email} />;
+}
+
+function SetPasswordCard({ email }: { email: string }) {
+  const [sent, setSent] = useState(false);
+
+  const send = useMutation({
+    mutationFn: async () => {
+      const res = await requestPasswordReset({
+        email,
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (res.error) throw new Error(res.error.message ?? "Couldn't send the email");
+    },
+    onSuccess: () => setSent(true),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't send the email"),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Password</CardTitle>
+        <CardDescription>
+          This account has no password yet — you sign in another way, such as with Google.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Setting a password adds a second way in, and lets you disconnect Google later without
+          locking yourself out.
+        </p>
+        {sent ? (
+          <Alert tone="info">
+            <Mail aria-hidden="true" />
+            <AlertTitle>Check your inbox</AlertTitle>
+            <AlertDescription>
+              We've emailed <span className="font-medium text-foreground">{email}</span> a link to
+              set your password. It expires shortly — request another if it lapses.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+      </CardContent>
+      <CardFooter className="border-t">
+        <Button
+          type="button"
+          variant="outline"
+          pending={send.isPending}
+          onClick={() => send.mutate()}
+        >
+          <KeyRound className="size-4" aria-hidden="true" />
+          {sent ? "Resend the link" : "Email me a link to set one"}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
 
 function ChangePasswordCard() {
   const queryClient = useQueryClient();
@@ -192,25 +300,12 @@ function ChangePasswordCard() {
 /* Connected accounts                                                         */
 /* -------------------------------------------------------------------------- */
 
-interface LinkedAccount {
-  id: string;
-  /** better-auth provider id — "credential" is email/password. */
-  providerId: string;
-}
-
 function ConnectedAccountsCard() {
   const queryClient = useQueryClient();
   // Runtime capability: which social providers this deployment has configured.
   const { data: info } = useAuthPageInfo();
 
-  const { data, isPending, isError, error, refetch } = useQuery({
-    queryKey: ["settings-accounts"],
-    queryFn: async () => {
-      const res = await listAccounts();
-      if (res.error) throw new Error(res.error.message ?? "Couldn't load connected accounts");
-      return (res.data ?? []) as LinkedAccount[];
-    },
-  });
+  const { data, isPending, isError, error, refetch } = useLinkedAccounts();
 
   const link = useMutation({
     mutationFn: async () => {
@@ -448,7 +543,11 @@ function SessionsCard() {
               const { label, icon: Icon } = describeAgent(s.userAgent);
               const isCurrent = s.token === currentToken;
               return (
-                <li key={s.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                <li
+                  key={s.id}
+                  title={`Signed in ${new Date(s.createdAt).toLocaleString()} · Expires ${new Date(s.expiresAt).toLocaleString()}`}
+                  className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+                >
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
                     <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
                   </div>
@@ -508,9 +607,15 @@ function DangerCard({ user }: { user: SettingsUser }) {
   const [confirm, setConfirm] = useState("");
   const [password, setPassword] = useState("");
 
+  // Social-only accounts have no password to confirm with; better-auth then
+  // requires a recent sign-in instead, which we surface in the error mapping.
+  const accounts = useLinkedAccounts();
+  const hasPassword =
+    !accounts.isSuccess || accounts.data.some((a) => a.providerId === "credential");
+
   const del = useMutation({
     mutationFn: async () => {
-      const res = await deleteUser({ password });
+      const res = await deleteUser(hasPassword ? { password } : {});
       if (res.error) throw new Error(res.error.message ?? "Couldn't delete your account");
     },
     onSuccess: async () => {
@@ -518,11 +623,19 @@ function DangerCard({ user }: { user: SettingsUser }) {
       await signOut();
       window.location.href = "/login";
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't delete your account"),
+    onError: (e) => {
+      const message = e instanceof Error ? e.message : "Couldn't delete your account";
+      toast.error(
+        /session.*(expired|fresh)/i.test(message)
+          ? "For safety this needs a recent sign-in. Sign out, sign back in, then try again."
+          : message,
+      );
+    },
   });
 
   const canDelete =
-    confirm.trim().toLowerCase() === user.email.toLowerCase() && password.length > 0;
+    confirm.trim().toLowerCase() === user.email.toLowerCase() &&
+    (!hasPassword || password.length > 0);
 
   return (
     <Card className="border-critical/30">
@@ -559,8 +672,9 @@ function DangerCard({ user }: { user: SettingsUser }) {
             <DialogHeader>
               <DialogTitle>Delete your account?</DialogTitle>
               <DialogDescription>
-                This permanently deletes your account and cannot be undone. To confirm, type your
-                email address and enter your password.
+                {hasPassword
+                  ? "This permanently deletes your account and cannot be undone. To confirm, type your email address and enter your password."
+                  : "This permanently deletes your account and cannot be undone. To confirm, type your email address."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -579,15 +693,17 @@ function DangerCard({ user }: { user: SettingsUser }) {
                   onChange={(e) => setConfirm(e.target.value)}
                 />
               </Field>
-              <Field label="Password" htmlFor="delete-password">
-                <Input
-                  id="delete-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </Field>
+              {hasPassword ? (
+                <Field label="Password" htmlFor="delete-password">
+                  <Input
+                    id="delete-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </Field>
+              ) : null}
             </div>
             <DialogFooter>
               <DialogClose asChild>

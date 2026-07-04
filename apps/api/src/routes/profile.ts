@@ -23,14 +23,29 @@ const EXT_MIME: Record<string, string> = {
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /**
+ * If `image` is an avatar URL we serve for this user, return its storage key.
+ * Anything else (external URL, another user's avatar, traversal attempt) → null.
+ */
+function ownedAvatarKey(userId: string, image: string | null | undefined): string | null {
+  if (!image) return null;
+  const prefix = `/api/profile/avatar/${userId}/`;
+  if (!image.startsWith(prefix)) return null;
+  const file = image.slice(prefix.length);
+  if (!file || file.includes("/") || file.includes("..")) return null;
+  return `avatars/${userId}/${file}`;
+}
+
+/**
  * Profile routes — mounted under the authenticated /api surface, so the parent
  * requireAuth middleware has already put the user on the context.
  *
- * - POST /profile/avatar   multipart upload → S3 StorageProvider, sets the
- *                          better-auth user.image to a served URL.
- * - GET  /profile/avatar/:userId/:file   member-scoped image content (any
- *                          signed-in member; the filename carries an unguessable
- *                          UUID so keys can't be enumerated).
+ * - POST   /profile/avatar   multipart upload → S3 StorageProvider, sets the
+ *                            better-auth user.image to a served URL and cleans
+ *                            up the previously stored file.
+ * - DELETE /profile/avatar   clears user.image and removes the stored file.
+ * - GET    /profile/avatar/:userId/:file   member-scoped image content (any
+ *                            signed-in member; the filename carries an unguessable
+ *                            UUID so keys can't be enumerated).
  */
 export function profileRoutes(deps: AppDeps) {
   return new Hono<AppEnv>()
@@ -66,6 +81,10 @@ export function profileRoutes(deps: AppDeps) {
       const key = `avatars/${user.id}/${filename}`;
       await deps.integrations.storage.put(key, bytes, file.type);
 
+      // The current image (if it's one of ours) becomes garbage once replaced.
+      const session = await deps.auth.api.getSession({ headers: c.req.raw.headers });
+      const previousKey = ownedAvatarKey(user.id, session?.user.image);
+
       // Same-origin served URL; an <img> request carries the session cookie so
       // the member-scoped GET below authenticates it.
       const image = `/api/profile/avatar/${user.id}/${filename}`;
@@ -74,7 +93,34 @@ export function profileRoutes(deps: AppDeps) {
         headers: c.req.raw.headers,
       });
 
+      if (previousKey && previousKey !== key) {
+        // Best effort — an orphaned file must never fail the upload.
+        try {
+          await deps.integrations.storage.delete(previousKey);
+        } catch {
+          // ignore
+        }
+      }
+
       return c.json({ image }, 201);
+    })
+    .delete("/avatar", async (c) => {
+      const user = c.get("user");
+      const session = await deps.auth.api.getSession({ headers: c.req.raw.headers });
+      const key = ownedAvatarKey(user.id, session?.user.image);
+      await deps.auth.api.updateUser({
+        body: { image: null },
+        headers: c.req.raw.headers,
+      });
+      if (key) {
+        // Best effort — a leftover file must never fail the removal.
+        try {
+          await deps.integrations.storage.delete(key);
+        } catch {
+          // ignore
+        }
+      }
+      return c.json({ ok: true });
     })
     .get("/avatar/:userId/:file", async (c) => {
       const userId = c.req.param("userId");

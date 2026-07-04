@@ -63,6 +63,13 @@ function AvatarCard({ user, onChange }: { user: SettingsUser; onChange: () => vo
   const fileRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
 
+  // Object URLs hold the file in memory until revoked.
+  const clearPreview = () =>
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+
   const upload = useMutation({
     mutationFn: async (file: File) => {
       const form = new FormData();
@@ -78,20 +85,24 @@ function AvatarCard({ user, onChange }: { user: SettingsUser; onChange: () => vo
     onSuccess: () => {
       toast.success("Photo updated");
       if (fileRef.current) fileRef.current.value = "";
-      setPreview(null);
+      clearPreview();
       onChange();
     },
     onError: (e) => {
-      setPreview(null);
+      clearPreview();
       toast.error(e instanceof Error ? e.message : "Upload failed");
     },
   });
 
   const remove = useMutation({
-    mutationFn: async () => {
-      const res = await updateUser({ image: null });
-      if (res.error) throw new Error(res.error.message ?? "Couldn't remove photo");
-    },
+    // Server route clears user.image and deletes the stored file.
+    mutationFn: async () =>
+      unwrap<{ ok: boolean }>(
+        await fetch("/api/profile/avatar", {
+          method: "DELETE",
+          credentials: "include",
+        }),
+      ),
     onSuccess: () => {
       toast.success("Photo removed");
       onChange();
@@ -109,7 +120,10 @@ function AvatarCard({ user, onChange }: { user: SettingsUser; onChange: () => vo
       toast.error("Keep images under 5 MB.");
       return;
     }
-    setPreview(URL.createObjectURL(file));
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return URL.createObjectURL(file);
+    });
     upload.mutate(file);
   }
 
