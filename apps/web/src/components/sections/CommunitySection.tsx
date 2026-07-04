@@ -84,6 +84,11 @@ const THREAD_KEY = (schemeId: string, postId: string) =>
   ["community-thread", schemeId, postId] as const;
 
 const MAX_IMAGES = 8;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // mirror the API route's per-image cap
+const MAX_BODY_CHARS = 5000; // mirror createPostInput / createCommentInput
+
+/** Image types the API accepts (mirrors ALLOWED_IMAGE_TYPES in routes/community.ts). */
+const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 // ---------------------------------------------------------------------------
 // Small pure helpers
@@ -129,6 +134,15 @@ function renderBody(text: string) {
 
 const imageSrc = (schemeId: string, imageId: string) =>
   `/api/schemes/${schemeId}/community/images/${imageId}/content`;
+
+/** Show remaining characters only once the writer is close to the limit. */
+function charactersLeftHint(value: string): string | undefined {
+  const left = MAX_BODY_CHARS - value.length;
+  if (left > 500) return undefined;
+  return left >= 0
+    ? `${left.toLocaleString()} characters left`
+    : `${(-left).toLocaleString()} characters over the limit`;
+}
 
 // ---------------------------------------------------------------------------
 // Section
@@ -247,7 +261,10 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
 // ---------------------------------------------------------------------------
 
 const composerSchema = z.object({
-  body: z.string().min(1, "Write something to share."),
+  body: z
+    .string()
+    .min(1, "Write something to share.")
+    .max(MAX_BODY_CHARS, `Posts can be up to ${MAX_BODY_CHARS.toLocaleString()} characters.`),
 });
 type ComposerValues = z.infer<typeof composerSchema>;
 
@@ -278,14 +295,30 @@ function PostComposer({ schemeId }: { schemeId: string }) {
     const picked = Array.from(e.target.files ?? []);
     e.target.value = ""; // allow re-selecting the same file
     if (picked.length === 0) return;
+
+    // Validate up front so a bad file rejects here with a clear reason, not as
+    // a whole-post failure at submit time (iPhone HEIC is the common case).
+    const usable: File[] = [];
+    for (const file of picked) {
+      const type = (file.type || "").split(";")[0]!.trim().toLowerCase();
+      if (!ACCEPTED_IMAGE_TYPES.has(type)) {
+        toast.error(`${file.name} isn't a supported format — use PNG, JPEG, WebP or GIF.`);
+      } else if (file.size > MAX_IMAGE_BYTES) {
+        toast.error(`${file.name} is too large — photos can be up to 10 MB.`);
+      } else {
+        usable.push(file);
+      }
+    }
+    if (usable.length === 0) return;
+
     setImages((prev) => {
       const room = MAX_IMAGES - prev.length;
       if (room <= 0) {
-        toast.success(`You can attach up to ${MAX_IMAGES} photos`);
+        toast.error(`You can attach up to ${MAX_IMAGES} photos per post.`);
         return prev;
       }
-      const added = picked.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
-      if (picked.length > room) toast.success(`Only ${MAX_IMAGES} photos per post`);
+      const added = usable.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
+      if (usable.length > room) toast.error(`Only the first ${MAX_IMAGES} photos were attached.`);
       return [...prev, ...added];
     });
   };
@@ -337,7 +370,11 @@ function PostComposer({ schemeId }: { schemeId: string }) {
         >
           <form.Field name="body">
             {(field) => (
-              <Field label="Post" error={fieldError(field.state.meta.errors)}>
+              <Field
+                label="Post"
+                error={fieldError(field.state.meta.errors)}
+                hint={charactersLeftHint(field.state.value)}
+              >
                 {(control) => (
                   <Textarea
                     id={control.id}
@@ -379,7 +416,7 @@ function PostComposer({ schemeId }: { schemeId: string }) {
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp,image/gif"
             multiple
             className="hidden"
             onChange={onPick}
@@ -448,6 +485,7 @@ function PostCard({
     },
     onError: () => {
       // Resync from the server if the optimistic toggle didn't take.
+      toast.error("Couldn't update your reaction. Please try again.");
       void queryClient.invalidateQueries({ queryKey: FEED_KEY(schemeId) });
     },
   });
@@ -463,6 +501,7 @@ function PostCard({
       toast.success("Post removed");
       removePost(post.id);
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't remove the post."),
   });
 
   return (
@@ -556,33 +595,76 @@ function AuthorLine({ author, createdAt }: { author: PostAuthor; createdAt: stri
 
 function PostImages({ schemeId, post }: { schemeId: string; post: PostSummary }) {
   const imgs = post.images;
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
   if (imgs.length === 0) return null;
-  const alt = `${post.author.name} attachment`;
+  const alt = `Photo shared by ${post.author.name}`;
+  const openImage = openIndex !== null ? imgs[openIndex] : undefined;
+
+  const lightbox = (
+    <Dialog open={openImage !== undefined} onOpenChange={(open) => !open && setOpenIndex(null)}>
+      <DialogContent className="p-2 sm:max-w-3xl">
+        <DialogHeader className="sr-only">
+          <DialogTitle>{alt}</DialogTitle>
+          <DialogDescription>Full-size view. Press Escape to close.</DialogDescription>
+        </DialogHeader>
+        {openImage && (
+          <img
+            src={imageSrc(schemeId, openImage.id)}
+            alt={alt}
+            className="max-h-[80vh] w-full rounded-md object-contain"
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 
   if (imgs.length === 1) {
     return (
-      <img
-        src={imageSrc(schemeId, imgs[0]!.id)}
-        alt={alt}
-        className="max-h-[30rem] w-full rounded-lg border object-cover"
-      />
+      <>
+        <button
+          type="button"
+          onClick={() => setOpenIndex(0)}
+          aria-label={`View ${alt} full size`}
+          className="block w-full cursor-zoom-in rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <img
+            src={imageSrc(schemeId, imgs[0]!.id)}
+            alt={alt}
+            className="max-h-[30rem] w-full rounded-lg border object-cover"
+          />
+        </button>
+        {lightbox}
+      </>
     );
   }
 
   return (
-    <div className={cn("grid gap-1.5", imgs.length >= 5 ? "grid-cols-3" : "grid-cols-2")}>
-      {imgs.map((img, i) => (
-        <img
-          key={img.id}
-          src={imageSrc(schemeId, img.id)}
-          alt={alt}
-          className={cn(
-            "aspect-square w-full rounded-md border object-cover",
-            imgs.length === 3 && i === 0 && "col-span-2 aspect-[2/1]",
-          )}
-        />
-      ))}
-    </div>
+    <>
+      <div className={cn("grid gap-1.5", imgs.length >= 5 ? "grid-cols-3" : "grid-cols-2")}>
+        {imgs.map((img, i) => (
+          <button
+            key={img.id}
+            type="button"
+            onClick={() => setOpenIndex(i)}
+            aria-label={`View photo ${i + 1} of ${imgs.length} full size`}
+            className={cn(
+              "cursor-zoom-in rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              imgs.length === 3 && i === 0 && "col-span-2",
+            )}
+          >
+            <img
+              src={imageSrc(schemeId, img.id)}
+              alt={alt}
+              className={cn(
+                "aspect-square w-full rounded-md border object-cover",
+                imgs.length === 3 && i === 0 && "aspect-[2/1]",
+              )}
+            />
+          </button>
+        ))}
+      </div>
+      {lightbox}
+    </>
   );
 }
 
@@ -708,6 +790,7 @@ function CommentItem({
       patchComment((c) => ({ ...c, likedByMe: res.liked, likeCount: res.likeCount }));
     },
     onError: () => {
+      toast.error("Couldn't update your reaction. Please try again.");
       void queryClient.invalidateQueries({ queryKey: THREAD_KEY(schemeId, postId) });
     },
   });
@@ -724,6 +807,7 @@ function CommentItem({
       onDeleted();
       void queryClient.invalidateQueries({ queryKey: THREAD_KEY(schemeId, postId) });
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't remove the comment."),
   });
 
   return (
@@ -781,7 +865,10 @@ function CommentItem({
 }
 
 const commentSchema = z.object({
-  body: z.string().min(1, "Write a comment to reply."),
+  body: z
+    .string()
+    .min(1, "Write a comment to reply.")
+    .max(MAX_BODY_CHARS, `Comments can be up to ${MAX_BODY_CHARS.toLocaleString()} characters.`),
 });
 type CommentValues = z.infer<typeof commentSchema>;
 
@@ -824,7 +911,11 @@ function CommentComposer({
     >
       <form.Field name="body">
         {(field) => (
-          <Field label="Add a comment" error={fieldError(field.state.meta.errors)}>
+          <Field
+            label="Add a comment"
+            error={fieldError(field.state.meta.errors)}
+            hint={charactersLeftHint(field.state.value)}
+          >
             {(control) => (
               <Textarea
                 id={control.id}

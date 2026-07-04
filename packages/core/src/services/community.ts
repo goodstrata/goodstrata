@@ -157,14 +157,35 @@ export async function createPost(
   };
 }
 
-/** Newest-first scheme feed, keyset-paginated on createdAt. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Keyset cursor for the feed. The cursor is the last post's id: the comparison
+ * anchors on that row's (created_at, id) inside Postgres, because a JS Date is
+ * millisecond-precision while Postgres timestamps carry microseconds — pulling
+ * createdAt out and comparing in JS (or via toISOString) silently skips posts
+ * that share a millisecond. Legacy ISO-date cursors still work (in-flight
+ * clients from before the cursor became an id).
+ *
+ * The anchor lookup is scheme-scoped so a cursor can't be used to probe
+ * whether a post id exists in some other scheme.
+ */
+function feedCursorFilter(schemeId: string, cursor: string | undefined) {
+  if (!cursor) return undefined;
+  if (UUID_RE.test(cursor)) {
+    return sql`(${communityPosts.createdAt}, ${communityPosts.id}) < (select p.created_at, p.id from ${communityPosts} as p where p.id = ${cursor} and p.scheme_id = ${schemeId})`;
+  }
+  const asDate = new Date(cursor);
+  return Number.isNaN(asDate.getTime()) ? undefined : lt(communityPosts.createdAt, asDate);
+}
+
+/** Newest-first scheme feed, keyset-paginated on (createdAt, id). */
 export async function listFeed(
   ctx: ServiceContext,
   schemeId: string,
   currentUserId: string,
   cursor?: string,
 ): Promise<{ posts: PostSummary[]; nextCursor?: string }> {
-  const cursorDate = cursor ? new Date(cursor) : undefined;
   const rows = await ctx.db
     .select({
       id: communityPosts.id,
@@ -181,10 +202,10 @@ export async function listFeed(
       and(
         eq(communityPosts.schemeId, schemeId),
         eq(communityPosts.status, "visible"),
-        cursorDate ? lt(communityPosts.createdAt, cursorDate) : undefined,
+        feedCursorFilter(schemeId, cursor),
       ),
     )
-    .orderBy(desc(communityPosts.createdAt))
+    .orderBy(desc(communityPosts.createdAt), desc(communityPosts.id))
     .limit(FEED_PAGE_SIZE + 1);
 
   const hasMore = rows.length > FEED_PAGE_SIZE;
@@ -211,7 +232,7 @@ export async function listFeed(
     createdAt: p.createdAt.toISOString(),
   }));
 
-  const nextCursor = hasMore ? page[page.length - 1]!.createdAt.toISOString() : undefined;
+  const nextCursor = hasMore ? page[page.length - 1]!.id : undefined;
   return { posts, nextCursor };
 }
 

@@ -36,6 +36,13 @@ const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set([
   "image/gif",
 ]);
 
+/**
+ * Per-image size cap. Uploads are fully buffered in memory before hitting
+ * object storage, so an unbounded file would let one member exhaust the API
+ * process; 10 MB comfortably covers phone photos.
+ */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
 export function communityRoutes(deps: AppDeps) {
   return (
     new Hono<AppEnv>()
@@ -107,6 +114,17 @@ export function communityRoutes(deps: AppDeps) {
                     error: {
                       code: "UNSUPPORTED_IMAGE",
                       message: "Images must be PNG, JPEG, WebP or GIF.",
+                    },
+                  },
+                  422,
+                );
+              }
+              if (f.size > MAX_IMAGE_BYTES) {
+                return c.json(
+                  {
+                    error: {
+                      code: "IMAGE_TOO_LARGE",
+                      message: "Each photo must be 10 MB or smaller.",
                     },
                   },
                   422,
