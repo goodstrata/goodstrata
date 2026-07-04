@@ -153,6 +153,26 @@ export function meetingsRoutes(deps: AppDeps) {
         );
       },
     )
+    // s 92(3): any lot owner or proxy holder may demand a poll — standing is
+    // checked in the service, so this is member-gated rather than officer-gated.
+    .post("/:schemeId/motions/:motionId/demand-poll", requireSchemeMember(deps), async (c) => {
+      const person = await personForUser(deps, c.get("schemeId"), c.get("user").id);
+      if (!person) {
+        return c.json(
+          { error: { code: "NO_PERSON", message: "No person record linked to your login" } },
+          422,
+        );
+      }
+      const ctx = deps.serviceContext(userActor(c.get("user").id));
+      return c.json(
+        await meetingsService.demandPoll(
+          ctx,
+          c.get("schemeId"),
+          person.id,
+          c.req.param("motionId"),
+        ),
+      );
+    })
     .post(
       "/:schemeId/motions/:motionId/close",
       requireSchemeMember(deps),

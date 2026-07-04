@@ -7,7 +7,9 @@ import {
   ChevronRight,
   FileText,
   Gavel,
+  MapPin,
   Plus,
+  UserCheck,
   Video,
 } from "lucide-react";
 import { useState } from "react";
@@ -54,9 +56,21 @@ interface Meeting {
   kind: string;
   title: string;
   scheduledAt: string;
+  location: string | null;
   status: string;
   quorumMet: boolean | null;
   minutesDocumentId: string | null;
+}
+/** Stored tally — older rows may predate the headcount/basis fields. */
+interface MotionResult {
+  forWeight: number;
+  againstWeight: number;
+  abstainWeight: number;
+  forCount?: number;
+  againstCount?: number;
+  abstainCount?: number;
+  basis?: "headcount" | "entitlement";
+  pollDemanded?: boolean;
 }
 interface Motion {
   id: string;
@@ -64,7 +78,8 @@ interface Motion {
   text: string;
   resolutionType: string;
   status: string;
-  result: { forWeight: number; againstWeight: number; abstainWeight: number } | null;
+  pollDemanded: boolean;
+  result: MotionResult | null;
 }
 /** AI Chair timeline entry — the backend adds these as the feature lands. */
 interface ChairLogEntry {
@@ -86,7 +101,7 @@ interface MeetingDetail {
 const MEETING_KINDS = ["agm", "sgm", "committee"] as const;
 type MeetingKind = (typeof MEETING_KINDS)[number];
 
-const RESOLUTION_TYPES = ["ordinary", "special"] as const;
+const RESOLUTION_TYPES = ["ordinary", "special", "unanimous"] as const;
 type ResolutionType = (typeof RESOLUTION_TYPES)[number];
 
 /** Short type label for the meeting eyebrow (AGM / SGM / Committee). */
@@ -103,6 +118,7 @@ const scheduleMeetingSchema = z.object({
   when: z
     .string()
     .refine((v) => v.length > 0 && !Number.isNaN(Date.parse(v)), "Choose a valid date and time."),
+  location: z.string().max(300, "Keep the location under 300 characters."),
   agenda: z.string(),
 });
 type ScheduleMeetingValues = z.infer<typeof scheduleMeetingSchema>;
@@ -151,7 +167,13 @@ function ScheduleMeetingSheet({ schemeId }: { schemeId: string }) {
 
   const form = useAppForm({
     schema: scheduleMeetingSchema,
-    defaultValues: { kind: "agm", title: "", when: "", agenda: "" } as ScheduleMeetingValues,
+    defaultValues: {
+      kind: "agm",
+      title: "",
+      when: "",
+      location: "",
+      agenda: "",
+    } as ScheduleMeetingValues,
     onSubmit: async (values) => {
       await unwrap(
         await api.schemes[":schemeId"].meetings.$post({
@@ -160,6 +182,7 @@ function ScheduleMeetingSheet({ schemeId }: { schemeId: string }) {
             kind: values.kind,
             title: values.title,
             scheduledAt: new Date(values.when).toISOString(),
+            location: values.location.trim() || undefined,
             agenda: values.agenda
               .split("\n")
               .map((t) => t.trim())
@@ -269,6 +292,25 @@ function ScheduleMeetingSheet({ schemeId }: { schemeId: string }) {
               )}
             </form.Field>
 
+            <form.Field name="location">
+              {(field) => (
+                <Field
+                  label="Location"
+                  htmlFor="meeting-location"
+                  hint="Leave blank for an online-only meeting."
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  <Input
+                    data-testid="meeting-location"
+                    placeholder="e.g. Building foyer, 12 Example St"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                </Field>
+              )}
+            </form.Field>
+
             <form.Field name="agenda">
               {(field) => (
                 <Field
@@ -369,7 +411,6 @@ function MeetingList({ schemeId, onOpen }: { schemeId: string; onOpen: (id: stri
   );
 }
 
-/** Video calls: contract-first UI; hides itself if the API doesn't support it yet. */
 function VideoCallButtons({
   schemeId,
   meetingId,
@@ -379,45 +420,29 @@ function VideoCallButtons({
   meetingId: string;
   isOfficer: boolean;
 }) {
-  const [unavailable, setUnavailable] = useState(false);
-
   const start = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/schemes/${schemeId}/meetings/${meetingId}/video/start`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (res.status === 404) {
-        setUnavailable(true);
-        throw new Error("Video meetings aren't available yet");
-      }
-      if (!res.ok) throw new Error(`Could not start the video meeting (${res.status})`);
-      return (await res.json()) as { url: string };
-    },
+    mutationFn: async () =>
+      unwrap<{ url: string }>(
+        await api.schemes[":schemeId"].meetings[":meetingId"].video.start.$post({
+          param: { schemeId, meetingId },
+        }),
+      ),
     onSuccess: () => toast.success("Video meeting started — members can now join"),
     onError: (e) => toast.error(e.message),
   });
 
   const join = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/schemes/${schemeId}/meetings/${meetingId}/video/join`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (res.status === 404) {
-        setUnavailable(true);
-        throw new Error("Video meetings aren't available yet");
-      }
-      if (!res.ok) throw new Error(`Could not join the video call (${res.status})`);
-      return (await res.json()) as { url: string; token: string };
-    },
+    mutationFn: async () =>
+      unwrap<{ url: string; token: string }>(
+        await api.schemes[":schemeId"].meetings[":meetingId"].video.join.$post({
+          param: { schemeId, meetingId },
+        }),
+      ),
     onSuccess: ({ url, token }) => {
       window.open(`${url}?t=${encodeURIComponent(token)}`, "_blank", "noopener");
     },
     onError: (e) => toast.error(e.message),
   });
-
-  if (unavailable) return null;
 
   return (
     <div className="flex flex-col gap-2 sm:flex-row">
@@ -560,6 +585,170 @@ function MinutesSection({ schemeId, documentId }: { schemeId: string; documentId
   );
 }
 
+const appointProxySchema = z.object({
+  lotId: z.string().min(1, "Choose the lot the proxy will vote for."),
+  proxyPersonId: z.string().min(1, "Choose who will hold your proxy."),
+});
+type AppointProxyValues = z.infer<typeof appointProxySchema>;
+
+function personLabel(p: {
+  givenName: string | null;
+  familyName: string | null;
+  companyName: string | null;
+  email: string | null;
+}): string {
+  const name = [p.givenName, p.familyName].filter(Boolean).join(" ");
+  return name || p.companyName || p.email || "Unnamed person";
+}
+
+/**
+ * Appoint a proxy for this meeting (s 89): the API verifies the caller owns
+ * the lot, so the sheet just collects the lot and the person to hold it.
+ */
+function AppointProxySheet({ schemeId, meetingId }: { schemeId: string; meetingId: string }) {
+  const [open, setOpen] = useState(false);
+  const sheet = useSheetSide();
+
+  const { data: lotsData } = useQuery({
+    queryKey: ["lots", schemeId],
+    enabled: open,
+    queryFn: async () =>
+      unwrap<{ lots: { id: string; lotNumber: string }[] }>(
+        await api.schemes[":schemeId"].lots.$get({ param: { schemeId } }),
+      ),
+  });
+  const { data: peopleData } = useQuery({
+    queryKey: ["people", schemeId],
+    enabled: open,
+    queryFn: async () =>
+      unwrap<{
+        people: {
+          id: string;
+          givenName: string | null;
+          familyName: string | null;
+          companyName: string | null;
+          email: string | null;
+        }[];
+      }>(await api.schemes[":schemeId"].people.$get({ param: { schemeId } })),
+  });
+
+  const form = useAppForm({
+    schema: appointProxySchema,
+    defaultValues: { lotId: "", proxyPersonId: "" } as AppointProxyValues,
+    onSubmit: async (values) => {
+      await unwrap(
+        await api.schemes[":schemeId"].proxies.$post({
+          param: { schemeId },
+          json: { lotId: values.lotId, proxyPersonId: values.proxyPersonId, meetingId },
+        }),
+      );
+      toast.success("Proxy appointed for this meeting");
+      setOpen(false);
+      form.reset();
+    },
+  });
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="outline" size="sm" className="w-full sm:w-auto">
+          <UserCheck className="size-4" /> Appoint a proxy
+        </Button>
+      </SheetTrigger>
+      <SheetContent side={sheet.side} className={sheet.className}>
+        <SheetHeader>
+          <SheetTitle>Appoint a proxy</SheetTitle>
+          <SheetDescription>
+            If you can't attend, another person can vote for your lot at this meeting. You must be
+            an owner of the lot.
+          </SheetDescription>
+        </SheetHeader>
+        <form
+          id="proxy-form"
+          className="flex flex-col gap-5 px-4 pb-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void form.handleSubmit();
+          }}
+        >
+          <FieldGroup>
+            <form.Field name="lotId">
+              {(field) => (
+                <Field
+                  label="Your lot"
+                  required
+                  htmlFor="proxy-lot"
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  {(control) => (
+                    <Select value={field.state.value} onValueChange={field.handleChange}>
+                      <SelectTrigger
+                        id={control.id}
+                        aria-invalid={control["aria-invalid"]}
+                        aria-describedby={control["aria-describedby"]}
+                        data-testid="proxy-lot"
+                        className="w-full"
+                      >
+                        <SelectValue placeholder="Choose a lot…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {lotsData?.lots.map((l) => (
+                          <SelectItem key={l.id} value={l.id}>
+                            Lot {l.lotNumber}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+
+            <form.Field name="proxyPersonId">
+              {(field) => (
+                <Field
+                  label="Proxy holder"
+                  required
+                  htmlFor="proxy-person"
+                  hint="They vote for your lot unless you attend yourself."
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  {(control) => (
+                    <Select value={field.state.value} onValueChange={field.handleChange}>
+                      <SelectTrigger
+                        id={control.id}
+                        aria-invalid={control["aria-invalid"]}
+                        aria-describedby={control["aria-describedby"]}
+                        data-testid="proxy-person"
+                        className="w-full"
+                      >
+                        <SelectValue placeholder="Choose a person…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {peopleData?.people.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {personLabel(p)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+          </FieldGroup>
+
+          <FormError form={form} />
+          <SubmitButton form={form} className="w-full">
+            Appoint proxy
+          </SubmitButton>
+        </form>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function MeetingDetailView({
   schemeId,
   meetingId,
@@ -685,7 +874,15 @@ function MeetingDetailView({
             <div className="min-w-0 space-y-1">
               <Eyebrow>{kindLabel(m.kind)}</Eyebrow>
               <CardTitle className="font-display text-xl">{m.title}</CardTitle>
-              <CardDescription>{formatDateTime(m.scheduledAt)}</CardDescription>
+              <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>{formatDateTime(m.scheduledAt)}</span>
+                {m.location && (
+                  <span className="flex items-center gap-1">
+                    <MapPin aria-hidden="true" className="size-3.5" />
+                    {m.location}
+                  </span>
+                )}
+              </CardDescription>
             </div>
             <StatusBadge status={m.status} />
           </div>
@@ -718,6 +915,7 @@ function MeetingDetailView({
                 >
                   I'm attending
                 </Button>
+                <AppointProxySheet schemeId={schemeId} meetingId={meetingId} />
                 {isOfficer && (
                   <Button
                     variant="outline"
@@ -867,7 +1065,10 @@ function AddMotionSheet({
       <SheetContent side={sheet.side} className={sheet.className}>
         <SheetHeader>
           <SheetTitle>Add a motion</SheetTitle>
-          <SheetDescription>Motions are voted on by lot entitlement.</SheetDescription>
+          <SheetDescription>
+            Ordinary resolutions are one vote per lot; special and unanimous resolutions are
+            decided by lot entitlement.
+          </SheetDescription>
         </SheetHeader>
         <form
           id="motion-form"
@@ -941,6 +1142,7 @@ function AddMotionSheet({
                       <SelectContent>
                         <SelectItem value="ordinary">Ordinary resolution</SelectItem>
                         <SelectItem value="special">Special resolution (75%)</SelectItem>
+                        <SelectItem value="unanimous">Unanimous resolution</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -956,6 +1158,31 @@ function AddMotionSheet({
         </form>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * Basis-aware tally line: ordinary motions are decided one vote per lot
+ * unless a poll re-tallied them by entitlement (s 92). Older results without
+ * a recorded basis fall back to the entitlement weights.
+ */
+function MotionResultLine({ result }: { result: MotionResult }) {
+  const headcount = result.basis === "headcount";
+  const line = headcount
+    ? `For ${result.forCount} · Against ${result.againstCount} · Abstain ${result.abstainCount}`
+    : `For ${result.forWeight} · Against ${result.againstWeight} · Abstain ${result.abstainWeight}`;
+  const basisNote = headcount
+    ? "one vote per lot"
+    : result.pollDemanded
+      ? "by lot entitlement (poll demanded)"
+      : result.basis === "entitlement"
+        ? "by lot entitlement"
+        : null;
+  return (
+    <p className="font-mono text-xs text-muted-foreground tabular-nums">
+      {line}
+      {basisNote && <span className="font-sans"> — decided {basisNote}</span>}
+    </p>
   );
 }
 
@@ -1011,6 +1238,20 @@ function MotionCard({
         await api.schemes[":schemeId"].lots.$get({ param: { schemeId } }),
       ),
   });
+  const demandPoll = useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api.schemes[":schemeId"].motions[":motionId"]["demand-poll"].$post({
+          param: { schemeId, motionId: motion.id },
+        }),
+      ),
+    onMutate: () => setError(null),
+    onSuccess: () => {
+      toast.success("Poll demanded — this motion will be decided by lot entitlement");
+      onChange();
+    },
+    onError: (e) => setError(e.message),
+  });
   const vote = useMutation({
     mutationFn: async (choice: "for" | "against" | "abstain") =>
       unwrap(
@@ -1038,12 +1279,7 @@ function MotionCard({
           <StatusBadge status={motion.status} />
         </div>
         <p className="text-sm text-muted-foreground">{motion.text}</p>
-        {motion.result && (
-          <p className="font-mono text-xs text-muted-foreground tabular-nums">
-            For {motion.result.forWeight} · Against {motion.result.againstWeight} · Abstain{" "}
-            {motion.result.abstainWeight}
-          </p>
-        )}
+        {motion.result && <MotionResultLine result={motion.result} />}
 
         {motion.status === "draft" &&
           (isOfficer ? (
@@ -1101,6 +1337,33 @@ function MotionCard({
             </div>
             {!lotId && (
               <p className="text-xs text-muted-foreground">Choose your lot to record a vote.</p>
+            )}
+            {motion.resolutionType === "ordinary" && (
+              <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+                {motion.pollDemanded ? (
+                  <>
+                    <Badge tone="info">Poll demanded</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      This motion will be decided by lot entitlement (s 92).
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => demandPoll.mutate()}
+                      pending={demandPoll.isPending}
+                    >
+                      Demand a poll
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Re-tally by lot entitlement instead of one vote per lot (s 92).
+                    </span>
+                  </>
+                )}
+              </div>
             )}
           </div>
         )}

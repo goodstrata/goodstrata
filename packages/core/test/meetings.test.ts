@@ -479,3 +479,110 @@ describe("video meetings", () => {
     expect(after).toEqual({ proceed: false, reason: "not_in_progress" });
   });
 });
+
+describe("polls (s 92(3)–(5)) and proxy validity", () => {
+  let sgmId: string;
+  let pollMotionId: string;
+
+  it("a lot owner can demand a poll, but only while voting is open", async () => {
+    const ctx = ctxAt(NOW);
+    const meeting = await meetingsService.createMeeting(ctx, schemeId, {
+      kind: "sgm",
+      title: "Bike rack SGM",
+      scheduledAt: "2026-08-15T09:00:00Z",
+      agenda: [],
+    });
+    sgmId = meeting.id;
+    const motion = await meetingsService.addMotion(ctx, schemeId, {
+      meetingId: sgmId,
+      title: "Install a bike rack",
+      text: "That the OC installs a bike rack in the basement.",
+      resolutionType: "ordinary",
+    });
+    pollMotionId = motion.id;
+
+    // Voting hasn't opened yet.
+    await expect(
+      meetingsService.demandPoll(ctx, schemeId, personByName.get("Sam")!, pollMotionId),
+    ).rejects.toThrow(/open/i);
+
+    await meetingsService.openMotion(ctx, schemeId, pollMotionId);
+    const res = await meetingsService.demandPoll(
+      ctx,
+      schemeId,
+      personByName.get("Sam")!,
+      pollMotionId,
+    );
+    expect(res.pollDemanded).toBe(true);
+    // A second demand is a no-op, not an error.
+    const again = await meetingsService.demandPoll(
+      ctx,
+      schemeId,
+      personByName.get("Sam")!,
+      pollMotionId,
+    );
+    expect(again.pollDemanded).toBe(true);
+  });
+
+  it("polls don't apply to special resolutions", async () => {
+    const ctx = ctxAt(NOW);
+    const special = await meetingsService.addMotion(ctx, schemeId, {
+      meetingId: sgmId,
+      title: "Change the rules",
+      text: "That the OC adopts new model rules.",
+      resolutionType: "special",
+    });
+    await meetingsService.openMotion(ctx, schemeId, special.id);
+    await expect(
+      meetingsService.demandPoll(ctx, schemeId, personByName.get("Sam")!, special.id),
+    ).rejects.toThrow(/ordinary/i);
+  });
+
+  it("a demanded poll re-tallies the motion by entitlement", async () => {
+    const ctx = ctxAt(NOW);
+    // Sam's big lot (20) for; Alex (10) against; Kim (10) abstains.
+    // Headcount would be a 1–1 tie (lost); the poll carries it 20 v 10.
+    await meetingsService.castVote(ctx, schemeId, personByName.get("Sam")!, {
+      motionId: pollMotionId,
+      lotId: lotByNumber.get("1")!,
+      choice: "for",
+    });
+    await meetingsService.castVote(ctx, schemeId, personByName.get("Alex")!, {
+      motionId: pollMotionId,
+      lotId: lotByNumber.get("2")!,
+      choice: "against",
+    });
+    await meetingsService.castVote(ctx, schemeId, personByName.get("Kim")!, {
+      motionId: pollMotionId,
+      lotId: lotByNumber.get("3")!,
+      choice: "abstain",
+    });
+
+    const tally = await meetingsService.closeMotion(ctx, schemeId, pollMotionId);
+    expect(tally).toMatchObject({
+      carried: true,
+      basis: "entitlement",
+      pollDemanded: true,
+      forWeight: 20,
+      againstWeight: 10,
+      forCount: 1,
+      againstCount: 1,
+    });
+  });
+
+  it("expired proxies no longer count toward quorum", async () => {
+    const ctx = ctxAt(NOW);
+    // Kim (10) attends; Pat's proxy to Kim lapsed before today, so lot 4 is
+    // NOT represented and quorum stays at 10/50.
+    await meetingsService.recordAttendance(ctx, schemeId, sgmId, personByName.get("Kim")!, "online");
+    await meetingsService.submitProxy(ctx, schemeId, personByName.get("Pat")!, {
+      lotId: lotByNumber.get("4")!,
+      proxyPersonId: personByName.get("Kim")!,
+      meetingId: sgmId,
+      expiresOn: "2026-06-30",
+    });
+    const quorum = await meetingsService.quorumStatus(ctx, schemeId, sgmId);
+    expect(quorum.representedEntitlement).toBe(10);
+    expect(quorum.quorate).toBe(false);
+  });
+});

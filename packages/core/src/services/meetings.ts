@@ -425,6 +425,67 @@ export async function addMotion(ctx: ServiceContext, schemeId: string, input: Ad
   return rows[0]!;
 }
 
+/**
+ * s 92(3)–(5): a lot owner or proxy may demand a poll on an ordinary
+ * resolution before the result is declared; the motion is then decided by
+ * lot entitlement instead of one vote per lot. Recorded on the motion and
+ * applied when voting closes. Idempotent — a second demand is a no-op.
+ */
+export async function demandPoll(
+  ctx: ServiceContext,
+  schemeId: string,
+  personId: string,
+  motionId: string,
+) {
+  const motion = await ctx.db.query.motions.findFirst({
+    where: and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)),
+  });
+  if (!motion) throw notFound("Motion");
+  if (motion.resolutionType !== "ordinary") {
+    throw new DomainError(
+      "POLL_NOT_APPLICABLE",
+      "Special and unanimous resolutions are already decided by entitlement — a poll only applies to ordinary resolutions",
+      422,
+    );
+  }
+  if (motion.status !== "open") {
+    throw new DomainError("BAD_STATUS", "A poll can only be demanded while voting is open", 409);
+  }
+
+  // Standing (s 92(3)): the demander must be a lot owner or hold a proxy.
+  const ownership = await ctx.db.query.ownerships.findFirst({
+    where: and(
+      eq(ownerships.schemeId, schemeId),
+      eq(ownerships.personId, personId),
+      isNull(ownerships.endedOn),
+    ),
+  });
+  if (!ownership) {
+    const proxy = await ctx.db.query.proxies.findFirst({
+      where: and(
+        eq(proxies.schemeId, schemeId),
+        eq(proxies.proxyPersonId, personId),
+        isNull(proxies.revokedAt),
+      ),
+    });
+    if (!proxy) {
+      throw new DomainError(
+        "NO_STANDING",
+        "Only a lot owner or a proxy holder may demand a poll (s 92(3))",
+        403,
+      );
+    }
+  }
+
+  if (!motion.pollDemanded) {
+    // No dedicated event yet (the events catalog would need a new type); the
+    // demand is still auditable — the closing tally records pollDemanded and
+    // basis in motions.result.
+    await ctx.db.update(motions).set({ pollDemanded: true }).where(eq(motions.id, motionId));
+  }
+  return { motionId, pollDemanded: true };
+}
+
 export async function openMotion(ctx: ServiceContext, schemeId: string, motionId: string) {
   const motion = await ctx.db.query.motions.findFirst({
     where: and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)),
@@ -692,7 +753,11 @@ export async function recordAttendance(
   });
   if (!meeting) throw notFound("Meeting");
   const ownership = await ctx.db.query.ownerships.findFirst({
-    where: and(eq(ownerships.personId, personId), isNull(ownerships.endedOn)),
+    where: and(
+      eq(ownerships.schemeId, schemeId),
+      eq(ownerships.personId, personId),
+      isNull(ownerships.endedOn),
+    ),
   });
   await ctx.db
     .insert(meetingAttendance)
@@ -719,13 +784,18 @@ export async function quorumStatus(ctx: ServiceContext, schemeId: string, meetin
     for (const o of owned) {
       if (attendeePersonIds.includes(o.personId)) representedLots.add(o.lotId);
     }
-    // Proxies held by attendees.
+    // Proxies held by attendees — same validity rules as cast time: scoped to
+    // this meeting (or standing), not revoked, and not past their expiry.
+    const today = ctx.clock.now().toISOString().slice(0, 10);
     const proxyRows = await ctx.db.query.proxies.findMany({
       where: and(eq(proxies.schemeId, schemeId), isNull(proxies.revokedAt)),
     });
     for (const p of proxyRows) {
       const scopeOk = !p.meetingId || p.meetingId === meetingId;
-      if (scopeOk && attendeePersonIds.includes(p.proxyPersonId)) representedLots.add(p.lotId);
+      const current = !p.expiresOn || p.expiresOn >= today;
+      if (scopeOk && current && attendeePersonIds.includes(p.proxyPersonId)) {
+        representedLots.add(p.lotId);
+      }
     }
   }
 
