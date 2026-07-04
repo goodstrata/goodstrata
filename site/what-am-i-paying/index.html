@@ -91,6 +91,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 </head>
 <body>
 <!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<a class="skip-link" href="#content">Skip to content</a>
 
 <div class="wrap">
   <header class="site">
@@ -109,6 +110,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     </nav>
   </header>
 </div>
+
+<main id="content">
 
 <div class="hero estimator">
   <div class="wrap">
@@ -131,7 +134,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     </p>
 
     <div id="status" class="status hidden" role="status" aria-live="polite"></div>
-    <div id="result" class="result hidden"></div>
+    <div id="result" class="result hidden" tabindex="-1"></div>
 
     <div id="sample">
       <p class="sample-lead">No papers handy? Drag the slider to your building's size.</p>
@@ -139,13 +142,17 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         <span class="sample-badge">Example · a typical Australian building</span>
         <div class="receipt-slider">
           <label for="lotSlider">Your building — <b><span id="lotCount">12</span> lots</b></label>
-          <input type="range" id="lotSlider" min="2" max="60" value="12" step="1" />
+          <input type="range" id="lotSlider" min="2" max="60" value="12" step="1" aria-valuetext="12 lots" />
+          <!-- single, quiet announcer: updates once when the drag settles (on
+               'change'), so a screen reader hears one clean total, not a flood
+               of per-step numbers from live regions on the figures. -->
+          <span class="visually-hidden" aria-live="polite" id="lotAnnounce"></span>
         </div>
-        <div class="receipt-hero" aria-live="polite">
+        <div class="receipt-hero">
           <span class="receipt-label">A strata manager charges about</span>
           <span class="receipt-big struck"><span id="rTotal">$8,400</span><span class="yr"> /yr</span></span>
         </div>
-        <div class="receipt-lines" aria-live="polite">
+        <div class="receipt-lines">
           <div class="rl"><span>Base management fee</span><span id="rMgmt">$6,600</span></div>
           <div class="rl"><span>Disbursements &amp; sundries</span><span id="rAdmin">$1,320</span></div>
           <div class="rl"><span>AGM &amp; extra meeting fees</span><span id="rMeet">$480</span></div>
@@ -166,20 +173,37 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   (function () {
     var s = document.getElementById("lotSlider");
     if (!s) return;
+    var MAX = +s.max;
     var money = function (n) { return "$" + Math.round(n).toLocaleString("en-AU"); };
     var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
     function update() {
       var lots = +s.value;
-      set("lotCount", lots);
-      set("rMgmt", money(lots * 550));
-      set("rAdmin", money(lots * 110));
-      set("rMeet", money(lots * 40));
-      set("rTotal", money(lots * 700));
+      // At the top of the range the estimate is a FLOOR for bigger towers —
+      // signal it with a trailing "+" so a capped figure never reads as the
+      // building's exact number.
+      var plus = lots >= MAX ? "+" : "";
+      set("lotCount", lots + plus);
+      set("rMgmt", money(lots * 550) + plus);
+      set("rAdmin", money(lots * 110) + plus);
+      set("rMeet", money(lots * 40) + plus);
+      set("rTotal", money(lots * 700) + plus);
+      s.setAttribute("aria-valuetext", lots + plus + " lots");
+    }
+    function announce() {
+      var lots = +s.value;
+      var atMax = lots >= MAX;
+      var el = document.getElementById("lotAnnounce");
+      if (el) el.textContent =
+        (atMax ? "Over " + MAX : lots) + " lots — a strata manager charges about " +
+        money(lots * 700) + (atMax ? " or more" : "") + " a year.";
     }
     s.addEventListener("input", update);
+    s.addEventListener("change", announce);
     update();
   })();
 </script>
+
+</main>
 
 <footer class="site-footer">
   <div class="wrap footer-inner">
@@ -304,6 +328,15 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </div>
       </div>`;
     resultEl.classList.remove("hidden");
+    // The error paths speak through the status region, but success used to go
+    // silent at the exact moment the answer appeared. Announce a short summary
+    // (visually the headline already says it, so keep the line off-screen) and
+    // move focus to the result so it's next in the reading order.
+    statusEl.className = "status visually-hidden";
+    statusEl.textContent = total != null
+      ? "Done — you're paying " + money(total) + " a year in strata management fees. The breakdown follows."
+      : "Done — we found manager charges but couldn't total them. The line items follow.";
+    resultEl.focus({ preventScroll: true });
     resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 

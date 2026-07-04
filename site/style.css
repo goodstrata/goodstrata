@@ -136,6 +136,23 @@ a:hover {
   outline-offset: 2px;
   border-radius: 3px;
 }
+/* skip-to-content — off-screen until a keyboard user tabs onto it, then it
+   drops in as the very first focus stop on every page (WCAG 2.4.1) */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 24px;
+  z-index: 100;
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus {
+  top: 12px;
+}
 .wrap {
   max-width: 880px;
   margin: 0 auto;
@@ -1859,6 +1876,13 @@ ul.proof-list li strong {
 }
 .clip-again[hidden] {
   display: none;
+}
+/* both full-frame overlay buttons fill the clip-frame exactly, so the global
+   focus ring (drawn 2px OUTSIDE the box) lands beyond the frame's
+   overflow:hidden and vanishes — draw it inset instead (WCAG 2.4.7) */
+.clip-play:focus-visible,
+.clip-again:focus-visible {
+  outline-offset: -4px;
 }
 .clip-again-btn {
   display: inline-flex;
