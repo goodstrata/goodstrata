@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Building2 } from "lucide-react";
 import { useState } from "react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { SignInForm } from "@/components/auth/sign-in-form";
+import { useAuthPageInfo } from "@/components/auth/social-sign-in";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormMessage } from "@/components/ui/form-message";
@@ -14,21 +14,11 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-interface DemoInfo {
-  demo: boolean;
-  accounts: { label: string; email: string; password: string }[];
-}
-
 function LoginPage() {
   const [entering, setEntering] = useState<string | null>(null);
   const [demoError, setDemoError] = useState<string | null>(null);
 
-  const { data: demoInfo } = useQuery({
-    queryKey: ["demo-info"],
-    queryFn: async () => (await fetch("/api/demo-info")).json() as Promise<DemoInfo>,
-    staleTime: Number.POSITIVE_INFINITY,
-    retry: false,
-  });
+  const { data: demoInfo } = useAuthPageInfo();
 
   async function enterDemo(account: { label: string; email: string; password: string }) {
     setEntering(account.email);
@@ -52,9 +42,7 @@ function LoginPage() {
   return (
     <AuthShell
       heading={
-        <h1 className="page-title text-balance">
-          The building runs itself. You stay in charge.
-        </h1>
+        <h1 className="page-title text-balance">The building runs itself. You stay in charge.</h1>
       }
     >
       {hasDemo && (

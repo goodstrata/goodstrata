@@ -33,6 +33,15 @@ export function createAuth(opts: {
    * SES delivers real mail.
    */
   requireEmailVerification?: boolean;
+  /**
+   * "Sign in with Google" (OAuth). Optional — when absent the provider isn't
+   * registered, the web app hides the button (via /api/demo-info's
+   * socialProviders), and nothing else changes, so self-hosters without
+   * Google credentials stay clean. Register
+   * `<APP_URL>/api/auth/callback/google` as the redirect URI in Google Cloud
+   * Console (better-auth's default callback path under our baseURL).
+   */
+  google?: { clientId: string; clientSecret: string };
   /** Rate limiting is enabled by default in production; force it on here. */
   production?: boolean;
 }) {
@@ -58,6 +67,26 @@ export function createAuth(opts: {
         jwks,
       },
     }),
+    // Only registered when credentials are supplied — better-auth 404s
+    // /sign-in/social for unknown providers, and the web app hides the button.
+    socialProviders: opts.google
+      ? {
+          google: {
+            clientId: opts.google.clientId,
+            clientSecret: opts.google.clientSecret,
+          },
+        }
+      : undefined,
+    account: {
+      accountLinking: {
+        enabled: true,
+        // Google verifies email ownership, so a Google sign-in whose address
+        // matches an existing email/password user links to that account
+        // instead of erroring with account_not_linked (better-auth's
+        // recommended trustedProviders config).
+        trustedProviders: ["google"],
+      },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: opts.requireEmailVerification ?? false,
@@ -156,6 +185,7 @@ export function createAuth(opts: {
       storage: "memory",
       customRules: {
         "/sign-in/email": { window: 60, max: 8 },
+        "/sign-in/social": { window: 60, max: 10 },
         "/sign-up/email": { window: 60, max: 5 },
         "/forget-password": { window: 60, max: 5 },
         "/request-password-reset": { window: 60, max: 5 },

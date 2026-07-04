@@ -25,6 +25,10 @@ async function main() {
     appUrl: env.APP_URL,
     mcpUrl: env.MCP_URL,
     email: integrations.email,
+    google:
+      env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET }
+        : undefined,
     requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION === "1",
     production: env.NODE_ENV === "production",
   });

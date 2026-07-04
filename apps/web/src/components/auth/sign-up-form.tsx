@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { PasswordStrength } from "@/components/auth/password-strength";
+import { SocialSignIn } from "@/components/auth/social-sign-in";
 import { VerifyEmailNotice } from "@/components/auth/verify-email-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,6 +65,9 @@ export function SignUpForm() {
         <CardDescription>Set up GoodStrata for your owners corporation.</CardDescription>
       </CardHeader>
       <CardContent>
+        {/* Renders only when this deployment has Google configured. New Google
+            users land on "/" like a fresh email signup (onboarding wizard). */}
+        <SocialSignIn callbackURL="/" />
         <form
           onSubmit={(e) => {
             e.preventDefault();

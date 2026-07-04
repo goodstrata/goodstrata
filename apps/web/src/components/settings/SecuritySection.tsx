@@ -3,6 +3,7 @@ import { Laptop, LogOut, Monitor, Smartphone, TriangleAlert } from "lucide-react
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { GoogleMark, useAuthPageInfo } from "@/components/auth/social-sign-in";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,10 +32,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   changePassword,
   deleteUser,
+  linkSocial,
+  listAccounts,
   listSessions,
   revokeOtherSessions,
   revokeSession,
   signOut,
+  unlinkAccount,
   useSession,
 } from "@/lib/auth";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
@@ -59,6 +63,7 @@ export function SecuritySection({ user }: { user: SettingsUser }) {
   return (
     <div className="space-y-6">
       <ChangePasswordCard />
+      <ConnectedAccountsCard />
       <SessionsCard />
       <DangerCard user={user} />
     </div>
@@ -179,6 +184,135 @@ function ChangePasswordCard() {
           <SubmitButton form={form}>Change password</SubmitButton>
         </CardFooter>
       </form>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Connected accounts                                                         */
+/* -------------------------------------------------------------------------- */
+
+interface LinkedAccount {
+  id: string;
+  /** better-auth provider id — "credential" is email/password. */
+  providerId: string;
+}
+
+function ConnectedAccountsCard() {
+  const queryClient = useQueryClient();
+  // Runtime capability: which social providers this deployment has configured.
+  const { data: info } = useAuthPageInfo();
+
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: ["settings-accounts"],
+    queryFn: async () => {
+      const res = await listAccounts();
+      if (res.error) throw new Error(res.error.message ?? "Couldn't load connected accounts");
+      return (res.data ?? []) as LinkedAccount[];
+    },
+  });
+
+  const link = useMutation({
+    mutationFn: async () => {
+      const res = await linkSocial({ provider: "google", callbackURL: "/settings" });
+      if (res.error) throw new Error(res.error.message ?? "Couldn't connect Google");
+      // Success means the browser is redirecting to Google; the mutation stays
+      // pending until navigation happens so the button can't be re-clicked.
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't connect Google"),
+  });
+
+  const unlink = useMutation({
+    mutationFn: async () => {
+      const res = await unlinkAccount({ providerId: "google" });
+      if (res.error) throw new Error(res.error.message ?? "Couldn't disconnect Google");
+    },
+    onSuccess: () => {
+      toast.success("Google disconnected");
+      void queryClient.invalidateQueries({ queryKey: ["settings-accounts"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't disconnect Google"),
+  });
+
+  const accounts = data ?? [];
+  const googleConfigured = Boolean(info?.socialProviders?.includes("google"));
+  const googleLinked = accounts.some((a) => a.providerId === "google");
+  // Disconnecting your only sign-in method would lock you out — better-auth
+  // refuses server-side; we grey the button and explain instead.
+  const hasOtherMethod = accounts.some((a) => a.providerId !== "google");
+
+  // Nothing to offer: deployment has no Google configured and nothing linked
+  // (a linked account still shows so it can be disconnected after the
+  // credentials are removed from the deployment).
+  if (!googleConfigured && !googleLinked) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Connected accounts</CardTitle>
+        <CardDescription>Other ways to sign in to this account.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-9 rounded-full" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+          </div>
+        ) : isError ? (
+          <ErrorState
+            message={error instanceof Error ? error.message : "Couldn't load connected accounts."}
+            onRetry={() => void refetch()}
+          />
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
+              <GoogleMark className="size-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Google</span>
+                {googleLinked ? (
+                  <Badge tone="positive" className="shrink-0">
+                    Connected
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="text-13 text-muted-foreground">
+                {googleLinked
+                  ? hasOtherMethod
+                    ? "You can sign in with your Google account."
+                    : "Your only sign-in method. Set a password before disconnecting."
+                  : "Sign in with one click using your Google account."}
+              </p>
+            </div>
+            {googleLinked ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={!hasOtherMethod}
+                pending={unlink.isPending}
+                onClick={() => unlink.mutate()}
+              >
+                Disconnect
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                pending={link.isPending}
+                onClick={() => link.mutate()}
+              >
+                Connect
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }

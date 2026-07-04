@@ -21,6 +21,11 @@ interface Env {
   STORAGE_SECRET_ACCESS_KEY?: string;
   // Daily.co (committee video)
   DAILY_API_KEY?: string;
+  // Google OAuth ("Sign in with Google"). Both must be set to enable it; the
+  // web app hides the button otherwise. Redirect URI to register in Google
+  // Cloud Console: https://my.goodstrata.com.au/api/auth/callback/google
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
   // Monoova NPP / PayID (real payments). Presence of MONOOVA_API_KEY flips the
   // driver on; the rest tune it. MONOOVA_WEBHOOK_PUBLIC_KEY (PEM or hex-DER)
   // gates webhook verification.
@@ -89,6 +94,14 @@ export class GoodstrataApp extends Container<Env> {
       ? { VIDEO_PROVIDER: "daily", DAILY_API_KEY: env.DAILY_API_KEY }
       : {};
 
+    const google =
+      env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? {
+            GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+            GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+          }
+        : {}; // falls back to email/password + magic link only
+
     const payments = env.MONOOVA_API_KEY
       ? {
           PAYMENTS_PROVIDER: "monoova",
@@ -114,6 +127,7 @@ export class GoodstrataApp extends Container<Env> {
         ...email,
         ...storage,
         ...video,
+        ...google,
         ...payments,
       },
     });

@@ -22,4 +22,8 @@ export const {
   revokeSession,
   revokeOtherSessions,
   deleteUser,
+  // Connected accounts (Settings → Security): Google link/unlink.
+  listAccounts,
+  linkSocial,
+  unlinkAccount,
 } = authClient;

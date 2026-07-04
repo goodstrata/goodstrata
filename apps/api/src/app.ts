@@ -77,10 +77,15 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     )
     .route("/api", estimatorRoutes(deps))
     .get("/api/health", (c) => c.json({ ok: true }))
-    // Public sandbox descriptor: the login page renders one-click demo entry
-    // buttons from this. Only ever populated when DEMO_MODE=1.
-    .get("/api/demo-info", (c) =>
-      c.json(
+    // Public auth-page descriptor: one-click demo entry buttons (only ever
+    // populated when DEMO_MODE=1) plus which social sign-in providers this
+    // deployment has configured — a runtime capability, so one web build
+    // serves every deployment and the Google button only shows where the
+    // credentials exist.
+    .get("/api/demo-info", (c) => {
+      const socialProviders =
+        deps.env.GOOGLE_CLIENT_ID && deps.env.GOOGLE_CLIENT_SECRET ? ["google"] : [];
+      return c.json(
         deps.env.DEMO_MODE === "1"
           ? {
               demo: true,
@@ -96,10 +101,11 @@ export function createApp(deps: AppDeps, hub: SseHub) {
                   password: "goodstrata-demo",
                 },
               ],
+              socialProviders,
             }
-          : { demo: false, accounts: [] },
-      ),
-    )
+          : { demo: false, accounts: [], socialProviders },
+      );
+    })
     .on(["POST", "GET"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw))
     // MCP server: OAuth-bearer /mcp transport + discovery metadata at the root.
     // Mounted outside /api because it carries its own auth (not the session

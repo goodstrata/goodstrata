@@ -72,6 +72,14 @@ const envSchema = z.object({
   /** securityToken echoed on webhook subscription (setup script). */
   MONOOVA_WEBHOOK_SECRET: z.string().optional(),
 
+  /**
+   * "Sign in with Google" (optional — both must be set to enable it). Create
+   * OAuth credentials in Google Cloud Console and register the redirect URI
+   * `<APP_URL>/api/auth/callback/google` (better-auth's default callback path).
+   */
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+
   /** Serve the built web app from this directory (production single-image mode). */
   WEB_DIST: z.string().optional(),
 
