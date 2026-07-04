@@ -33,8 +33,28 @@ export function pgConfig(connectionString: string): {
     : { connectionString: cleaned };
 }
 
-export function createDb(connectionString: string) {
-  const pool = new pg.Pool({ ...pgConfig(connectionString), max: 10 });
+/**
+ * Supabase exposes a session pooler on :5432 (one Postgres connection held per
+ * client, no multiplexing) and a transaction pooler on :6543 that multiplexes
+ * many clients over a small Postgres pool — the right choice for the bursty
+ * request path, which otherwise exhausts the session pooler under concurrent
+ * page fan-out. Only Supabase pooler URLs are rewritten; direct/self-host URLs
+ * (and LISTEN/pg-boss connections that need session mode) are left untouched.
+ */
+export function toTransactionPooler(connectionString: string): string {
+  return connectionString.replace(/(pooler\.supabase\.com):5432\b/i, "$1:6543");
+}
+
+export function createDb(
+  connectionString: string,
+  opts?: { max?: number; transactionPool?: boolean },
+) {
+  const url = opts?.transactionPool ? toTransactionPooler(connectionString) : connectionString;
+  const pool = new pg.Pool({
+    ...pgConfig(url),
+    max: opts?.max ?? 10,
+    connectionTimeoutMillis: 10_000,
+  });
   const db = drizzle(pool, { schema, casing: "snake_case" });
   return { db, pool };
 }

@@ -17,7 +17,10 @@ async function main() {
   const env = loadEnv();
   await runMigrations(env.DATABASE_URL);
 
-  const { db } = createDb(env.DATABASE_URL);
+  // Route the request-path query pool through the transaction pooler so bursts
+  // of concurrent reads (e.g. the Finance tab's fan-out) multiplex instead of
+  // exhausting the session pooler. LISTEN + pg-boss keep their session pooler.
+  const { db } = createDb(env.DATABASE_URL, { transactionPool: true });
   const integrations = integrationsFromEnv(env);
   const auth = createAuth({
     db,

@@ -51,7 +51,10 @@ export interface BackgroundServices {
  * the API by default (self-host floor: one Node process).
  */
 export async function startBackground(deps: AppDeps): Promise<BackgroundServices> {
-  const boss = new PgBoss(pgConfig(deps.env.DATABASE_URL));
+  // pg-boss defaults to a 10-connection pool; it only needs a couple for job
+  // maintenance, so cap it to leave headroom on the session pooler for the
+  // dispatcher/SSE LISTEN connections.
+  const boss = new PgBoss({ ...pgConfig(deps.env.DATABASE_URL), max: 2 });
   boss.on("error", (err) => console.error("[pg-boss]", err));
   await boss.start();
 
