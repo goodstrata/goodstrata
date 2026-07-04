@@ -31,8 +31,15 @@ const STATUS_TONES: Record<string, Tone> = {
   // levy notices
   issued: "info",
   paid: "positive",
+  partially_paid: "caution",
   overdue: "critical",
+  written_off: "neutral",
   cancelled: "critical",
+  // payments
+  received: "info",
+  matched: "positive",
+  unmatched: "caution",
+  refunded: "neutral",
   // maintenance
   open: "info",
   triaged: "agent",

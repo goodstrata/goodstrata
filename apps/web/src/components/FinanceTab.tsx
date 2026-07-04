@@ -4,7 +4,16 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { AlertTriangle, CalendarClock, Plus, Receipt, Wallet } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  FileDown,
+  HandCoins,
+  Landmark,
+  Plus,
+  Receipt,
+  Wallet,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -45,7 +54,7 @@ import {
 } from "@/components/ui/table";
 import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { useIsOfficer } from "@/lib/roles";
 import { useIsMobile } from "@/lib/use-mobile";
 
@@ -80,6 +89,36 @@ interface ArrearsRow {
   stage: number;
   interestAccruedCents: number;
 }
+interface PaymentRow {
+  id: string;
+  provider: string;
+  providerRef: string;
+  payid: string | null;
+  amountCents: number;
+  paidAt: string;
+  payerName: string | null;
+  status: string;
+  receiptNumber: string | null;
+  levyNoticeId: string | null;
+  noticeNumber: string | null;
+  lotId: string | null;
+}
+interface PaymentsStatusData {
+  provider: string;
+  trustAccount: {
+    status: string;
+    bsb: string | null;
+    accountNumber: string | null;
+    payidRoot: string | null;
+    provider: string;
+  } | null;
+  unmatchedCount: number;
+  lastPaymentAt: string | null;
+  webhookLastSeenAt: string | null;
+  unprocessedWebhooks: number;
+}
+
+const OPEN_NOTICE_STATUSES = ["issued", "partially_paid", "overdue"];
 
 // Shared query definitions (one key/fn each; sections and the stat row dedupe).
 const budgetsQuery = (schemeId: string) => ({
@@ -117,12 +156,34 @@ const arrearsQuery = (schemeId: string) => ({
       await api.schemes[":schemeId"].arrears.$get({ param: { schemeId } }),
     ),
 });
+const paymentsQuery = (schemeId: string) => ({
+  queryKey: ["payments", schemeId] as const,
+  queryFn: async () =>
+    unwrap<{ payments: PaymentRow[] }>(
+      await api.schemes[":schemeId"].payments.$get({ param: { schemeId } }),
+    ),
+});
+const paymentsStatusQuery = (schemeId: string) => ({
+  queryKey: ["payments-status", schemeId] as const,
+  queryFn: async () =>
+    unwrap<{ status: PaymentsStatusData }>(
+      await api.schemes[":schemeId"].payments.status.$get({ param: { schemeId } }),
+    ),
+});
 
 export function FinanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
   const invalidate = () => {
-    for (const key of ["budgets", "schedules", "notices", "arrears", "decisions"]) {
+    for (const key of [
+      "budgets",
+      "schedules",
+      "notices",
+      "arrears",
+      "decisions",
+      "payments",
+      "payments-status",
+    ]) {
       void queryClient.invalidateQueries({ queryKey: [key, schemeId] });
     }
     void queryClient.invalidateQueries({ queryKey: ["lot-statement", schemeId] });
@@ -132,6 +193,8 @@ export function FinanceTab({ schemeId }: { schemeId: string }) {
     <div className="space-y-6">
       <FinanceStats schemeId={schemeId} />
       <ArrearsSection schemeId={schemeId} />
+      <HowToPaySection schemeId={schemeId} isOfficer={isOfficer} />
+      <PaymentsSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       <BudgetsSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       <SchedulesSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       <NoticesSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
@@ -222,6 +285,531 @@ function FinanceStats({ schemeId }: { schemeId: string }) {
         }
       />
     </div>
+  );
+}
+
+// ------------------------------ How to pay ------------------------------
+
+/**
+ * Owner-facing payment details (BSB/account + reference guidance) plus, for
+ * officers, a compact payments-provider status line (provider, webhook
+ * liveness, suspense-queue size).
+ */
+function HowToPaySection({ schemeId, isOfficer }: { schemeId: string; isOfficer: boolean }) {
+  const status = useQuery(paymentsStatusQuery(schemeId));
+
+  // The payments section surfaces load errors; this card just stays quiet.
+  if (status.isPending || status.isError) return null;
+  const s = status.data.status;
+  const account = s.trustAccount;
+  if (!account && !isOfficer) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Landmark className="size-4" aria-hidden="true" /> How to pay
+        </CardTitle>
+        <CardDescription>
+          Each levy notice carries its own PayID (on the emailed notice and PDF) — payments to it
+          are matched automatically. Bank transfers work too: quote your notice number.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {account?.status === "active" && account.bsb && account.accountNumber ? (
+          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-muted-foreground">BSB</dt>
+              <dd className="font-mono tabular-nums">{account.bsb}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Account number</dt>
+              <dd className="font-mono tabular-nums">{account.accountNumber}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Reference</dt>
+              <dd>Your levy notice number</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {account
+              ? "The scheme's collection account is still being provisioned — pay using the details on your levy notice, or contact the treasurer."
+              : "Payment details appear once the first levy run issues."}
+          </p>
+        )}
+        {isOfficer && (
+          <p className="border-t pt-3 text-xs text-muted-foreground">
+            Provider <span className="font-mono">{s.provider}</span>
+            {" · webhook last seen "}
+            {s.webhookLastSeenAt ? formatDateTime(s.webhookLastSeenAt) : "never"}
+            {s.unmatchedCount > 0 && (
+              <>
+                {" · "}
+                <span className="font-medium text-critical">
+                  {s.unmatchedCount} unmatched {s.unmatchedCount === 1 ? "payment" : "payments"}
+                </span>
+              </>
+            )}
+            {s.unprocessedWebhooks > 0 && (
+              <>
+                {" · "}
+                <span className="font-medium text-critical">
+                  {s.unprocessedWebhooks} webhook{" "}
+                  {s.unprocessedWebhooks === 1 ? "delivery" : "deliveries"} pending
+                </span>
+              </>
+            )}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ------------------------------- Payments -------------------------------
+
+function PaymentsSection({
+  schemeId,
+  isOfficer,
+  onChange,
+}: {
+  schemeId: string;
+  isOfficer: boolean;
+  onChange: () => void;
+}) {
+  const payments = useQuery(paymentsQuery(schemeId));
+  const notices = useQuery(noticesQuery(schemeId));
+  const lots = useQuery(lotsQuery(schemeId));
+  const isMobile = useIsMobile();
+  const lotNumber = (lotId: string | null) =>
+    lots.data?.lots.find((l) => l.id === lotId)?.lotNumber ?? "—";
+
+  const list = payments.data?.payments ?? [];
+  const unmatchedCount = list.filter((p) => p.status === "unmatched").length;
+  const openNotices = (notices.data?.notices ?? []).filter((n) =>
+    OPEN_NOTICE_STATUSES.includes(n.status),
+  );
+
+  // Owners see nothing until money has moved.
+  if (!isOfficer && (payments.isPending || list.length === 0)) return null;
+
+  const receiptLink = (p: PaymentRow, className?: string) =>
+    p.receiptNumber ? (
+      <Button asChild variant="ghost" size="sm" className={className}>
+        <a
+          href={`/api/schemes/${schemeId}/documents/payments/${p.id}/receipt.pdf`}
+          target="_blank"
+          rel="noreferrer"
+          title={`Download receipt ${p.receiptNumber}`}
+        >
+          <FileDown className="size-4" /> Receipt
+        </a>
+      </Button>
+    ) : null;
+
+  const matchButton = (p: PaymentRow, className?: string) =>
+    isOfficer && p.status === "unmatched" ? (
+      <MatchPaymentDialog
+        schemeId={schemeId}
+        payment={p}
+        openNotices={openNotices}
+        lotNumber={lotNumber}
+        onChange={onChange}
+        className={className}
+      />
+    ) : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle>Payments</CardTitle>
+            <CardDescription>
+              {isOfficer && unmatchedCount > 0 ? (
+                <span className="font-medium text-critical">
+                  {unmatchedCount === 1
+                    ? "1 payment needs matching to a notice."
+                    : `${unmatchedCount} payments need matching to a notice.`}
+                </span>
+              ) : (
+                "Every payment received, with its receipt."
+              )}
+            </CardDescription>
+          </div>
+          {isOfficer && (
+            <RecordPaymentDialog
+              schemeId={schemeId}
+              openNotices={openNotices}
+              lotNumber={lotNumber}
+              onChange={onChange}
+            />
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {payments.isPending && <Skeleton className="h-24" />}
+        {payments.isError && (
+          <ErrorState
+            message="We couldn't load the payments."
+            onRetry={() => void payments.refetch()}
+          />
+        )}
+        {payments.data && list.length === 0 && (
+          <EmptyState
+            icon={HandCoins}
+            title="No payments yet"
+            description="Payments appear here as they arrive — or record a bank transfer manually."
+          />
+        )}
+        {list.length > 0 &&
+          (isMobile ? (
+            <ul className="space-y-3">
+              {list.map((p) => (
+                <li key={p.id} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-muted-foreground">{formatDate(p.paidAt)}</span>
+                    <StatusBadge status={p.status} />
+                  </div>
+                  <div className="mt-2 flex items-end justify-between gap-2">
+                    <div className="min-w-0 text-sm">
+                      <div className="truncate">{p.payerName ?? "Unknown payer"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {p.noticeNumber ? (
+                          <span className="font-mono">{p.noticeNumber}</span>
+                        ) : (
+                          `via ${p.provider}`
+                        )}
+                      </div>
+                    </div>
+                    <Money cents={p.amountCents} className="text-base" />
+                  </div>
+                  {receiptLink(p, "mt-3 w-full")}
+                  {matchButton(p, "mt-3 w-full")}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Received</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>Applied to</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatDate(p.paidAt)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="max-w-[14rem] truncate">{p.payerName ?? "Unknown payer"}</div>
+                      <div className="text-xs text-muted-foreground">via {p.provider}</div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {p.noticeNumber ? (
+                        <>
+                          {p.noticeNumber}
+                          <span className="block text-muted-foreground">
+                            Lot {lotNumber(p.lotId)}
+                          </span>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Money cents={p.amountCents} />
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={p.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {receiptLink(p)}
+                        {matchButton(p)}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+const manualPaymentSchema = z.object({
+  levyNoticeId: z.string().min(1, "Select the notice this payment pays."),
+  amount: z
+    .string()
+    .refine(
+      (v) => v.trim() !== "" && Number.isFinite(Number(v)),
+      "Enter the amount in dollars, like 250.00.",
+    )
+    .refine((v) => Number(v) > 0, "Enter an amount greater than zero."),
+  paidAt: z
+    .string()
+    .refine(
+      (v) => v.trim() !== "" && !Number.isNaN(new Date(v).getTime()),
+      "Enter the date the money arrived.",
+    ),
+  payerName: z.string(),
+  reference: z.string(),
+});
+type ManualPaymentValues = z.infer<typeof manualPaymentSchema>;
+
+/** Treasurer records a bank transfer that arrived outside the provider rail. */
+function RecordPaymentDialog({
+  schemeId,
+  openNotices,
+  lotNumber,
+  onChange,
+}: {
+  schemeId: string;
+  openNotices: Notice[];
+  lotNumber: (lotId: string | null) => string;
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const form = useAppForm({
+    schema: manualPaymentSchema,
+    defaultValues: {
+      levyNoticeId: "",
+      amount: "",
+      paidAt: "",
+      payerName: "",
+      reference: "",
+    } as ManualPaymentValues,
+    onSubmit: async (values) => {
+      await unwrap(
+        await api.schemes[":schemeId"].payments.manual.$post({
+          param: { schemeId },
+          json: {
+            levyNoticeId: values.levyNoticeId,
+            amountCents: Math.round(Number(values.amount) * 100),
+            paidAt: values.paidAt,
+            payerName: values.payerName.trim() || undefined,
+            reference: values.reference.trim() || undefined,
+          },
+        }),
+      );
+      toast.success("Payment recorded — receipt issued");
+      onChange();
+      setOpen(false);
+      form.reset();
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          <Plus className="size-4" /> Record payment
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Record a bank transfer</DialogTitle>
+          <DialogDescription>
+            For money that arrived outside PayID — it runs the same allocation and receipt chain,
+            and lands on the audit log.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          id="manual-payment-form"
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void form.handleSubmit();
+          }}
+        >
+          <form.Field name="levyNoticeId">
+            {(field) => (
+              <Field label="Levy notice" required error={fieldError(field.state.meta.errors)}>
+                {(control) => (
+                  <Select value={field.state.value} onValueChange={(v) => field.handleChange(v)}>
+                    <SelectTrigger
+                      id={control.id}
+                      aria-invalid={control["aria-invalid"]}
+                      aria-describedby={control["aria-describedby"]}
+                      className="w-full"
+                      data-testid="manual-payment-notice"
+                    >
+                      <SelectValue placeholder="Select…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {openNotices.map((n) => (
+                        <SelectItem key={n.id} value={n.id}>
+                          {n.noticeNumber} · Lot {lotNumber(n.lotId)} · {formatMoney(n.totalCents)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="amount">
+            {(field) => (
+              <Field label="Amount ($)" required error={fieldError(field.state.meta.errors)}>
+                <Input
+                  type="number"
+                  step="any"
+                  inputMode="decimal"
+                  data-testid="manual-payment-amount"
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="paidAt">
+            {(field) => (
+              <Field label="Date received" required error={fieldError(field.state.meta.errors)}>
+                <Input
+                  type="date"
+                  data-testid="manual-payment-date"
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="payerName">
+            {(field) => (
+              <Field label="Payer" hint="Optional — as it appears on the bank statement.">
+                <Input
+                  data-testid="manual-payment-payer"
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="reference">
+            {(field) => (
+              <Field
+                label="Bank reference"
+                hint="Optional — stops the same statement line being recorded twice."
+              >
+                <Input
+                  data-testid="manual-payment-reference"
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              </Field>
+            )}
+          </form.Field>
+          <FormError form={form} />
+        </form>
+        <DialogFooter>
+          <SubmitButton form={form} formId="manual-payment-form">
+            Record payment
+          </SubmitButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Resolve a parked (unmatched) payment onto an open notice. */
+function MatchPaymentDialog({
+  schemeId,
+  payment,
+  openNotices,
+  lotNumber,
+  onChange,
+  className,
+}: {
+  schemeId: string;
+  payment: PaymentRow;
+  openNotices: Notice[];
+  lotNumber: (lotId: string | null) => string;
+  onChange: () => void;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [noticeId, setNoticeId] = useState("");
+
+  const match = useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api.schemes[":schemeId"].payments[":paymentId"].match.$post({
+          param: { schemeId, paymentId: payment.id },
+          json: { levyNoticeId: noticeId },
+        }),
+      ),
+    onSuccess: () => {
+      toast.success("Payment matched — receipt issued");
+      onChange();
+      setOpen(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className={className}>
+          Match
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Match payment to a notice</DialogTitle>
+          <DialogDescription>
+            {formatMoney(payment.amountCents)} from {payment.payerName ?? "an unknown payer"} on{" "}
+            {formatDate(payment.paidAt)}
+            {payment.payid ? ` (reference ${payment.payid})` : ""}.
+          </DialogDescription>
+        </DialogHeader>
+        <Field label="Levy notice" required>
+          {(control) => (
+            <Select value={noticeId} onValueChange={setNoticeId}>
+              <SelectTrigger
+                id={control.id}
+                className="w-full"
+                data-testid={`match-payment-notice-${payment.id}`}
+              >
+                <SelectValue placeholder="Select…" />
+              </SelectTrigger>
+              <SelectContent>
+                {openNotices.map((n) => (
+                  <SelectItem key={n.id} value={n.id}>
+                    {n.noticeNumber} · Lot {lotNumber(n.lotId)} · {formatMoney(n.totalCents)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </Field>
+        <DialogFooter>
+          <Button
+            pending={match.isPending}
+            disabled={!noticeId}
+            onClick={() => match.mutate()}
+            data-testid={`match-payment-submit-${payment.id}`}
+          >
+            Match payment
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -778,6 +1366,14 @@ function NoticesSection({
                     </div>
                     <Money cents={n.totalCents} className="text-base" />
                   </div>
+                  {n.payid && n.status !== "paid" && (
+                    <div
+                      className="mt-2 truncate font-mono text-[11px] text-muted-foreground"
+                      title={n.payid}
+                    >
+                      PayID {n.payid}
+                    </div>
+                  )}
                   {simulateButton(n, "mt-3 w-full")}
                 </li>
               ))}
@@ -799,7 +1395,17 @@ function NoticesSection({
               <TableBody>
                 {list.map((n) => (
                   <TableRow key={n.id}>
-                    <TableCell className="font-mono text-xs">{n.noticeNumber}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {n.noticeNumber}
+                      {n.payid && n.status !== "paid" && (
+                        <span
+                          className="block max-w-[16rem] truncate text-[11px] text-muted-foreground"
+                          title={`PayID ${n.payid}`}
+                        >
+                          PayID {n.payid}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="tabular-nums">{lotNumber(n.lotId)}</TableCell>
                     <TableCell className="text-right">
                       <Money cents={n.totalCents} />
