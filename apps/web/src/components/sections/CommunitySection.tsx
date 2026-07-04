@@ -404,7 +404,7 @@ function PostComposer({ schemeId }: { schemeId: string }) {
                     type="button"
                     onClick={() => removeImage(i)}
                     aria-label={`Remove attachment ${i + 1}`}
-                    className="absolute top-1 right-1 flex size-6 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm ring-1 ring-border transition-colors hover:text-foreground"
+                    className="absolute top-1 right-1 flex size-6 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm ring-1 ring-border transition-colors after:absolute after:-inset-2.5 hover:text-foreground"
                   >
                     <X aria-hidden="true" className="size-3.5" />
                   </button>
@@ -536,7 +536,10 @@ function PostCard({
           onClick={() => likeMutation.mutate()}
           aria-pressed={post.likedByMe}
           aria-label={post.likedByMe ? "Unlike post" : "Like post"}
-          className={cn("gap-1.5 text-muted-foreground", post.likedByMe && "text-primary")}
+          className={cn(
+            "gap-1.5 text-muted-foreground pointer-coarse:-my-1.5 pointer-coarse:min-h-11",
+            post.likedByMe && "text-primary",
+          )}
         >
           <Heart aria-hidden="true" className={cn("size-4", post.likedByMe && "fill-current")} />
           <span className="font-mono text-xs tabular-nums">{post.likeCount}</span>
@@ -546,7 +549,7 @@ function PostCard({
           size="sm"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="gap-1.5 text-muted-foreground"
+          className="gap-1.5 text-muted-foreground pointer-coarse:-my-1.5 pointer-coarse:min-h-11"
         >
           <MessageSquare aria-hidden="true" className="size-4" />
           <span className="font-mono text-xs tabular-nums">{post.commentCount}</span>
@@ -850,7 +853,10 @@ function CommentItem({
             onClick={() => likeMutation.mutate()}
             aria-pressed={comment.likedByMe}
             aria-label={comment.likedByMe ? "Unlike comment" : "Like comment"}
-            className={cn("gap-1.5 text-muted-foreground", comment.likedByMe && "text-primary")}
+            className={cn(
+              "gap-1.5 text-muted-foreground pointer-coarse:-my-2.5 pointer-coarse:min-h-11",
+              comment.likedByMe && "text-primary",
+            )}
           >
             <Heart
               aria-hidden="true"

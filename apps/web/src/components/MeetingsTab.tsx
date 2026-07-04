@@ -47,7 +47,7 @@ import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { formatDateTime, formatTime } from "@/lib/format";
 import { useIsOfficer } from "@/lib/roles";
-import { useIsMobile } from "@/lib/use-mobile";
+import { useSheetSide } from "@/lib/use-sheet-side";
 import { cn } from "@/lib/utils";
 
 interface Meeting {
@@ -145,18 +145,6 @@ export function MeetingsTab({ schemeId }: { schemeId: string }) {
   ) : (
     <MeetingList schemeId={schemeId} onOpen={openMeeting} />
   );
-}
-
-/** Side sheet on desktop, bottom sheet on mobile (DESIGN.md §7.2, > 2 fields). */
-function useSheetSide() {
-  const isMobile = useIsMobile();
-  return {
-    side: isMobile ? ("bottom" as const) : ("right" as const),
-    className: cn(
-      "overflow-y-auto",
-      isMobile ? "max-h-[85dvh] rounded-t-xl" : "w-full sm:max-w-md",
-    ),
-  };
 }
 
 function ScheduleMeetingSheet({ schemeId }: { schemeId: string }) {

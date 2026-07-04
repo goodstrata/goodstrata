@@ -153,7 +153,13 @@ function RootLayout() {
       >
         <Outlet />
       </main>
-      <Toaster position="bottom-right" richColors />
+      {/* mobileOffset clears the fixed h-16 mobile bottom nav (+ safe area) on
+          scheme pages so toasts never cover the primary navigation. */}
+      <Toaster
+        position="bottom-right"
+        richColors
+        mobileOffset={{ bottom: "calc(env(safe-area-inset-bottom) + 5rem)" }}
+      />
     </div>
   );
 }

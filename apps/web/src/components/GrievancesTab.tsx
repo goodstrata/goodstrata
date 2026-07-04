@@ -42,6 +42,8 @@ import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { useIsOfficer } from "@/lib/roles";
+import { useSheetSide } from "@/lib/use-sheet-side";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types (JSON — timestamps arrive as ISO strings).
@@ -579,9 +581,10 @@ function ComplaintDetailSheet({
   onOpenChange: (open: boolean) => void;
   onChange: () => void;
 }) {
+  const sheet = useSheetSide("w-full sm:max-w-lg");
   return (
     <Sheet open={complaintId !== null} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-lg">
+      <SheetContent side={sheet.side} className={cn(sheet.className, "gap-0")}>
         {complaintId && (
           <ComplaintDetailBody schemeId={schemeId} complaintId={complaintId} onChange={onChange} />
         )}

@@ -25,8 +25,12 @@ function Tabs({
 // The Registry look: a transparent list over a hairline rule; the active tab
 // carries an eucalypt underline (DESIGN.md §7.2). Both variants keep the same
 // quiet line treatment.
+// Horizontal lists cap at the container width and scroll sideways (scrollbar
+// hidden) so a crowded tab row can never drag the whole page into horizontal
+// overflow on narrow phones; pb-px keeps the active underline (after:-bottom-px
+// on the trigger) inside the scroll clip so it still meets the hairline rule.
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center gap-1 bg-transparent text-muted-foreground group-data-[orientation=horizontal]/tabs:border-b group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:border-r",
+  "group/tabs-list inline-flex w-fit items-center gap-1 bg-transparent text-muted-foreground [-ms-overflow-style:none] [scrollbar-width:none] group-data-[orientation=horizontal]/tabs:max-w-full group-data-[orientation=horizontal]/tabs:overflow-x-auto group-data-[orientation=horizontal]/tabs:border-b group-data-[orientation=horizontal]/tabs:pb-px group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:border-r [&::-webkit-scrollbar]:hidden",
   {
     variants: {
       variant: {
