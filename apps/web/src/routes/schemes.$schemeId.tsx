@@ -35,7 +35,6 @@ import { DocumentsSection } from "@/components/sections/DocumentsSection";
 import { LotsSection } from "@/components/sections/LotsSection";
 import { OverviewSection } from "@/components/sections/OverviewSection";
 import { PeopleSection } from "@/components/sections/PeopleSection";
-import { Eyebrow } from "@/components/ui/eyebrow";
 import { RegistryPlate } from "@/components/ui/registry-plate";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -141,7 +140,7 @@ function SchemePage() {
         <div className="min-w-0 space-y-6 pb-24 lg:pb-8">
           {data ? (
             <RegistryPlate
-              eyebrow={`${data.scheme.planOfSubdivision} · TIER ${data.scheme.tier}`}
+              eyebrow={`${data.scheme.planOfSubdivision} · Tier ${data.scheme.tier}`}
               name={data.scheme.name}
               meta={
                 data.roles.length > 0
@@ -253,7 +252,9 @@ function NavGroups({
       {NAV_GROUPS.map((group) => (
         <div key={group.heading ?? "overview"}>
           {group.heading && (
-            <Eyebrow size="sm" className="mb-1 block px-2.5">{group.heading}</Eyebrow>
+            <p className="mb-1 px-2.5 text-xs font-semibold text-muted-foreground">
+              {group.heading}
+            </p>
           )}
           <ul className="space-y-0.5">
             {group.items.map((item) => (

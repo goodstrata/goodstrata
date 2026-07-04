@@ -16,7 +16,6 @@ import {
 import { DescriptionItem, DescriptionList } from "@/components/ui/description-list";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
-import { Eyebrow } from "@/components/ui/eyebrow";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -354,7 +353,7 @@ function PiInsuranceCard({
         {current ? (
           <div className="space-y-3 rounded-lg border p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <Eyebrow className="block">Current cover</Eyebrow>
+              <h3 className="text-sm font-semibold">Current cover</h3>
               <div className="flex items-center gap-2">
                 <CoverBadge cents={current.coverAmountCents} />
                 <Badge tone={status.piContinuous ? "positive" : "caution"}>
@@ -399,7 +398,7 @@ function PiInsuranceCard({
             void form.handleSubmit();
           }}
         >
-          <Eyebrow className="block">Record a policy period</Eyebrow>
+          <h3 className="text-sm font-semibold">Record a policy period</h3>
           <div className="grid gap-4 sm:grid-cols-2">
             <form.Field name="insurer">
               {(field) => (
@@ -512,7 +511,7 @@ function PiInsuranceCard({
         {/* Policy history. */}
         {policies.length > 0 ? (
           <div className="space-y-2 border-t pt-5">
-            <Eyebrow className="block">Policy history</Eyebrow>
+            <h3 className="text-sm font-semibold">Policy history</h3>
             <div className="space-y-2">
               {policies.map((p) => (
                 <div

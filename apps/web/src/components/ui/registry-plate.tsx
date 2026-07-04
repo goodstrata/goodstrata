@@ -3,7 +3,7 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 interface RegistryPlateProps {
-  /** Mono eyebrow line, e.g. "PS 543921K · TIER 2". */
+  /** Mono identifier line, e.g. "PS 543921K · Tier 2". */
   eyebrow: React.ReactNode;
   name: React.ReactNode;
   /** Optional muted meta line under the name. */
@@ -32,7 +32,7 @@ function StrataMotif({ compact }: { compact: boolean }) {
 
 /**
  * The Registry Plate — the signature scheme nameplate (DESIGN.md §2): mono
- * eyebrow, display-serif name, hairline rule led by the strata motif.
+ * identifier line, bold display name, hairline rule led by the strata motif.
  */
 function RegistryPlate({
   eyebrow,
@@ -47,7 +47,9 @@ function RegistryPlate({
     <header data-slot="registry-plate" className={cn("min-w-0", className)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className={cn(compact ? "eyebrow-sm" : "eyebrow", "text-muted-foreground")}>{eyebrow}</p>
+          <p className={cn("font-mono text-muted-foreground", compact ? "text-[11px]" : "text-xs")}>
+            {eyebrow}
+          </p>
           <Name
             className={cn(
               "mt-0.5 truncate font-display font-bold tracking-tight",

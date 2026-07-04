@@ -23,14 +23,14 @@ interface StatCardProps {
   className?: string;
 }
 
-/** Mono-set figure with an eyebrow label on a hairline card (DESIGN.md §7.1). */
+/** Mono-set figure with a small sans label on a hairline card (DESIGN.md §7.1). */
 function StatCard({ label, value, hint, tone, hero = false, className }: StatCardProps) {
   return (
     <div
       data-slot="stat-card"
       className={cn("min-w-0 rounded-lg border bg-card px-4 py-3 shadow-xs", className)}
     >
-      <p className="eyebrow text-muted-foreground">{label}</p>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <p
         className={cn(
           "mt-1.5 text-xl break-words sm:text-2xl",

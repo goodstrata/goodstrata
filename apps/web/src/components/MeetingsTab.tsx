@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
-import { Eyebrow } from "@/components/ui/eyebrow";
 import { Field, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -104,7 +103,7 @@ type MeetingKind = (typeof MEETING_KINDS)[number];
 const RESOLUTION_TYPES = ["ordinary", "special", "unanimous"] as const;
 type ResolutionType = (typeof RESOLUTION_TYPES)[number];
 
-/** Short type label for the meeting eyebrow (AGM / SGM / Committee). */
+/** Short type label for the meeting kind (AGM / SGM / Committee). */
 function kindLabel(kind: string): string {
   if (kind === "agm") return "AGM";
   if (kind === "sgm") return "SGM";
@@ -395,7 +394,7 @@ function MeetingList({ schemeId, onOpen }: { schemeId: string; onOpen: (id: stri
                 <CalendarDays className="size-4.5" />
               </span>
               <div className="min-w-0 flex-1">
-                <Eyebrow>{kindLabel(m.kind)}</Eyebrow>
+                <p className="text-xs font-medium text-muted-foreground">{kindLabel(m.kind)}</p>
                 <p className="truncate font-medium">{m.title}</p>
                 <p className="text-xs text-muted-foreground">{formatDateTime(m.scheduledAt)}</p>
               </div>
@@ -872,7 +871,7 @@ function MeetingDetailView({
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
-              <Eyebrow>{kindLabel(m.kind)}</Eyebrow>
+              <p className="text-xs font-medium text-muted-foreground">{kindLabel(m.kind)}</p>
               <CardTitle className="font-display text-xl">{m.title}</CardTitle>
               <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span>{formatDateTime(m.scheduledAt)}</span>
@@ -950,7 +949,7 @@ function MeetingDetailView({
 
           <div data-testid="quorum" className="space-y-1.5 rounded-lg border p-3">
             <div className="flex items-baseline justify-between gap-2">
-              <Eyebrow>{meetingOver ? "Final quorum" : "Quorum"}</Eyebrow>
+              <h3 className="text-sm font-semibold">{meetingOver ? "Final quorum" : "Quorum"}</h3>
               <span className="font-mono text-xs text-muted-foreground tabular-nums">
                 {quorumPct}%
               </span>
@@ -966,7 +965,7 @@ function MeetingDetailView({
 
           {data.agenda.length > 0 && (
             <div className="space-y-1.5">
-              <Eyebrow>Agenda</Eyebrow>
+              <h3 className="text-sm font-semibold">Agenda</h3>
               <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
                 {data.agenda.map((a) => (
                   <li key={a.id}>{a.title}</li>
@@ -1066,8 +1065,8 @@ function AddMotionSheet({
         <SheetHeader>
           <SheetTitle>Add a motion</SheetTitle>
           <SheetDescription>
-            Ordinary resolutions are one vote per lot; special and unanimous resolutions are
-            decided by lot entitlement.
+            Ordinary resolutions are one vote per lot; special and unanimous resolutions are decided
+            by lot entitlement.
           </SheetDescription>
         </SheetHeader>
         <form
@@ -1274,7 +1273,7 @@ function MotionCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-0.5">
             <p className="font-medium">{motion.title}</p>
-            <Eyebrow>{motion.resolutionType} resolution</Eyebrow>
+            <p className="text-xs text-muted-foreground">{motion.resolutionType} resolution</p>
           </div>
           <StatusBadge status={motion.status} />
         </div>

@@ -36,9 +36,9 @@ component defaults.
   paper, paper on ink. The stacked-planes motif may appear as a ghost glyph in
   empty states and the auth screen — nowhere else.
 - **Signature element — the Registry Plate:** the scheme header is rendered as
-  a nameplate, like brass at a building entrance: a mono eyebrow with the plan
-  of subdivision and tier (`PS 543921K · TIER 2`), the scheme name in display
-  serif beneath, a hairline rule under both with a three-stroke strata motif
+  a nameplate, like brass at a building entrance: a mono identifier line with
+  the plan of subdivision and tier (`PS 543921K · Tier 2`), the scheme name in
+  bold display type beneath, a hairline rule under both with a three-stroke strata motif
   at its left end. A compact variant appears on dashboard scheme cards. This
   is the one memorable flourish; everything around it stays quiet.
 
@@ -117,8 +117,9 @@ Self-hosted via Fontsource (`@fontsource-variable/newsreader`,
 `--font-display`, `--font-sans`, `--font-mono`.
 
 Type scale (rem): 0.75 / 0.8125 / 0.875 / 1 / 1.125 / 1.375 / 1.75 / 2.25.
-Page title = `display 1.75/2.25`, card title = `sans 1rem/600`, eyebrow =
-`mono 0.75rem/500, uppercase, tracking-[0.08em]`.
+Page title = `display 1.75/2.25`, card title = `sans 1rem/600`, small label =
+`sans 0.75rem/500 muted`. Hierarchy is carried by size and weight — no
+mono-uppercase eyebrows; mono is reserved for figures and registry identifiers.
 
 ## 5. Shape, depth, motion
 
@@ -187,7 +188,6 @@ Foundation is the existing shadcn/radix kit, extended. New primitives live in
   below. Column defs supplied once.
 - **`Money`** — formats cents, Plex Mono `tabular-nums`, right-aligned in
   tables, negatives in oxide with a proper minus.
-- **`Eyebrow`** — mono uppercase label (plates, group headings, feed types).
 
 ### 7.2 Upgraded conventions
 
@@ -254,7 +254,7 @@ use `aria-live="polite"`; `lang="en-AU"` and Australian spelling in copy.
 ## 12. Heritage & contracts
 
 - The launch site’s identity (slate ink, uppercase kickers, stat blocks,
-  proof-led density) carries into the app as ink foreground, mono eyebrows,
+  proof-led density) carries into the app as ink foreground, mono figures,
   `StatCard`, and evidence-bearing feeds. Its stock Tailwind blue-700 is
   retired in favour of eucalypt; the marketing site follows in a later pass.
 - **Status text contract:** status badges keep the raw lowercase domain word

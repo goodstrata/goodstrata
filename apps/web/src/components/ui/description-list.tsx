@@ -28,7 +28,7 @@ function DescriptionItem({ label, children, className }: DescriptionItemProps) {
         className,
       )}
     >
-      <dt className="eyebrow text-muted-foreground">{label}</dt>
+      <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd className="text-sm">{children}</dd>
     </div>
   );

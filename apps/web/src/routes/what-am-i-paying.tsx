@@ -13,7 +13,6 @@ import { useCallback, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Eyebrow } from "@/components/ui/eyebrow";
 import { formatMoney, Money } from "@/components/ui/money";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -104,7 +103,7 @@ function WhatAmIPayingPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 py-2 md:py-8">
       <header className="flex flex-col gap-4 text-center">
-        <Eyebrow className="mx-auto">What am I paying?</Eyebrow>
+        <p className="text-sm font-medium text-muted-foreground">What am I paying?</p>
         <h1 className="text-balance font-display text-3xl font-bold tracking-tight md:text-[2.25rem]">
           See what your strata manager actually costs you
         </h1>
@@ -263,7 +262,9 @@ function ResultView({ result, onReset }: { result: EstimateResult; onReset: () =
     <div className="flex flex-col gap-5">
       <Card className="overflow-hidden py-0">
         <div className="border-b bg-accent/30 px-6 py-7 text-center md:px-8 md:py-9">
-          <Eyebrow className="text-accent-foreground">Your strata manager costs about</Eyebrow>
+          <p className="text-sm font-medium text-accent-foreground">
+            Your strata manager costs about
+          </p>
           {hasTotal ? (
             <p className="mt-2 font-display text-4xl font-bold tracking-tight tabular-nums md:text-5xl">
               {formatMoney(total)}
@@ -288,7 +289,7 @@ function ResultView({ result, onReset }: { result: EstimateResult; onReset: () =
         <CardContent className="flex flex-col gap-5 py-6">
           {result.lineItems.length > 0 && (
             <div>
-              <Eyebrow>What's in that figure</Eyebrow>
+              <h2 className="text-sm font-semibold">What's in that figure</h2>
               <ul className="mt-3 divide-y">
                 {result.lineItems.map((item, i) => (
                   <li

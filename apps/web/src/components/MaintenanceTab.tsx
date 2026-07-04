@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
-import { Eyebrow } from "@/components/ui/eyebrow";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
@@ -289,7 +288,7 @@ function RequestList({
                     <Bot aria-hidden="true" className="size-3.5" />
                     triaged
                   </span>
-                  <Eyebrow>{r.category}</Eyebrow>
+                  <span className="font-medium">{r.category}</span>
                   <span>{r.isCommonProperty ? "common property" : "lot responsibility"}</span>
                 </p>
               )}
@@ -576,9 +575,7 @@ function WorkOrderList({
                         {wo.contractorName}
                       </span>
                     )}
-                    {wo.requestTitle && (
-                      <span className="truncate">for “{wo.requestTitle}”</span>
-                    )}
+                    {wo.requestTitle && <span className="truncate">for “{wo.requestTitle}”</span>}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

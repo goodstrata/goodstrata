@@ -131,16 +131,6 @@
   }
 }
 
-@utility eyebrow {
-  /* registry kicker: mono, uppercase, tracked (DESIGN.md §4) */
-  @apply font-mono text-xs font-medium tracking-[0.08em] uppercase;
-}
-
-@utility eyebrow-sm {
-  /* compact registry kicker for dense surfaces (nav groups, scheme cards) */
-  @apply font-mono text-[11px] font-medium tracking-[0.08em] uppercase;
-}
-
 @utility page-title {
   /* top-level display heading (h1) — the 28px-at-md hero ramp (DESIGN.md §4).
      Single knob for auth/onboarding hero titles and PageHeader. */

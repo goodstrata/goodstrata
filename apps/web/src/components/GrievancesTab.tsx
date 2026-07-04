@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
-import { Eyebrow } from "@/components/ui/eyebrow";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -255,7 +254,7 @@ function MyComplaints({ schemeId, onChange }: { schemeId: string; onChange: () =
 
   return (
     <section>
-      <Eyebrow className="mb-2.5 block">Your complaints</Eyebrow>
+      <h2 className="mb-2.5 text-base font-semibold">Your complaints</h2>
       <div className="space-y-2.5">
         {data.complaints.map((c) => (
           <Card key={c.id} className="py-0">
@@ -663,7 +662,7 @@ function ComplaintDetailBody({
         </DescriptionList>
 
         <section>
-          <Eyebrow className="mb-1.5 block">Complaint</Eyebrow>
+          <h3 className="mb-1.5 text-sm font-semibold">Complaint</h3>
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">{complaint.details}</p>
         </section>
 
@@ -673,7 +672,7 @@ function ComplaintDetailBody({
 
         {breachNotices.length > 0 && (
           <section>
-            <Eyebrow className="mb-2 block">Breach notices</Eyebrow>
+            <h3 className="mb-2 text-sm font-semibold">Breach notices</h3>
             <div className="space-y-2">
               {breachNotices.map((n) => (
                 <BreachNoticeRow key={n.id} schemeId={schemeId} notice={n} onChanged={refresh} />
@@ -683,7 +682,7 @@ function ComplaintDetailBody({
         )}
 
         <section>
-          <Eyebrow className="mb-2 block">History</Eyebrow>
+          <h3 className="mb-2 text-sm font-semibold">History</h3>
           <ol className="space-y-3">
             {events.map((ev) => (
               <li key={ev.id} className="flex gap-3 text-sm">
@@ -836,7 +835,7 @@ function StatusControls({
 
   return (
     <section className="space-y-2.5 rounded-lg border p-3">
-      <Eyebrow className="block">Progress the complaint</Eyebrow>
+      <h3 className="text-sm font-semibold">Progress the complaint</h3>
       <Select value={target} onValueChange={(v) => setTarget(v as ComplaintStatus)}>
         <SelectTrigger data-testid="complaint-advance-status" aria-label="Next status">
           <SelectValue placeholder="Choose the next step" />

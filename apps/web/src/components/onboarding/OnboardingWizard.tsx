@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Eyebrow } from "@/components/ui/eyebrow";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { FinishStep } from "./FinishStep";
@@ -47,10 +46,12 @@ export function OnboardingWizard() {
       {step < 3 && (
         <div className="mb-8 space-y-2.5">
           <div className="flex items-center justify-between">
-            <Eyebrow>
+            <p className="text-sm font-medium text-muted-foreground">
               Step {step + 1} of {STEP_LABELS.length}
-            </Eyebrow>
-            <Eyebrow aria-hidden="true">{STEP_LABELS[step]}</Eyebrow>
+            </p>
+            <p aria-hidden="true" className="text-sm font-medium text-muted-foreground">
+              {STEP_LABELS[step]}
+            </p>
           </div>
           <Progress
             value={((step + 1) / STEP_LABELS.length) * 100}

@@ -153,11 +153,11 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <div>
-                    <dt className="eyebrow text-muted-foreground">Entitlement</dt>
+                    <dt className="text-xs font-medium text-muted-foreground">Entitlement</dt>
                     <dd className="mt-0.5 font-mono tabular-nums">{lot.entitlement}</dd>
                   </div>
                   <div>
-                    <dt className="eyebrow text-muted-foreground">Liability</dt>
+                    <dt className="text-xs font-medium text-muted-foreground">Liability</dt>
                     <dd className="mt-0.5 font-mono tabular-nums">{lot.liability}</dd>
                   </div>
                 </dl>
