@@ -5,6 +5,7 @@ import {
   Bot,
   CalendarDays,
   CircleCheck,
+  Gavel,
   Layers,
   Scale,
   ShieldCheck,
@@ -28,6 +29,7 @@ type TabSection =
   | "meetings"
   | "decisions"
   | "compliance"
+  | "grievances"
   | "activity"
   | "lots"
   | "people";
@@ -54,6 +56,8 @@ export interface OverviewData {
     openWorkOrders: number;
     complianceOpen: number;
     complianceOverdue: number;
+    /** Open grievance complaints; null when the viewer may not see them. */
+    openGrievances: number | null;
     nextCompliance: {
       id: string;
       kind: string;
@@ -83,6 +87,17 @@ const MEETING_KIND_LABEL: Record<string, string> = {
   sgm: "Special general meeting",
   committee: "Committee meeting",
 };
+
+/**
+ * Readable label for a bus event type on the landing page, e.g.
+ * "levy.notice_issued" → "Levy notice issued". The Activity tab keeps the raw
+ * mono types for operators; here a committee member gets plain language (the
+ * raw type stays available as a tooltip).
+ */
+function eventLabel(type: string): string {
+  const words = type.replace(/[._]/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /** A quiet "View X" deep link into a scheme section. */
 function TabLink({
@@ -227,6 +242,15 @@ function NeedsAttention({
           : undefined,
     });
   }
+  if (attention.openGrievances !== null && attention.openGrievances > 0) {
+    items.push({
+      section: "grievances",
+      icon: Gavel,
+      label: "Open grievances",
+      count: attention.openGrievances,
+      note: "28-day grievance clock may be running",
+    });
+  }
   if (attention.complianceOpen > 0) {
     items.push({
       section: "compliance",
@@ -324,23 +348,34 @@ function NextMeeting({
       </CardHeader>
       <CardContent>
         {meeting ? (
-          <div className="flex items-start gap-3">
+          <Link
+            to="/schemes/$schemeId"
+            params={{ schemeId }}
+            search={{ section: "meetings", meeting: meeting.id }}
+            className="group -m-2 flex items-start gap-3 rounded-md p-2 transition-colors hover:bg-muted"
+          >
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
               <CalendarDays aria-hidden="true" className="size-4" />
             </span>
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">{meeting.title}</span>
+            <span className="min-w-0 space-y-1">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium group-hover:underline">{meeting.title}</span>
                 <StatusBadge status={meeting.status} />
-              </div>
-              <p className="text-13 text-muted-foreground">
+              </span>
+              <span className="block text-13 text-muted-foreground">
                 {MEETING_KIND_LABEL[meeting.kind] ?? meeting.kind}
-              </p>
-              <p className="font-mono text-13 tabular-nums">
-                {formatDateTime(meeting.scheduledAt)}
-              </p>
-            </div>
-          </div>
+              </span>
+              <span className="block font-mono text-13 tabular-nums">
+                {meeting.status === "in_progress" ? (
+                  <span className="font-medium text-positive">
+                    Happening now — started {formatDateTime(meeting.scheduledAt)}
+                  </span>
+                ) : (
+                  formatDateTime(meeting.scheduledAt)
+                )}
+              </span>
+            </span>
+          </Link>
         ) : (
           <EmptyState
             icon={CalendarDays}
@@ -450,8 +485,8 @@ function RecentActivity({
                     )}
                   />
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="min-w-0 flex-1 truncate font-mono text-13 font-medium">
-                      {evt.type}
+                    <span title={evt.type} className="min-w-0 flex-1 truncate text-13 font-medium">
+                      {eventLabel(evt.type)}
                     </span>
                     {isAgent && (
                       <Badge tone="agent" className="shrink-0 gap-1">

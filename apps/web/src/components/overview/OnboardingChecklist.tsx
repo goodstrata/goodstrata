@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, CircleAlert, CircleCheck } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ArrowRight, Check, CircleCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormMessage } from "@/components/ui/form-message";
 import { StatCard } from "@/components/ui/stat-card";
 import { api, unwrap } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -40,10 +42,23 @@ export function OnboardingChecklist({
     },
   });
 
-  const steps = [
+  const steps: {
+    label: string;
+    done: boolean;
+    /** Deep link + call to action shown while the step is incomplete. */
+    action?: { section: "lots" | "documents"; label: string };
+  }[] = [
     { label: "Scheme registered", done: true },
-    { label: "Lots imported from plan of subdivision", done: onboarding.hasLots },
-    { label: "Insurance certificate of currency uploaded", done: onboarding.hasInsurance },
+    {
+      label: "Lots imported from plan of subdivision",
+      done: onboarding.hasLots,
+      action: { section: "lots", label: "Import lots" },
+    },
+    {
+      label: "Insurance certificate of currency uploaded",
+      done: onboarding.hasInsurance,
+      action: { section: "documents", label: "Upload certificate" },
+    },
   ];
   const completed = steps.filter((s) => s.done).length;
   const isActive = onboarding.status === "active";
@@ -87,13 +102,26 @@ export function OnboardingChecklist({
                     )}
                     <span className="sr-only">{step.done ? "complete" : "incomplete"}</span>
                   </span>
-                  <span
-                    className={cn(
-                      "pt-0.5 text-sm",
-                      step.done ? "font-medium text-foreground" : "text-muted-foreground",
+                  <span className="min-w-0 pt-0.5">
+                    <span
+                      className={cn(
+                        "block text-sm",
+                        step.done ? "font-medium text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      {step.label}
+                    </span>
+                    {!step.done && step.action && isOfficer && (
+                      <Link
+                        to="/schemes/$schemeId"
+                        params={{ schemeId }}
+                        search={{ section: step.action.section }}
+                        className="mt-0.5 inline-flex items-center gap-1 text-13 font-medium text-primary hover:underline"
+                      >
+                        {step.action.label}
+                        <ArrowRight aria-hidden="true" className="size-3.5" />
+                      </Link>
                     )}
-                  >
-                    {step.label}
                   </span>
                 </li>
               );
@@ -114,10 +142,7 @@ export function OnboardingChecklist({
                 every levy, meeting and maintenance job on the event bus.
               </p>
               {activate.error && (
-                <p className="flex items-start gap-1.5 text-13 text-critical">
-                  <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-                  <span>{activate.error.message}</span>
-                </p>
+                <FormMessage className="max-w-md">{activate.error.message}</FormMessage>
               )}
             </div>
           )}

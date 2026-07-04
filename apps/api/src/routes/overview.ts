@@ -3,6 +3,7 @@ import {
   budgetsService,
   complianceService,
   decisionsService,
+  grievancesService,
   leviesService,
   lotsService,
   maintenanceService,
@@ -22,6 +23,18 @@ import { type AppEnv, requireSchemeMember } from "../middleware.js";
 const OPEN_MAINTENANCE_STATUSES = ["open", "triaged", "quoting", "approved", "in_progress"];
 /** Work orders not yet finished. */
 const OPEN_WORK_ORDER_STATUSES = ["draft", "dispatched", "accepted", "scheduled", "in_progress"];
+
+/** Complaints still on the grievance clock (not resolved/withdrawn). */
+const OPEN_COMPLAINT_STATUSES = [
+  "received",
+  "under_discussion",
+  "notice_to_rectify",
+  "final_notice",
+  "vcat",
+];
+
+/** Roles allowed to see grievance figures — mirrors the grievances route guard. */
+const GRIEVANCE_VIEWER_ROLES = ["chair", "secretary", "treasurer", "manager_admin"];
 
 /** A meeting is "upcoming" if scheduled at/after now and not wrapped up. */
 function isUpcoming(m: { scheduledAt: Date; status: string }, now: Date): boolean {
@@ -62,6 +75,12 @@ export function overviewRoutes(deps: AppDeps) {
 
     const scheme = await schemesService.getScheme(ctx, schemeId);
 
+    // Grievance figures are officer-only (the complaints list route requires
+    // chair/secretary/treasurer or manager_admin) — never read, let alone
+    // return, the count for an ordinary member.
+    const roles = c.get("roles") ?? [];
+    const canSeeGrievances = roles.some((r) => GRIEVANCE_VIEWER_ROLES.includes(r));
+
     const [
       onboarding,
       lots,
@@ -75,14 +94,19 @@ export function overviewRoutes(deps: AppDeps) {
       workOrders,
       meetings,
       obligations,
+      complaints,
       events,
     ] = await Promise.all([
-      safe(onboardingService.onboardingStatus(ctx, schemeId), {
-        hasLots: false,
-        hasInsurance: false,
-        ready: false,
-        status: scheme.status,
-      }, "onboarding"),
+      safe(
+        onboardingService.onboardingStatus(ctx, schemeId),
+        {
+          hasLots: false,
+          hasInsurance: false,
+          ready: false,
+          status: scheme.status,
+        },
+        "onboarding",
+      ),
       safe(lotsService.listLots(ctx, schemeId), [], "lots"),
       safe(peopleService.listPeople(ctx, schemeId), [], "people"),
       safe(peopleService.listMembers(ctx, schemeId), [], "members"),
@@ -94,6 +118,9 @@ export function overviewRoutes(deps: AppDeps) {
       safe(maintenanceService.listWorkOrders(ctx, schemeId), [], "workOrders"),
       safe(meetingsService.listMeetings(ctx, schemeId), [], "meetings"),
       safe(complianceService.listObligations(ctx, { schemeId, window: "open" }), [], "compliance"),
+      canSeeGrievances
+        ? safe(grievancesService.listComplaints(ctx, schemeId), [], "grievances")
+        : Promise.resolve([]),
       safe(
         deps.db
           .select({
@@ -142,11 +169,23 @@ export function overviewRoutes(deps: AppDeps) {
     ).length;
     const complianceOverdue = obligations.filter((o) => o.status === "overdue").length;
     const nextCompliance = obligations[0]; // service returns them ordered by dueOn asc
+    const openGrievances = canSeeGrievances
+      ? complaints.filter((g) => OPEN_COMPLAINT_STATUSES.includes(g.status)).length
+      : null;
 
-    // Next scheduled meeting (soonest upcoming).
-    const nextMeeting = meetings
-      .filter((m) => isUpcoming(m, now))
-      .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime())[0];
+    // The meeting to surface: one that is happening right now beats the soonest
+    // upcoming — a meeting must not vanish from the landing page the moment the
+    // chair opens it (its scheduledAt is then in the past). Bounded to the last
+    // 24 hours so a meeting left un-closed weeks ago cannot pin the card.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const inProgressMeeting = meetings
+      .filter((m) => m.status === "in_progress" && now.getTime() - m.scheduledAt.getTime() < DAY_MS)
+      .sort((a, b) => b.scheduledAt.getTime() - a.scheduledAt.getTime())[0];
+    const nextMeeting =
+      inProgressMeeting ??
+      meetings
+        .filter((m) => isUpcoming(m, now))
+        .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime())[0];
 
     return c.json({
       scheme: {
@@ -185,6 +224,8 @@ export function overviewRoutes(deps: AppDeps) {
         openWorkOrders,
         complianceOpen: obligations.length,
         complianceOverdue,
+        // null = caller may not see grievance figures (not an officer).
+        openGrievances,
         nextCompliance: nextCompliance
           ? {
               id: nextCompliance.id,
