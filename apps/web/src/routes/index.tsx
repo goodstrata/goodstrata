@@ -102,7 +102,16 @@ function SchemeList() {
 
   // First run (signed in, no scheme yet): the guided onboarding wizard replaces
   // the bare empty state and takes over the whole surface — no page header.
-  if (isEmpty) return <OnboardingWizard />;
+  // Latched: step 1 creates the scheme, and the ["schemes"] query can refetch
+  // mid-flow (invalidation, window refocus). A non-empty result must not
+  // unmount the wizard — the user still has the lots and invite steps to
+  // finish. FinishStep navigates away, so a fresh visit to "/" renders the
+  // normal list again.
+  const [wizardActive, setWizardActive] = useState(false);
+  useEffect(() => {
+    if (isEmpty) setWizardActive(true);
+  }, [isEmpty]);
+  if (isEmpty || wizardActive) return <OnboardingWizard />;
 
   const newSchemeButton = (
     <Button onClick={() => setCreateOpen(true)}>

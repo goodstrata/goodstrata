@@ -3,9 +3,10 @@ import { expect, test } from "@playwright/test";
 const API = "http://localhost:3105";
 
 // Scheme navigation is a register index (sidebar on desktop, bottom bar on
-// mobile) of section links — no longer a tablist. Names match case-insensitively.
+// mobile) of section links — no longer a tablist. Whole-name match (case-
+// insensitive) so dashboard deep links like "View activity" don't collide.
 const section = (p: import("@playwright/test").Page, name: string) =>
-  p.getByRole("link", { name, exact: false });
+  p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
 
 const CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
 1,20,20,commercial,Sam Shopkeeper,sam@example.com
@@ -19,24 +20,30 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   browser,
 }) => {
   test.setTimeout(120_000);
-  // --- Manager signs up and creates the scheme ---
+  // --- Manager signs up (dedicated /signup route with consent gate) ---
   await page.goto("/login");
-  await page.getByText("New here? Create an account").click();
+  await page.getByRole("link", { name: "New here? Create an account" }).click();
   await page.getByPlaceholder("Your name").fill("Morgan Manager");
-  await page.getByPlaceholder("Email").fill("morgan@example.com");
-  await page.getByPlaceholder("Password").fill("manager-pass-123");
-  await page.getByRole("button", { name: "Sign up" }).click();
+  await page.getByPlaceholder("you@example.com").fill("morgan@example.com");
+  await page.getByPlaceholder("Choose a password").fill("manager-pass-123");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Create account" }).click();
 
-  await expect(page.getByRole("heading", { name: "Your schemes" })).toBeVisible();
-  await page.getByRole("button", { name: "New scheme" }).click();
-  await page.getByPlaceholder(/Scheme name/).fill("48 Rose St Owners Corporation");
-  await page.getByPlaceholder(/Plan of subdivision/).fill("PS543210V");
+  // First run lands on the guided wizard (no schemes yet). Register the scheme
+  // in step 1, then skip the wizard's lots/invite steps — this journey imports
+  // the real entitlement CSV and invites through the registers below.
+  await expect(page.getByRole("heading", { name: /set up your building/i })).toBeVisible();
+  await page
+    .getByPlaceholder("e.g. 48 Rose St Owners Corporation")
+    .fill("48 Rose St Owners Corporation");
+  await page.getByPlaceholder("e.g. PS543210V").fill("PS543210V");
   await page.getByPlaceholder("Street address").fill("48 Rose Street");
   await page.getByPlaceholder("Suburb").fill("Fitzroy");
   await page.getByPlaceholder("Postcode").fill("3065");
-  await page.getByRole("button", { name: "Create scheme" }).click();
-
-  await page.getByRole("link", { name: /48 Rose St Owners Corporation/ }).click();
+  await page.getByRole("button", { name: "Create building & continue" }).click();
+  await page.getByRole("button", { name: "I'll add these later" }).click();
+  await page.getByRole("button", { name: "I'll do this later" }).click();
+  await page.getByRole("button", { name: "Go to your building" }).click();
   await expect(page.getByRole("heading", { name: "48 Rose St Owners Corporation" })).toBeVisible();
 
   // --- Import lots via CSV ---
@@ -104,7 +111,8 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   const activate = page.getByRole("button", { name: "Activate scheme" });
   await expect(activate).toBeEnabled();
   await activate.click();
-  await expect(page.getByText("This owners corporation is active")).toBeVisible();
+  // Once active, the checklist gives way to the building dashboard.
+  await expect(page.getByRole("heading", { name: "Financial position" })).toBeVisible();
 
   // --- The event bus saw everything, including the echo agent ---
   await section(page, "activity").click();
@@ -171,7 +179,8 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await page.getByRole("button", { name: "Add contractor" }).click();
   await expect(page.getByText("Fitzroy Plumbing Co")).toBeVisible();
 
-  await page.getByRole("button", { name: "Report issue" }).click();
+  // Two triggers for the same dialog: the header action and the empty-state CTA.
+  await page.getByRole("button", { name: "Report issue" }).first().click();
   await page.getByTestId("mr-title").fill("Water stain on lot 9 ceiling");
   await page.getByTestId("mr-description").fill("Brown stain spreading after heavy rain.");
   await page.getByRole("button", { name: "Submit request" }).click();
@@ -213,8 +222,8 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   const voterContext = await browser.newContext();
   const voterPage = await voterContext.newPage();
   await voterPage.goto("/login");
-  await voterPage.getByPlaceholder("Email").fill("alex@example.com");
-  await voterPage.getByPlaceholder("Password").fill("owner-pass-123");
+  await voterPage.getByPlaceholder("you@example.com").fill("alex@example.com");
+  await voterPage.getByPlaceholder("Your password").fill("owner-pass-123");
   await voterPage.getByRole("button", { name: "Sign in" }).click();
   await expect(voterPage.getByRole("heading", { name: "Your schemes" })).toBeVisible({
     timeout: 15_000,
@@ -233,5 +242,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   // --- Manager closes and tallies: 10 for, carried ---
   await motionCard.getByRole("button", { name: "Close & tally" }).click();
   await expect(motionCard.getByText("carried")).toBeVisible();
-  await expect(motionCard.getByText(/For 10/)).toBeVisible();
+  // Ordinary motions tally by headcount (one vote per lot, s 92): Alex's
+  // single lot counts as 1, not its 10 entitlements.
+  await expect(motionCard.getByText(/For 1 · Against 0/)).toBeVisible();
 });
