@@ -208,7 +208,10 @@ export interface RegistrationStatus {
  * lapsed (`max(expiresOn) < today`) is NOT continuous cover today — an expired,
  * never-renewed policy must not read as continuous.
  */
-function isContinuous(policies: ManagerPiPolicy[], today: string): boolean {
+export function isContinuous(
+  policies: Pick<ManagerPiPolicy, "effectiveOn" | "expiresOn">[],
+  today: string,
+): boolean {
   if (policies.length === 0) return false;
   const sorted = [...policies].sort((a, b) => {
     const as = a.effectiveOn ?? a.expiresOn;

@@ -18,6 +18,30 @@ const listQuery = z.object({
 const completeBody = z.object({ waived: z.boolean().optional() }).optional();
 
 /**
+ * Kinds an officer may raise by hand from this scheme-scoped route. Mirrors
+ * COMPLIANCE_KINDS minus the two organisation-level kinds
+ * (registration_renewal / pi_expiry), which only the manager-registration
+ * service raises against the management org.
+ */
+const SCHEME_RAISABLE_KINDS = [
+  "agm_due",
+  "insurance_renewal",
+  "esm_inspection",
+  "financial_statements",
+  "bas",
+  "valuation",
+  "custom",
+] as const;
+
+const raiseBody = z.object({
+  kind: z.enum(SCHEME_RAISABLE_KINDS),
+  title: z.string().trim().min(1).max(200),
+  /** ISO date-only (YYYY-MM-DD). */
+  dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "dueOn must be an ISO date (YYYY-MM-DD)"),
+  responsibleRole: z.enum(["chair", "secretary", "treasurer", "manager_admin"]).optional(),
+});
+
+/**
  * Scheme-scoped view onto the compliance calendar (P1-4). Reads and completions
  * flow through `complianceService`; the service is the sole writer of
  * `compliance_obligations` and this route never touches the table directly.
@@ -40,6 +64,32 @@ export function complianceRoutes(deps: AppDeps) {
             status,
           });
           return c.json({ obligations });
+        },
+      )
+      // Raise an obligation by hand — a committee deadline the agents don't
+      // know about (contract renewal, fire panel service, …). Officers only.
+      // Idempotent per (kind, title, dueOn): re-submitting the same deadline
+      // returns the existing obligation rather than duplicating it.
+      .post(
+        "/:schemeId/compliance",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", raiseBody),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const body = c.req.valid("json");
+          const obligation = await complianceService.raiseObligation(ctx, {
+            schemeId: c.get("schemeId"),
+            kind: body.kind,
+            title: body.title,
+            dueOn: body.dueOn,
+            // Same title + same due date = the same obligation.
+            subjectRef: `manual:${body.title.toLowerCase()}`,
+            periodKey: body.dueOn,
+            responsibleRole: body.responsibleRole,
+            sourceRef: { manual: true, raisedBy: c.get("user").id },
+          });
+          return c.json({ obligation }, 201);
         },
       )
       // Mark an obligation done (or waived). Officers only.

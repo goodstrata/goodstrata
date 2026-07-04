@@ -24,6 +24,7 @@ import {
   daysBetween,
   fromDateOnly,
   type MembershipRole,
+  toDateOnly,
 } from "@goodstrata/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -127,12 +128,16 @@ const KIND_DEFAULT_ROLE: Record<ComplianceKind, MembershipRole> = {
  * Compute the escalation band and coarse status for an obligation from the gap
  * between `dueOn` and `asOf`. 90/60/30-day thresholds, then due (0 days) and
  * overdue (past due).
+ *
+ * `asOf` is normalised to its UTC calendar day before comparing, so the answer
+ * is in whole calendar days and does not depend on the time of day the sweep
+ * runs — an obligation due tomorrow must not read "due" at 11pm tonight.
  */
 export function computeEscalation(
   dueOn: string,
   asOf: Date,
 ): { escalationState: ComplianceEscalation; status: ComplianceStatus; daysUntilDue: number } {
-  const daysUntilDue = daysBetween(asOf, fromDateOnly(dueOn));
+  const daysUntilDue = daysBetween(fromDateOnly(toDateOnly(asOf)), fromDateOnly(dueOn));
   let escalationState: ComplianceEscalation;
   if (daysUntilDue < 0) escalationState = "overdue";
   else if (daysUntilDue === 0) escalationState = "due";

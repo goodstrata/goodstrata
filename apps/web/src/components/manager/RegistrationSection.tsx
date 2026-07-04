@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, CalendarClock, ShieldCheck, ShieldX } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { relativeDue } from "@/components/ComplianceTab";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -119,9 +120,20 @@ export function RegistrationSection({ schemeId }: { schemeId: string }) {
 // Registration number.
 // ---------------------------------------------------------------------------
 
+/** Today as a local YYYY-MM-DD (the date-input's frame of reference). */
+function localTodayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
 const registrationSchema = z.object({
   registrationNumber: z.string().trim().min(1, "Enter the BLA registration number."),
-  expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a review date."),
+  expiresOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a review date.")
+    .refine((v) => v >= localTodayIso(), "The review date must be today or later."),
 });
 
 function RegistrationCard({
@@ -224,6 +236,7 @@ function RegistrationCard({
                     <Input
                       {...controlProps}
                       type="date"
+                      min={localTodayIso()}
                       value={field.state.value}
                       onBlur={field.handleBlur}
                       onChange={(e) => field.handleChange(e.target.value)}
@@ -571,7 +584,14 @@ function RemindersCard({ obligations }: { obligations: Obligation[] }) {
                   <CalendarClock className="size-4 text-muted-foreground" aria-hidden="true" />
                   <div>
                     <p className="text-sm font-medium">{o.title}</p>
-                    <p className="text-13 text-muted-foreground">Due {formatDate(o.dueOn)}</p>
+                    <p className="text-13 text-muted-foreground">
+                      Due {formatDate(o.dueOn)}
+                      {(o.status === "upcoming" ||
+                        o.status === "due" ||
+                        o.status === "overdue") && (
+                        <span className="text-foreground/70"> · {relativeDue(o.dueOn)}</span>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <Badge tone={STATUS_TONE[o.status]} className="capitalize">
