@@ -23,6 +23,13 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
@@ -36,6 +43,7 @@ interface Request {
   category: string | null;
   urgency: string | null;
   isCommonProperty: boolean | null;
+  aiTriage: { reasoning?: string; declineExplanation?: string } | null;
   status: string;
   createdAt: string;
 }
@@ -45,6 +53,8 @@ interface WorkOrder {
   approvedAmountCents: number;
   status: string;
   contractorId: string;
+  contractorName: string | null;
+  requestTitle: string | null;
 }
 interface Contractor {
   id: string;
@@ -55,6 +65,12 @@ interface Contractor {
 
 /** Officer statuses where a work order can still be marked completed. */
 const COMPLETABLE_STATUSES = ["dispatched", "accepted", "scheduled", "in_progress"];
+
+const URGENCY_TONES: Record<string, "critical" | "caution" | "neutral"> = {
+  emergency: "critical",
+  high: "caution",
+  routine: "neutral",
+};
 
 export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
@@ -73,7 +89,7 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
         description="Report issues, follow the agent's triage, and track work through to completion."
         actions={<ReportIssueDialog schemeId={schemeId} onChange={invalidate} />}
       />
-      <RequestList schemeId={schemeId} onChange={invalidate} />
+      <RequestList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       {isOfficer && <ContractorSection schemeId={schemeId} onChange={invalidate} />}
     </div>
@@ -83,16 +99,29 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
 const reportSchema = z.object({
   title: z.string().trim().min(1, "Give the issue a short title."),
   description: z.string().trim().min(1, "Describe the issue so the agent can triage it."),
+  lotId: z.string(),
 });
 
 function ReportIssueDialog({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
   const [open, setOpen] = useState(false);
+  const lots = useQuery({
+    queryKey: ["lots", schemeId],
+    queryFn: async () =>
+      unwrap<{ lots: { id: string; lotNumber: string }[] }>(
+        await api.schemes[":schemeId"].lots.$get({ param: { schemeId } }),
+      ),
+    enabled: open,
+  });
   const create = useMutation({
-    mutationFn: async (values: { title: string; description: string }) =>
+    mutationFn: async (values: { title: string; description: string; lotId: string }) =>
       unwrap(
         await api.schemes[":schemeId"].maintenance.$post({
           param: { schemeId },
-          json: { title: values.title, description: values.description },
+          json: {
+            title: values.title,
+            description: values.description,
+            lotId: values.lotId === "common" ? undefined : values.lotId,
+          },
         }),
       ),
     onSuccess: () => {
@@ -104,7 +133,7 @@ function ReportIssueDialog({ schemeId, onChange }: { schemeId: string; onChange:
   });
   const form = useAppForm({
     schema: reportSchema,
-    defaultValues: { title: "", description: "" },
+    defaultValues: { title: "", description: "", lotId: "common" },
     onSubmit: (values) => create.mutateAsync(values),
   });
 
@@ -164,6 +193,31 @@ function ReportIssueDialog({ schemeId, onChange }: { schemeId: string; onChange:
               </Field>
             )}
           </form.Field>
+          <form.Field name="lotId">
+            {(field) => (
+              <Field
+                label="Where is it?"
+                hint="Pick your lot if the issue is inside it — it helps the triage."
+                error={fieldError(field.state.meta.errors)}
+              >
+                {(controlProps) => (
+                  <Select value={field.state.value} onValueChange={field.handleChange}>
+                    <SelectTrigger {...controlProps} data-testid="mr-lot">
+                      <SelectValue placeholder="Common property / shared areas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="common">Common property / shared areas</SelectItem>
+                      {(lots.data?.lots ?? []).map((lot) => (
+                        <SelectItem key={lot.id} value={lot.id}>
+                          Lot {lot.lotNumber}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+            )}
+          </form.Field>
           <FormError form={form} />
         </form>
         <DialogFooter>
@@ -176,7 +230,15 @@ function ReportIssueDialog({ schemeId, onChange }: { schemeId: string; onChange:
   );
 }
 
-function RequestList({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
+function RequestList({
+  schemeId,
+  isOfficer,
+  onChange,
+}: {
+  schemeId: string;
+  isOfficer: boolean;
+  onChange: () => void;
+}) {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["maintenance", schemeId],
     queryFn: async () =>
@@ -213,7 +275,12 @@ function RequestList({ schemeId, onChange }: { schemeId: string; onChange: () =>
             <CardContent className="px-4">
               <div className="flex items-start justify-between gap-3">
                 <p className="text-sm font-medium">{r.title}</p>
-                <StatusBadge status={r.status} />
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {r.urgency && (
+                    <Badge tone={URGENCY_TONES[r.urgency] ?? "neutral"}>{r.urgency}</Badge>
+                  )}
+                  <StatusBadge status={r.status} />
+                </div>
               </div>
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>
               {r.category && (
@@ -223,16 +290,227 @@ function RequestList({ schemeId, onChange }: { schemeId: string; onChange: () =>
                     triaged
                   </span>
                   <Eyebrow>{r.category}</Eyebrow>
-                  <span>
-                    {r.urgency} · {r.isCommonProperty ? "common property" : "lot responsibility"}
-                  </span>
+                  <span>{r.isCommonProperty ? "common property" : "lot responsibility"}</span>
                 </p>
+              )}
+              {r.aiTriage?.reasoning && (
+                <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground italic">
+                  {r.aiTriage.reasoning}
+                </p>
+              )}
+              {r.status === "rejected" && r.aiTriage?.declineExplanation && (
+                <p className="mt-2 text-13 text-muted-foreground">
+                  <span className="font-medium text-foreground">Not proceeding: </span>
+                  {r.aiTriage.declineExplanation}
+                </p>
+              )}
+              {isOfficer && r.status === "triaged" && (
+                <div className="mt-3">
+                  <RaiseWorkOrderDialog schemeId={schemeId} request={r} onChange={onChange} />
+                </div>
               )}
             </CardContent>
           </Card>
         ))}
       </div>
     </section>
+  );
+}
+
+const raiseSchema = z.object({
+  contractorId: z.string().min(1, "Choose a contractor from the pool."),
+  scope: z.string().trim().min(5, "Describe the scope of work (at least a sentence)."),
+  estimate: z
+    .string()
+    .trim()
+    .refine(
+      (v) => v !== "" && Number.isFinite(Number(v)) && Number(v) > 0,
+      "Enter the estimated cost in dollars.",
+    ),
+  accessNotes: z.string().trim().max(1000, "Keep access notes under 1,000 characters."),
+});
+
+const ROUTE_TOASTS: Record<string, string> = {
+  auto_dispatched: "Work order dispatched to the contractor",
+  awaiting_approval: "Work order raised — awaiting committee approval",
+  emergency_dispatched: "Emergency works dispatched — the committee will review",
+};
+
+/**
+ * Officer fallback when the agent couldn't propose works (e.g. no contractors
+ * at triage time). Routing stays with the platform: small jobs dispatch
+ * immediately, larger ones go to the committee, emergencies dispatch now with
+ * a post-hoc review.
+ */
+function RaiseWorkOrderDialog({
+  schemeId,
+  request,
+  onChange,
+}: {
+  schemeId: string;
+  request: Request;
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const contractorsQuery = useQuery({
+    queryKey: ["contractors", schemeId],
+    queryFn: async () =>
+      unwrap<{ contractors: Contractor[] }>(
+        await api.schemes[":schemeId"].contractors.$get({ param: { schemeId } }),
+      ),
+    enabled: open,
+  });
+  const raise = useMutation({
+    mutationFn: async (values: z.infer<typeof raiseSchema>) =>
+      unwrap<{ route: { mode: string } }>(
+        await api.schemes[":schemeId"]["work-orders"].$post({
+          param: { schemeId },
+          json: {
+            requestId: request.id,
+            contractorId: values.contractorId,
+            scope: values.scope,
+            estimatedCents: Math.round(Number(values.estimate) * 100),
+            accessNotes: values.accessNotes || undefined,
+          },
+        }),
+      ),
+    onSuccess: ({ route }) => {
+      setOpen(false);
+      form.reset();
+      toast.success(ROUTE_TOASTS[route.mode] ?? "Work order raised");
+      onChange();
+    },
+  });
+  const form = useAppForm({
+    schema: raiseSchema,
+    defaultValues: { contractorId: "", scope: "", estimate: "", accessNotes: "" },
+    onSubmit: (values) => raise.mutateAsync(values),
+  });
+  const pool = contractorsQuery.data?.contractors ?? [];
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          <HardHat aria-hidden="true" className="size-4" /> Raise work order
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Raise a work order</DialogTitle>
+          <DialogDescription>
+            For “{request.title}”. Small jobs dispatch immediately; larger ones go to the committee
+            for approval.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          id="wo-form"
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void form.handleSubmit();
+          }}
+        >
+          <form.Field name="contractorId">
+            {(field) => (
+              <Field label="Contractor" required error={fieldError(field.state.meta.errors)}>
+                {(controlProps) => (
+                  <Select value={field.state.value} onValueChange={field.handleChange}>
+                    <SelectTrigger {...controlProps} data-testid="wo-contractor">
+                      <SelectValue
+                        placeholder={
+                          contractorsQuery.isLoading
+                            ? "Loading contractors…"
+                            : pool.length === 0
+                              ? "No contractors in the pool yet"
+                              : "Choose a contractor"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pool.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.businessName} — {c.tradeCategories.join(", ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="scope">
+            {(field) => (
+              <Field label="Scope of work" required error={fieldError(field.state.meta.errors)}>
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    data-testid="wo-scope"
+                    className="min-h-20"
+                    placeholder="What exactly should the contractor do?"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="estimate">
+            {(field) => (
+              <Field
+                label="Estimated cost ($)"
+                required
+                hint="The approved amount the contractor must not exceed."
+                error={fieldError(field.state.meta.errors)}
+              >
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    data-testid="wo-estimate"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    placeholder="e.g. 450"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="accessNotes">
+            {(field) => (
+              <Field
+                label="Access notes"
+                hint="Optional — keys, contact on site, hours."
+                error={fieldError(field.state.meta.errors)}
+              >
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    data-testid="wo-access"
+                    placeholder="e.g. Key from lot 3, weekdays after 9am"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <FormError form={form} />
+        </form>
+        <DialogFooter>
+          <SubmitButton form={form} formId="wo-form">
+            Raise work order
+          </SubmitButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -290,7 +568,18 @@ function WorkOrderList({
               <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4 text-sm">
                 <div className="min-w-0">
                   <p>{wo.scope}</p>
-                  <Money cents={wo.approvedAmountCents} className="text-xs text-muted-foreground" />
+                  <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                    <Money cents={wo.approvedAmountCents} />
+                    {wo.contractorName && (
+                      <span className="inline-flex items-center gap-1">
+                        <HardHat aria-hidden="true" className="size-3" />
+                        {wo.contractorName}
+                      </span>
+                    )}
+                    {wo.requestTitle && (
+                      <span className="truncate">for “{wo.requestTitle}”</span>
+                    )}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={wo.status} />

@@ -26,6 +26,12 @@ export async function createMaintenanceRequest(
   schemeId: string,
   input: CreateRequestInput,
 ) {
+  if (input.lotId) {
+    const lot = await ctx.db.query.lots.findFirst({
+      where: and(eq(lots.id, input.lotId), eq(lots.schemeId, schemeId)),
+    });
+    if (!lot) throw notFound("Lot");
+  }
   return await ctx.db.transaction(async (tx) => {
     const rows = await tx
       .insert(maintenanceRequests)
@@ -132,11 +138,23 @@ export async function declineAsLotResponsibility(
     where: and(eq(maintenanceRequests.id, requestId), eq(maintenanceRequests.schemeId, schemeId)),
   });
   if (!request) throw notFound("Maintenance request");
+  if (request.status !== "open" && request.status !== "triaged") {
+    throw new DomainError("BAD_STATUS", `Cannot decline a ${request.status} request`, 409);
+  }
 
   await ctx.db.transaction(async (tx) => {
+    const priorTriage =
+      request.aiTriage && typeof request.aiTriage === "object"
+        ? (request.aiTriage as Record<string, unknown>)
+        : {};
     await tx
       .update(maintenanceRequests)
-      .set({ status: "rejected" })
+      .set({
+        status: "rejected",
+        // Keep the explanation with the triage record so the portal can show
+        // the requester why the OC won't arrange the works (email aside).
+        aiTriage: { ...priorTriage, declineExplanation: explanation },
+      })
       .where(eq(maintenanceRequests.id, requestId));
     await publishEvent(tx, {
       schemeId,
@@ -486,10 +504,32 @@ export async function completeWorkOrder(
 }
 
 export async function listWorkOrders(ctx: ServiceContext, schemeId: string) {
-  return await ctx.db.query.workOrders.findMany({
+  const orders = await ctx.db.query.workOrders.findMany({
     where: eq(workOrders.schemeId, schemeId),
     orderBy: (t, { desc }) => desc(t.createdAt),
   });
+  if (orders.length === 0) return [];
+
+  // Denormalise the names a member actually reads on the list: who is doing
+  // the work, and which request it answers. One query each — no N+1.
+  const [contractorRows, requestRows] = await Promise.all([
+    ctx.db.query.contractors.findMany({
+      where: eq(contractors.schemeId, schemeId),
+      columns: { id: true, businessName: true },
+    }),
+    ctx.db.query.maintenanceRequests.findMany({
+      where: eq(maintenanceRequests.schemeId, schemeId),
+      columns: { id: true, title: true },
+    }),
+  ]);
+  const contractorNames = new Map(contractorRows.map((c) => [c.id, c.businessName]));
+  const requestTitles = new Map(requestRows.map((r) => [r.id, r.title]));
+
+  return orders.map((o) => ({
+    ...o,
+    contractorName: contractorNames.get(o.contractorId) ?? null,
+    requestTitle: o.requestId ? (requestTitles.get(o.requestId) ?? null) : null,
+  }));
 }
 
 // Executor: the committee said yes — dispatch it.

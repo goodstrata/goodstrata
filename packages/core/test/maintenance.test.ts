@@ -165,6 +165,15 @@ describe("work order threshold routing (code, not LLM)", () => {
     expect(after.find((o) => o.id === dispatched.id)!.status).toBe("completed");
   });
 
+  it("includes contractor name and request title on listed work orders", async () => {
+    const orders = await maintenanceService.listWorkOrders(ctx(), schemeId);
+    expect(orders.length).toBeGreaterThan(0);
+    for (const order of orders) {
+      expect(order.contractorName).toBe("Fitzroy Plumbing Co");
+      expect(order.requestTitle).toMatch(/^Job /);
+    }
+  });
+
   it("refuses a work order on an untriaged request", async () => {
     const request = await maintenanceService.createMaintenanceRequest(ctx(), schemeId, {
       title: "Untriaged thing",
@@ -178,5 +187,45 @@ describe("work order threshold routing (code, not LLM)", () => {
         estimatedCents: 100,
       }),
     ).rejects.toThrow(/triaged/);
+  });
+
+  it("rejects a request lodged against a lot outside the scheme", async () => {
+    await expect(
+      maintenanceService.createMaintenanceRequest(ctx(), schemeId, {
+        title: "Wrong lot",
+        description: "lot belongs to another scheme",
+        lotId: "00000000-0000-0000-0000-000000000000",
+      }),
+    ).rejects.toThrow(/Lot/);
+  });
+});
+
+describe("declining as lot responsibility", () => {
+  it("records the explanation and closes the request", async () => {
+    const request = await maintenanceService.createMaintenanceRequest(ctx(), schemeId, {
+      title: "Leaking kitchen mixer tap",
+      description: "Drips inside my unit",
+    });
+    await maintenanceService.declineAsLotResponsibility(
+      ctx(),
+      schemeId,
+      request.id,
+      "Internal tapware within a lot is the owner's responsibility.",
+    );
+    const after = (await maintenanceService.listRequests(ctx(), schemeId)).find(
+      (r) => r.id === request.id,
+    )!;
+    expect(after.status).toBe("rejected");
+    expect((after.aiTriage as { declineExplanation?: string }).declineExplanation).toContain(
+      "owner's responsibility",
+    );
+  });
+
+  it("refuses to decline a request that is already resolved", async () => {
+    const orders = await maintenanceService.listWorkOrders(ctx(), schemeId);
+    const completed = orders.find((o) => o.status === "completed" && o.requestId)!;
+    await expect(
+      maintenanceService.declineAsLotResponsibility(ctx(), schemeId, completed.requestId!, "nope"),
+    ).rejects.toThrow(/Cannot decline/);
   });
 });
