@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import { Bot, CheckCircle2, FileCheck2, Vote } from "lucide-react";
@@ -23,6 +24,7 @@ const WHAT_NEXT: { icon: LucideIcon; title: string; body: string }[] = [
 
 export function FinishStep({ schemeId, schemeName }: { schemeId: string; schemeName: string }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   return (
     <div className="space-y-8 text-center">
@@ -58,7 +60,10 @@ export function FinishStep({ schemeId, schemeName }: { schemeId: string; schemeN
       <Button
         size="lg"
         className="w-full sm:w-auto"
-        onClick={() => void navigate({ to: "/schemes/$schemeId", params: { schemeId } })}
+        onClick={() => {
+          void queryClient.invalidateQueries({ queryKey: ["schemes"] });
+          void navigate({ to: "/schemes/$schemeId", params: { schemeId } });
+        }}
       >
         Go to your building
       </Button>

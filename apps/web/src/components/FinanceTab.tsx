@@ -298,8 +298,24 @@ function FinanceStats({ schemeId }: { schemeId: string }) {
 function HowToPaySection({ schemeId, isOfficer }: { schemeId: string; isOfficer: boolean }) {
   const status = useQuery(paymentsStatusQuery(schemeId));
 
-  // The payments section surfaces load errors; this card just stays quiet.
-  if (status.isPending || status.isError) return null;
+  if (status.isPending) return null;
+  // Owners only see this card once there's an account, so stay quiet for them;
+  // officers get a visible "temporarily unavailable" instead of a missing card.
+  if (status.isError) {
+    if (!isOfficer) return null;
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Landmark className="size-4" aria-hidden="true" /> How to pay
+          </CardTitle>
+          <CardDescription>
+            Payment status didn't load just now. Refresh the page to try again.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
   const s = status.data.status;
   const account = s.trustAccount;
   if (!account && !isOfficer) return null;

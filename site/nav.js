@@ -88,3 +88,20 @@
     window.addEventListener("scroll", onScroll, { passive: true });
   }
 })();
+
+/* Conversion signals for GTM / GA4 (dataLayer already exists — GTM loads in <head>). */
+(function () {
+  var dl = (window.dataLayer = window.dataLayer || []);
+  function push(ev, extra) { try { dl.push(Object.assign({ event: ev }, extra || {})); } catch (_) {} }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest ? e.target.closest("a[href]") : null;
+    if (!a) return;
+    var href = a.getAttribute("href") || "";
+    if (/\/signup/.test(href)) push("signup_click", { link_url: href });
+    else if (/demo\.goodstrata/.test(href)) push("demo_click", { link_url: href });
+  }, true);
+  var fi = document.getElementById("fileInput");
+  if (fi) fi.addEventListener("change", function () { if (fi.files && fi.files.length) push("fee_check", { method: "file" }); });
+  var dz = document.getElementById("dropzone");
+  if (dz) dz.addEventListener("drop", function () { push("fee_check", { method: "drop" }); });
+})();

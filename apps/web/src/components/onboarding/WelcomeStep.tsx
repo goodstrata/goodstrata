@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -26,7 +25,6 @@ export function WelcomeStep({
   defaultName: string;
   onCreated: (scheme: CreatedScheme) => void;
 }) {
-  const queryClient = useQueryClient();
   const form = useAppForm({
     schema: welcomeSchema,
     defaultValues: {
@@ -40,7 +38,9 @@ export function WelcomeStep({
       const { scheme } = await unwrap<{ scheme: CreatedScheme }>(
         await api.schemes.$post({ json: { ...values, state: "VIC" } }),
       );
-      await queryClient.invalidateQueries({ queryKey: ["schemes"] });
+      // Don't refresh the schemes list here: it flips the parent's "empty"
+      // check and unmounts the wizard before steps 2–3 can show. FinishStep
+      // invalidates on the way out instead.
       onCreated({ id: scheme.id, name: scheme.name });
     },
   });
