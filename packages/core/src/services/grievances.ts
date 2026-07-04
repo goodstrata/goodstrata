@@ -13,6 +13,7 @@ import { publishEvent } from "@goodstrata/events";
 import {
   addDays,
   BREACH_NOTICE_TYPES,
+  type BreachNoticeStatus,
   COMPLAINT_STATUSES,
   type ComplaintEventKind,
   type ComplaintStatus,
@@ -59,6 +60,15 @@ export const issueBreachNoticeInput = z
     message: "A breach notice must name a subject lot or person",
   });
 export type IssueBreachNoticeInput = z.infer<typeof issueBreachNoticeInput>;
+
+/** Outcomes an issued breach notice may be closed with. */
+export const BREACH_NOTICE_OUTCOMES = ["rectified", "escalated", "withdrawn"] as const;
+
+export const closeBreachNoticeInput = z.object({
+  status: z.enum(BREACH_NOTICE_OUTCOMES),
+  note: z.string().max(5000).optional(),
+});
+export type CloseBreachNoticeInput = z.infer<typeof closeBreachNoticeInput>;
 
 // ---------------------------------------------------------------------------
 // Grievance state machine (received → … → resolved/withdrawn/vcat).
@@ -184,6 +194,25 @@ export async function fileComplaint(
 export async function listComplaints(ctx: ServiceContext, schemeId: string): Promise<Complaint[]> {
   return await ctx.db.query.complaints.findMany({
     where: eq(complaints.schemeId, schemeId),
+    orderBy: (t, { desc }) => desc(t.receivedAt),
+  });
+}
+
+/**
+ * Complaints lodged by the signed-in member (self-service tracking). Members
+ * without a linked person record simply have nothing on file yet.
+ */
+export async function listMyComplaints(
+  ctx: ServiceContext,
+  schemeId: string,
+): Promise<Complaint[]> {
+  if (ctx.actor.kind !== "user") return [];
+  const person = await ctx.db.query.people.findFirst({
+    where: and(eq(people.schemeId, schemeId), eq(people.userId, ctx.actor.id)),
+  });
+  if (!person) return [];
+  return await ctx.db.query.complaints.findMany({
+    where: and(eq(complaints.schemeId, schemeId), eq(complaints.complainantPersonId, person.id)),
     orderBy: (t, { desc }) => desc(t.receivedAt),
   });
 }
@@ -362,6 +391,81 @@ export async function issueBreachNotice(
     });
 
     return notice;
+  });
+}
+
+/** Audit-trail kind recorded on a linked complaint when a notice closes. */
+const NOTICE_OUTCOME_EVENT_KIND: Record<
+  (typeof BREACH_NOTICE_OUTCOMES)[number],
+  ComplaintEventKind
+> = {
+  rectified: "rectified",
+  escalated: "escalated",
+  withdrawn: "note",
+};
+
+/**
+ * Close out an issued breach notice — rectified (complied within the 28 days),
+ * escalated (to a final notice or VCAT), or withdrawn. Records the outcome on
+ * any linked complaint's trail and publishes `breach_notice.closed`.
+ */
+export async function closeBreachNotice(
+  ctx: ServiceContext,
+  schemeId: string,
+  breachNoticeId: string,
+  input: CloseBreachNoticeInput,
+): Promise<BreachNotice> {
+  return await ctx.db.transaction(async (tx) => {
+    const notice = await tx.query.breachNotices.findFirst({
+      where: and(eq(breachNotices.id, breachNoticeId), eq(breachNotices.schemeId, schemeId)),
+    });
+    if (!notice) throw notFound("Breach notice");
+    if (notice.status !== "issued") {
+      throw new DomainError(
+        "NOTICE_CLOSED",
+        `This notice has already been marked ${notice.status}`,
+        409,
+      );
+    }
+
+    const rows = await tx
+      .update(breachNotices)
+      .set({ status: input.status as BreachNoticeStatus })
+      .where(eq(breachNotices.id, breachNoticeId))
+      .returning();
+    const updated = rows[0]!;
+
+    if (notice.complaintId) {
+      const noticeName = notice.type === "final_notice" ? "Final notice" : "Notice to rectify";
+      const outcome =
+        input.status === "rectified"
+          ? `${noticeName} (${notice.ruleRef}) marked rectified.`
+          : input.status === "escalated"
+            ? `${noticeName} (${notice.ruleRef}) escalated.`
+            : `${noticeName} (${notice.ruleRef}) withdrawn.`;
+      await tx.insert(complaintEvents).values({
+        complaintId: notice.complaintId,
+        kind: NOTICE_OUTCOME_EVENT_KIND[input.status],
+        actor: ctx.actor,
+        note: input.note ? `${outcome} ${input.note}` : outcome,
+      });
+    }
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `breach_notice:${breachNoticeId}`,
+      type: "breach_notice.closed",
+      payload: {
+        breachNoticeId,
+        complaintId: notice.complaintId,
+        fromStatus: notice.status,
+        toStatus: input.status,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return updated;
   });
 }
 

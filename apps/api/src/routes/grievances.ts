@@ -37,6 +37,15 @@ export function grievancesRoutes(deps: AppDeps) {
           return c.json({ complaint }, 201);
         },
       )
+      // A member's own complaints — so they can track the 28-day clock on
+      // what they've lodged. Registered before /:complaintId so "mine" never
+      // matches as an id.
+      .get("/:schemeId/complaints/mine", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json({
+          complaints: await grievancesService.listMyComplaints(ctx, c.get("schemeId")),
+        });
+      })
       // The grievance register and everything downstream is officer-only.
       .get("/:schemeId/complaints", requireSchemeMember(deps), officerOrAdmin, async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
@@ -93,6 +102,23 @@ export function grievancesRoutes(deps: AppDeps) {
             c.req.valid("json"),
           );
           return c.json({ breachNotice }, 201);
+        },
+      )
+      // Close out an issued breach notice: rectified, escalated or withdrawn.
+      .post(
+        "/:schemeId/breach-notices/:breachNoticeId/close",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", grievancesService.closeBreachNoticeInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const breachNotice = await grievancesService.closeBreachNotice(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("breachNoticeId"),
+            c.req.valid("json"),
+          );
+          return c.json({ breachNotice });
         },
       )
       // s 159 grievance report for the AGM.

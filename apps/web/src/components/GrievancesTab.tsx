@@ -37,6 +37,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatCard } from "@/components/ui/stat-card";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
@@ -195,7 +196,7 @@ export function GrievancesTab({ schemeId }: { schemeId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const invalidate = () => {
-    for (const key of ["complaints", "breach-notices", "complaint", schemeId]) {
+    for (const key of ["complaints", "my-complaints", "breach-notices"]) {
       void queryClient.invalidateQueries({ queryKey: [key, schemeId] });
     }
     void queryClient.invalidateQueries({ queryKey: ["complaint"] });
@@ -220,21 +221,57 @@ export function GrievancesTab({ schemeId }: { schemeId: string }) {
           />
         </>
       ) : (
-        <MemberNotice schemeId={schemeId} onChange={invalidate} />
+        <MyComplaints schemeId={schemeId} onChange={invalidate} />
       )}
     </div>
   );
 }
 
-/** Non-officers can lodge a complaint but don't see the register. */
-function MemberNotice({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
+/**
+ * Non-officers don't see the register, but they can track what they've
+ * lodged — with the same 28-day clock the committee is held to.
+ */
+function MyComplaints({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["my-complaints", schemeId],
+    queryFn: async () =>
+      unwrap<{ complaints: Complaint[] }>(
+        await api.schemes[":schemeId"].complaints.mine.$get({ param: { schemeId } }),
+      ),
+  });
+
+  if (isLoading) return <Skeleton className="h-40" />;
+  if (isError)
+    return <ErrorState message="Couldn't load your complaints." onRetry={() => void refetch()} />;
+  if (!data || data.complaints.length === 0)
+    return (
+      <EmptyState
+        icon={ShieldAlert}
+        title="Raise a complaint in confidence"
+        description="Lodged complaints go to your committee, who must meet and discuss the matter within 28 days. You can track progress here."
+        action={<RaiseComplaintDialog schemeId={schemeId} onChange={onChange} />}
+      />
+    );
+
   return (
-    <EmptyState
-      icon={ShieldAlert}
-      title="Raise a complaint in confidence"
-      description="Lodged complaints go to your committee, who must meet and discuss the matter within 28 days. You'll be contacted about the outcome."
-      action={<RaiseComplaintDialog schemeId={schemeId} onChange={onChange} />}
-    />
+    <section>
+      <Eyebrow className="mb-2.5 block">Your complaints</Eyebrow>
+      <div className="space-y-2.5">
+        {data.complaints.map((c) => (
+          <Card key={c.id} className="py-0">
+            <CardContent className="flex flex-col gap-2 px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-medium">{c.subject}</p>
+                <StatusPill status={c.status} />
+              </div>
+              <p className="line-clamp-2 text-13 text-muted-foreground">{c.details}</p>
+              <p className="text-xs text-muted-foreground">Lodged {formatDate(c.receivedAt)}</p>
+              <DeadlineClock complaint={c} />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -421,6 +458,7 @@ function ComplaintRegister({
       ),
   });
   const people = usePeople(schemeId);
+  const [showClosed, setShowClosed] = useState(false);
   const nameOf = useMemo(() => {
     const map = new Map((people.data ?? []).map((p) => [p.id, personName(p)]));
     return (id: string | null) => (id ? (map.get(id) ?? "Unknown") : null);
@@ -440,32 +478,83 @@ function ComplaintRegister({
       />
     );
 
+  // Most urgent statutory deadline first; closed matters tucked away.
+  const open = data.complaints
+    .filter((c) => !CLOSED.includes(c.status))
+    .sort((a, b) => a.meetByDate.localeCompare(b.meetByDate));
+  const closed = data.complaints.filter((c) => CLOSED.includes(c.status));
+  const overdue = open.filter((c) => daysUntil(c.meetByDate) < 0).length;
+  const dueSoon = open.filter((c) => {
+    const d = daysUntil(c.meetByDate);
+    return d >= 0 && d <= 7;
+  }).length;
+  const visible = showClosed ? [...open, ...closed] : open;
+
   return (
-    <div className="space-y-2.5">
-      {data.complaints.map((c) => (
-        <Card key={c.id} className="py-0">
-          <CardContent className="px-0 py-0">
-            <button
-              type="button"
-              onClick={() => onOpen(c.id)}
-              data-testid={`complaint-${c.id}`}
-              className="flex w-full flex-col gap-2 px-4 py-3.5 text-left transition-colors hover:bg-muted/50"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-sm font-medium">{c.subject}</p>
-                <StatusPill status={c.status} />
-              </div>
-              <p className="line-clamp-1 text-13 text-muted-foreground">{c.details}</p>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span>From {nameOf(c.complainantPersonId)}</span>
-                {c.respondentPersonId && <span>· about {nameOf(c.respondentPersonId)}</span>}
-                <span>· received {formatDate(c.receivedAt)}</span>
-              </div>
-              <DeadlineClock complaint={c} />
-            </button>
-          </CardContent>
-        </Card>
-      ))}
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatCard
+          label="Overdue"
+          value={overdue}
+          tone={overdue > 0 ? "critical" : "neutral"}
+          hint="past the 28-day deadline"
+        />
+        <StatCard
+          label="Due within 7 days"
+          value={dueSoon}
+          tone={dueSoon > 0 ? "caution" : "neutral"}
+          hint="meet-and-discuss clock running down"
+        />
+        <StatCard label="Open" value={open.length} hint="complaints still to deal with" />
+      </div>
+
+      {closed.length > 0 && (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowClosed((v) => !v)}
+            aria-pressed={showClosed}
+          >
+            {showClosed ? "Hide closed" : `Show closed (${closed.length})`}
+          </Button>
+        </div>
+      )}
+
+      {visible.length === 0 && (
+        <EmptyState
+          icon={Gavel}
+          title="Nothing open"
+          description="Every complaint on the register has been resolved or withdrawn."
+        />
+      )}
+
+      <div className="space-y-2.5">
+        {visible.map((c) => (
+          <Card key={c.id} className="py-0">
+            <CardContent className="px-0 py-0">
+              <button
+                type="button"
+                onClick={() => onOpen(c.id)}
+                data-testid={`complaint-${c.id}`}
+                className="flex w-full flex-col gap-2 px-4 py-3.5 text-left transition-colors hover:bg-muted/50"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium">{c.subject}</p>
+                  <StatusPill status={c.status} />
+                </div>
+                <p className="line-clamp-1 text-13 text-muted-foreground">{c.details}</p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span>From {nameOf(c.complainantPersonId)}</span>
+                  {c.respondentPersonId && <span>· about {nameOf(c.respondentPersonId)}</span>}
+                  <span>· received {formatDate(c.receivedAt)}</span>
+                </div>
+                <DeadlineClock complaint={c} />
+              </button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -587,18 +676,7 @@ function ComplaintDetailBody({
             <Eyebrow className="mb-2 block">Breach notices</Eyebrow>
             <div className="space-y-2">
               {breachNotices.map((n) => (
-                <div key={n.id} className="rounded-md border px-3 py-2.5 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium capitalize">{statusLabel(n.type)}</span>
-                    <Badge tone={BREACH_STATUS_TONE[n.status] ?? "neutral"} className="capitalize">
-                      {n.status}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-13 text-muted-foreground">
-                    {n.ruleRef} · rectify by {formatDate(n.rectifyByDate)}
-                  </p>
-                  <p className="mt-1 text-13 text-muted-foreground">{n.details}</p>
-                </div>
+                <BreachNoticeRow key={n.id} schemeId={schemeId} notice={n} onChanged={refresh} />
               ))}
             </div>
           </section>
@@ -621,6 +699,101 @@ function ComplaintDetailBody({
         </section>
       </div>
     </>
+  );
+}
+
+/** One breach notice with its outcome controls (issued → rectified/escalated/withdrawn). */
+function BreachNoticeRow({
+  schemeId,
+  notice,
+  onChanged,
+}: {
+  schemeId: string;
+  notice: BreachNotice;
+  onChanged: () => void;
+}) {
+  const close = useMutation({
+    mutationFn: async (status: "rectified" | "escalated" | "withdrawn") =>
+      unwrap(
+        await api.schemes[":schemeId"]["breach-notices"][":breachNoticeId"].close.$post({
+          param: { schemeId, breachNoticeId: notice.id },
+          json: { status },
+        }),
+      ),
+    onSuccess: (_data, status) => {
+      toast.success(
+        status === "rectified"
+          ? "Notice marked rectified"
+          : status === "escalated"
+            ? "Notice marked escalated"
+            : "Notice withdrawn",
+      );
+      onChanged();
+    },
+  });
+
+  const days = daysUntil(notice.rectifyByDate);
+  const clockTone =
+    notice.status !== "issued"
+      ? "text-muted-foreground"
+      : days < 0
+        ? "text-critical"
+        : days <= 7
+          ? "text-caution"
+          : "text-muted-foreground";
+
+  return (
+    <div className="rounded-md border px-3 py-2.5 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium capitalize">{statusLabel(notice.type)}</span>
+        <Badge tone={BREACH_STATUS_TONE[notice.status] ?? "neutral"} className="capitalize">
+          {notice.status}
+        </Badge>
+      </div>
+      <p className={`mt-1 text-13 ${clockTone}`}>
+        {notice.ruleRef} · rectify by {formatDate(notice.rectifyByDate)}
+        {notice.status === "issued" &&
+          (days < 0
+            ? ` · ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`
+            : days === 0
+              ? " · due today"
+              : ` · ${days} day${days === 1 ? "" : "s"} left`)}
+      </p>
+      <p className="mt-1 text-13 text-muted-foreground">{notice.details}</p>
+      {close.isError && (
+        <p role="alert" className="mt-1.5 text-13 text-critical">
+          {close.error.message}
+        </p>
+      )}
+      {notice.status === "issued" && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={close.isPending}
+            onClick={() => close.mutate("rectified")}
+          >
+            Mark rectified
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={close.isPending}
+            onClick={() => close.mutate("escalated")}
+          >
+            Mark escalated
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={close.isPending}
+            onClick={() => close.mutate("withdrawn")}
+          >
+            Withdraw
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -678,6 +851,7 @@ function StatusControls({
       </Select>
       <Textarea
         className="min-h-16"
+        aria-label="Note for the record"
         placeholder="Add a note for the record (optional)"
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -746,10 +920,19 @@ function IssueBreachNotice({
 
   const canIssue = complaint.respondentPersonId !== null;
 
+  if (!canIssue) {
+    return (
+      <p className="text-13 text-muted-foreground">
+        A breach notice needs someone to be addressed to — this complaint isn't about a specific
+        person.
+      </p>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" disabled={!canIssue}>
+        <Button size="sm" variant="outline">
           <ScrollText aria-hidden="true" className="size-4" /> Issue breach notice
         </Button>
       </DialogTrigger>
@@ -760,93 +943,81 @@ function IssueBreachNotice({
             A notice to rectify (or final notice) gives the named party 28 days to comply.
           </DialogDescription>
         </DialogHeader>
-        {!canIssue ? (
-          <p className="text-13 text-muted-foreground">
-            This complaint isn't about a specific person, so a breach notice can't be addressed.
-          </p>
-        ) : (
-          <>
-            <form
-              id="breach-form"
-              className="flex flex-col gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void form.handleSubmit();
-              }}
-            >
-              <form.Field name="type">
-                {(field) => (
-                  <Field label="Notice type" required error={fieldError(field.state.meta.errors)}>
-                    {(controlProps) => (
-                      <Select
-                        value={field.state.value}
-                        onValueChange={(v) =>
-                          field.handleChange(v as "notice_to_rectify" | "final_notice")
-                        }
-                      >
-                        <SelectTrigger {...controlProps} data-testid="breach-type">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="notice_to_rectify">Notice to rectify</SelectItem>
-                          <SelectItem value="final_notice">Final notice</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </Field>
-                )}
-              </form.Field>
-              <form.Field name="ruleRef">
-                {(field) => (
-                  <Field
-                    label="Rule contravened"
-                    required
-                    error={fieldError(field.state.meta.errors)}
+        <form
+          id="breach-form"
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void form.handleSubmit();
+          }}
+        >
+          <form.Field name="type">
+            {(field) => (
+              <Field label="Notice type" required error={fieldError(field.state.meta.errors)}>
+                {(controlProps) => (
+                  <Select
+                    value={field.state.value}
+                    onValueChange={(v) =>
+                      field.handleChange(v as "notice_to_rectify" | "final_notice")
+                    }
                   >
-                    {(controlProps) => (
-                      <Input
-                        {...controlProps}
-                        data-testid="breach-rule"
-                        placeholder="e.g. Model Rule 4.1 (noise)"
-                        value={field.state.value}
-                        onBlur={field.handleBlur}
-                        onChange={(e) => field.handleChange(e.target.value)}
-                      />
-                    )}
-                  </Field>
+                    <SelectTrigger {...controlProps} data-testid="breach-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="notice_to_rectify">Notice to rectify</SelectItem>
+                      <SelectItem value="final_notice">Final notice</SelectItem>
+                    </SelectContent>
+                  </Select>
                 )}
-              </form.Field>
-              <form.Field name="details">
-                {(field) => (
-                  <Field
-                    label="What must be rectified?"
-                    required
-                    error={fieldError(field.state.meta.errors)}
-                  >
-                    {(controlProps) => (
-                      <Textarea
-                        {...controlProps}
-                        data-testid="breach-details"
-                        className="min-h-24"
-                        placeholder="Set out the breach and the steps required to comply."
-                        value={field.state.value}
-                        onBlur={field.handleBlur}
-                        onChange={(e) => field.handleChange(e.target.value)}
-                      />
-                    )}
-                  </Field>
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="ruleRef">
+            {(field) => (
+              <Field label="Rule contravened" required error={fieldError(field.state.meta.errors)}>
+                {(controlProps) => (
+                  <Input
+                    {...controlProps}
+                    data-testid="breach-rule"
+                    placeholder="e.g. Model Rule 4.1 (noise)"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
                 )}
-              </form.Field>
-              <FormError form={form} />
-            </form>
-            <DialogFooter>
-              <SubmitButton form={form} formId="breach-form">
-                Issue notice
-              </SubmitButton>
-            </DialogFooter>
-          </>
-        )}
+              </Field>
+            )}
+          </form.Field>
+          <form.Field name="details">
+            {(field) => (
+              <Field
+                label="What must be rectified?"
+                required
+                error={fieldError(field.state.meta.errors)}
+              >
+                {(controlProps) => (
+                  <Textarea
+                    {...controlProps}
+                    data-testid="breach-details"
+                    className="min-h-24"
+                    placeholder="Set out the breach and the steps required to comply."
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                  />
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <FormError form={form} />
+        </form>
+        <DialogFooter>
+          <SubmitButton form={form} formId="breach-form">
+            Issue notice
+          </SubmitButton>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

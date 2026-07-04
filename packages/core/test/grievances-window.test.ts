@@ -1,5 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { s159WindowBounds } from "../src/services/grievances.js";
+import type { ServiceContext } from "../src/context.js";
+import {
+  BREACH_NOTICE_OUTCOMES,
+  closeBreachNoticeInput,
+  listMyComplaints,
+  s159WindowBounds,
+} from "../src/services/grievances.js";
+
+describe("closeBreachNoticeInput", () => {
+  it("accepts each closing outcome", () => {
+    for (const status of BREACH_NOTICE_OUTCOMES) {
+      expect(closeBreachNoticeInput.parse({ status })).toEqual({ status });
+    }
+  });
+
+  it("rejects re-issuing or unknown statuses", () => {
+    expect(closeBreachNoticeInput.safeParse({ status: "issued" }).success).toBe(false);
+    expect(closeBreachNoticeInput.safeParse({ status: "open" }).success).toBe(false);
+    expect(closeBreachNoticeInput.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("listMyComplaints", () => {
+  it("returns nothing for a non-user actor without touching the db", async () => {
+    const ctx = { actor: { kind: "agent", id: "conductor" } } as unknown as ServiceContext;
+    await expect(listMyComplaints(ctx, "scheme-1")).resolves.toEqual([]);
+  });
+});
 
 describe("s159WindowBounds", () => {
   it("extends a date-only `to` bound to the END of that calendar day", () => {

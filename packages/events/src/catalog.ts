@@ -254,6 +254,12 @@ export const eventDefs = {
     ruleRef: z.string(),
     rectifyByDate: z.string(),
   }),
+  "breach_notice.closed": z.object({
+    breachNoticeId: z.string(),
+    complaintId: z.string().nullable(),
+    fromStatus: z.string(),
+    toStatus: z.string(),
+  }),
 
   // decisions (the human gate)
   "decision.requested": z.object({
