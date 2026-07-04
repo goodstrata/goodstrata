@@ -6,6 +6,9 @@ interface Env {
   OPENROUTER_API_KEY?: string;
   /** wrangler secret — when present, committee video calls use Daily.co. */
   DAILY_API_KEY?: string;
+  /** wrangler secrets — when both present, "Sign in with Google" is offered. */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
 }
 
 /**
@@ -31,6 +34,12 @@ export class GoodstrataDemo extends Container<Env> {
             }
           : {}),
         ...(env.DAILY_API_KEY ? { VIDEO_PROVIDER: "daily", DAILY_API_KEY: env.DAILY_API_KEY } : {}),
+        ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+          ? {
+              GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+              GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+            }
+          : {}),
       },
     });
   }
