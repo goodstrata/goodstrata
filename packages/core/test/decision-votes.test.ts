@@ -230,6 +230,41 @@ describe("committee voting on decisions", () => {
     expect(result.status).toBe("approved");
   });
 
+  it("lists decisions with the decider's name once resolved", async () => {
+    const decision = await decisionsService.requestDecision(ctxAs(userActor(CHAIR)), {
+      schemeId,
+      kind: "budget_adoption",
+      title: "Adopt the audit-trail budget",
+      summaryMd: "Treasurer sign-off.",
+      deciderRole: "treasurer",
+    });
+    await decisionsService.resolveDecision(
+      ctxAs(userActor(TREASURER)),
+      schemeId,
+      decision.id,
+      "approve",
+      ["treasurer"],
+      "Within the adopted plan",
+    );
+
+    const listed = await decisionsService.listDecisions(ctxAs(userActor(OWNER)), schemeId);
+    const resolved = listed.find((d) => d.id === decision.id);
+    expect(resolved).toMatchObject({
+      status: "approved",
+      decidedByUserId: TREASURER,
+      decidedByName: "Terry Treasurer",
+      decisionNote: "Within the adopted plan",
+    });
+    expect(resolved?.resolvedAt).not.toBeNull();
+
+    // Unresolved decisions carry a null decider name (left join, not inner).
+    const open = await openCommitteeDecision("audit-list");
+    const pending = (await decisionsService.listDecisions(ctxAs(userActor(OWNER)), schemeId)).find(
+      (d) => d.id === open.id,
+    );
+    expect(pending).toMatchObject({ status: "pending", decidedByName: null });
+  });
+
   it("lists votes with voter names, tally and eligible count", async () => {
     const decision = await openCommitteeDecision("listing");
     await decisionsService.castDecisionVote(

@@ -6,7 +6,7 @@ import {
   type DecisionKind,
   type MembershipRole,
 } from "@goodstrata/shared";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError, notFound } from "../errors.js";
@@ -305,12 +305,18 @@ export async function listDecisions(
   schemeId: string,
   status?: "pending" | "approved" | "declined" | "expired" | "escalated",
 ) {
-  return await ctx.db.query.decisions.findMany({
-    where: status
-      ? and(eq(decisions.schemeId, schemeId), eq(decisions.status, status))
-      : eq(decisions.schemeId, schemeId),
-    orderBy: (t, { desc }) => desc(t.createdAt),
-  });
+  // Left-join the decider so resolved decisions carry a human-readable
+  // audit line (who decided) without a second lookup.
+  return await ctx.db
+    .select({ ...getTableColumns(decisions), decidedByName: users.name })
+    .from(decisions)
+    .leftJoin(users, eq(decisions.decidedByUserId, users.id))
+    .where(
+      status
+        ? and(eq(decisions.schemeId, schemeId), eq(decisions.status, status))
+        : eq(decisions.schemeId, schemeId),
+    )
+    .orderBy(desc(decisions.createdAt));
 }
 
 // ---------------------------------------------------------------------------
