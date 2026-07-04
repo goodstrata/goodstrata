@@ -12,12 +12,13 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { api, unwrap } from "@/lib/api";
+import { ApiError, api, unwrap } from "@/lib/api";
 import { useIsOfficer } from "@/lib/roles";
 import { useIsMobile } from "@/lib/use-mobile";
 
@@ -45,6 +46,19 @@ function ownerNames(lot: LotRow): string {
     lot.owners
       .map((o) => `${o.givenName ?? ""} ${o.familyName ?? ""}`.trim() || o.email)
       .join(", ") || "—"
+  );
+}
+
+/** Line-level rows from an INVALID_IMPORT envelope, if present. */
+function importLineErrors(error: unknown): { line: number; message: string }[] {
+  if (!(error instanceof ApiError) || typeof error.details !== "object" || error.details === null) {
+    return [];
+  }
+  const errors = (error.details as { errors?: unknown }).errors;
+  if (!Array.isArray(errors)) return [];
+  return errors.filter(
+    (e): e is { line: number; message: string } =>
+      typeof e === "object" && e !== null && "line" in e && "message" in e,
   );
 }
 
@@ -81,6 +95,18 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
       ),
     [data],
   );
+  // Register totals — committees check these against the plan of subdivision.
+  const totals = useMemo(
+    () =>
+      lots.reduce(
+        (acc, lot) => ({
+          entitlement: acc.entitlement + lot.entitlement,
+          liability: acc.liability + lot.liability,
+        }),
+        { entitlement: 0, liability: 0 },
+      ),
+    [lots],
+  );
 
   return (
     <div className="space-y-6">
@@ -102,35 +128,49 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
           }
         />
       ) : isMobile ? (
-        <ul className="space-y-3">
-          {lots.map((lot) => (
-            <li key={lot.id} className="rounded-lg border bg-card p-4 shadow-xs">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-mono text-sm font-medium">Lot {lot.lotNumber}</p>
-                  <p className="text-sm text-muted-foreground capitalize">{lot.lotType}</p>
+        <div className="space-y-3">
+          <ul className="space-y-3">
+            {lots.map((lot) => (
+              <li key={lot.id} className="rounded-lg border bg-card p-4 shadow-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm font-medium">
+                      Lot {lot.lotNumber}
+                      {lot.unitNumber && (
+                        <span className="ml-1.5 font-sans text-xs font-normal text-muted-foreground">
+                          Unit {lot.unitNumber}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-sm text-muted-foreground capitalize">{lot.lotType}</p>
+                  </div>
+                  <LotStatementDialog
+                    schemeId={schemeId}
+                    lotId={lot.id}
+                    lotNumber={lot.lotNumber}
+                    triggerVariant="outline"
+                  />
                 </div>
-                <LotStatementDialog
-                  schemeId={schemeId}
-                  lotId={lot.id}
-                  lotNumber={lot.lotNumber}
-                  triggerVariant="outline"
-                />
-              </div>
-              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <dt className="eyebrow text-muted-foreground">Entitlement</dt>
-                  <dd className="mt-0.5 font-mono tabular-nums">{lot.entitlement}</dd>
-                </div>
-                <div>
-                  <dt className="eyebrow text-muted-foreground">Liability</dt>
-                  <dd className="mt-0.5 font-mono tabular-nums">{lot.liability}</dd>
-                </div>
-              </dl>
-              <p className="mt-3 truncate text-sm text-muted-foreground">{ownerNames(lot)}</p>
-            </li>
-          ))}
-        </ul>
+                <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <dt className="eyebrow text-muted-foreground">Entitlement</dt>
+                    <dd className="mt-0.5 font-mono tabular-nums">{lot.entitlement}</dd>
+                  </div>
+                  <div>
+                    <dt className="eyebrow text-muted-foreground">Liability</dt>
+                    <dd className="mt-0.5 font-mono tabular-nums">{lot.liability}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 truncate text-sm text-muted-foreground">{ownerNames(lot)}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="text-13 text-muted-foreground">
+            {lots.length} {lots.length === 1 ? "lot" : "lots"} · entitlements{" "}
+            <span className="font-mono tabular-nums">{totals.entitlement}</span> · liabilities{" "}
+            <span className="font-mono tabular-nums">{totals.liability}</span>
+          </p>
+        </div>
       ) : (
         <Card className="overflow-hidden py-0">
           <Table>
@@ -147,7 +187,14 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
             <TableBody>
               {lots.map((lot) => (
                 <TableRow key={lot.id}>
-                  <TableCell className="font-mono font-medium">{lot.lotNumber}</TableCell>
+                  <TableCell className="font-mono font-medium">
+                    {lot.lotNumber}
+                    {lot.unitNumber && (
+                      <span className="ml-1.5 font-sans text-xs font-normal text-muted-foreground">
+                        Unit {lot.unitNumber}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="capitalize">{lot.lotType}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
                     {lot.entitlement}
@@ -168,6 +215,20 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
                 </TableRow>
               ))}
             </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell className="text-muted-foreground" colSpan={2}>
+                  Total ({lots.length} {lots.length === 1 ? "lot" : "lots"})
+                </TableCell>
+                <TableCell className="text-right font-mono tabular-nums">
+                  {totals.entitlement}
+                </TableCell>
+                <TableCell className="text-right font-mono tabular-nums">
+                  {totals.liability}
+                </TableCell>
+                <TableCell colSpan={2} />
+              </TableRow>
+            </TableFooter>
           </Table>
         </Card>
       )}
@@ -195,10 +256,21 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
               matched by lot number.
             </p>
             {importMutation.error && (
-              <p className="mt-2 flex items-start gap-1.5 text-13 text-critical">
-                <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-                <span>{importMutation.error.message}</span>
-              </p>
+              <div className="mt-2 space-y-1">
+                <p className="flex items-start gap-1.5 text-13 text-critical">
+                  <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                  <span>{importMutation.error.message}</span>
+                </p>
+                {importLineErrors(importMutation.error).length > 0 && (
+                  <ul className="ml-5 list-disc space-y-0.5 text-13 text-critical">
+                    {importLineErrors(importMutation.error).map((e) => (
+                      <li key={`${e.line}-${e.message}`}>
+                        Line {e.line}: {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
             <Button
               className="mt-4"

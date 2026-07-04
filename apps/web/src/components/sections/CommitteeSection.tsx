@@ -152,6 +152,11 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
                     <Field
                       className="flex-1"
                       label="Member"
+                      hint={
+                        members && members.members.length === 0
+                          ? "No members have joined yet — invite people from the People tab first."
+                          : undefined
+                      }
                       error={fieldError(field.state.meta.errors)}
                     >
                       {(control) => (

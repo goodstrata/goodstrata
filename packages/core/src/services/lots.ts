@@ -1,7 +1,7 @@
 import { lots, ownerships, people, schemes } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import { isOccupiableLot, parseCsvRecords, schemeTier, toDateOnly } from "@goodstrata/shared";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError } from "../errors.js";
@@ -164,7 +164,9 @@ export async function listLots(ctx: ServiceContext, schemeId: string) {
     })
     .from(ownerships)
     .innerJoin(people, eq(ownerships.personId, people.id))
-    .where(and(eq(ownerships.schemeId, schemeId)));
+    // Only current owners: a closed ownership period (endedOn set) records a
+    // past transfer and must not show the former owner on the roll.
+    .where(and(eq(ownerships.schemeId, schemeId), isNull(ownerships.endedOn)));
 
   return lotRows.map((lot) => ({
     ...lot,
