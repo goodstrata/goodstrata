@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, Link, Outlet, useParams } from "@tanstack/react-router";
 import { ChevronLeft, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useEffect } from "react";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -33,10 +34,30 @@ function initials(name: string | undefined, email: string | undefined): string {
   return source.slice(0, 2).toUpperCase();
 }
 
+/** Browser-chrome theme-color for each resolved theme; matches --background in styles.css. */
+const THEME_COLOR = { light: "#faf9f6", dark: "#15181f" } as const;
+
 function RootLayout() {
   const { data: session } = useSession();
   const params = useParams({ strict: false }) as { schemeId?: string };
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
+
+  // Keep browser chrome (mobile status bar / toolbar) in sync with the app's
+  // resolved theme — the static metas in index.html only track the OS scheme,
+  // which is wrong once the user overrides the theme in-app.
+  useEffect(() => {
+    if (resolvedTheme !== "light" && resolvedTheme !== "dark") return;
+    const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+    let meta = metas[0];
+    for (let i = 1; i < metas.length; i++) metas[i]!.remove();
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      document.head.appendChild(meta);
+    }
+    meta.removeAttribute("media");
+    meta.content = THEME_COLOR[resolvedTheme];
+  }, [resolvedTheme]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">

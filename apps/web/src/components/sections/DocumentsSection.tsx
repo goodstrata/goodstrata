@@ -185,7 +185,7 @@ function DocumentViewerDialog({
             <iframe
               src={data.url}
               title={doc.title}
-              className="h-[60dvh] w-full rounded-lg border bg-white"
+              className="h-[60dvh] w-full rounded-lg border bg-white dark:bg-muted"
             />
             <Button asChild variant="outline" size="sm" className="w-fit">
               <a href={data.url} download={doc.title}>

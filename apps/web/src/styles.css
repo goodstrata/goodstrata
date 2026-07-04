@@ -12,6 +12,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  color-scheme: light;
   /* paper & ink */
   --background: oklch(0.982 0.003 95);
   --foreground: oklch(0.21 0.035 260);
@@ -48,6 +49,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* after hours — deep bluestone, never pure black */
   --background: oklch(0.175 0.015 255);
   --foreground: oklch(0.93 0.006 250);

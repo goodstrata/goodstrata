@@ -14,6 +14,10 @@ export function Markdown({ children, className }: { children: string; className?
     <div
       className={cn(
         "prose prose-sm prose-neutral max-w-[70ch] dark:prose-invert",
+        // Map typography onto Registry ink tokens so prose reads as the same
+        // app in both themes (stock neutral/invert ramps are hue-less gray).
+        "[--tw-prose-body:var(--color-foreground)] [--tw-prose-headings:var(--color-foreground)] [--tw-prose-links:var(--color-primary)]",
+        "[--tw-prose-invert-body:var(--color-foreground)] [--tw-prose-invert-headings:var(--color-foreground)] [--tw-prose-invert-links:var(--color-primary)]",
         "prose-headings:font-semibold prose-headings:tracking-tight",
         "prose-p:leading-relaxed prose-li:my-0.5",
         "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:font-normal prose-code:before:content-none prose-code:after:content-none",
