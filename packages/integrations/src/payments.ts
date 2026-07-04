@@ -19,6 +19,15 @@ export interface InboundPayment {
   /** The PayID / payment reference the payer used (drives matching). */
   payid: string | null;
   amountCents: number;
+  /** ISO currency code when the provider reports one (NPP is always AUD). */
+  currency?: string | null;
+  /**
+   * Destination account number the money landed in (the scheme's own virtual
+   * collection account). Lets reconciliation attribute the scheme even when
+   * the payment reference is unknown/typo'd, so the money can be parked as
+   * unmatched instead of dropped.
+   */
+  accountNumber?: string | null;
   paidAt: string; // ISO timestamp
   payerName: string | null;
   raw: unknown;
@@ -110,6 +119,8 @@ export function mockPaymentsProvider(secret = "mock-payments-secret"): PaymentsP
         providerRef: body.providerRef,
         payid: body.payid ?? null,
         amountCents: body.amountCents,
+        currency: body.currency ?? null,
+        accountNumber: body.accountNumber ?? null,
         paidAt: body.paidAt,
         payerName: body.payerName ?? null,
         raw: body,
@@ -123,6 +134,8 @@ export function mockPaymentsProvider(secret = "mock-payments-secret"): PaymentsP
         providerRef: input.providerRef ?? `mock-${randomUUID()}`,
         payid: input.payid,
         amountCents: input.amountCents,
+        currency: input.currency ?? "AUD",
+        accountNumber: input.accountNumber ?? null,
         paidAt: input.paidAt,
         payerName: input.payerName,
       });
@@ -387,11 +400,23 @@ export function monoovaPaymentsProvider(cfg: MonoovaConfig): PaymentsProvider {
         (typeof body.timestamp === "string" ? body.timestamp : undefined) ??
         new Date().toISOString();
       const payerName = pick("RemitterName", "remitterName", "payerName");
+      // Destination mAccount the money landed in — attributes the scheme even
+      // when the PayID is unknown (typo'd reference on a direct transfer).
+      const accountRaw = pick(
+        "BankAccountNumber",
+        "bankAccountNumber",
+        "AccountNumber",
+        "accountNumber",
+        "ToAccountNumber",
+      );
+      const currencyRaw = pick("Currency", "currency", "CurrencyCode");
 
       return {
         providerRef,
         payid: payidRaw != null ? String(payidRaw) : null,
         amountCents: monoovaAmountToCents(pick("Amount", "amount")),
+        currency: currencyRaw != null ? String(currencyRaw).toUpperCase() : null,
+        accountNumber: accountRaw != null ? String(accountRaw) : null,
         paidAt: String(paidAt),
         payerName: payerName != null ? String(payerName) : null,
         raw: body,

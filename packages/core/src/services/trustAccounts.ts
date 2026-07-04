@@ -10,6 +10,7 @@
  */
 import { bankAccounts } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
+import type { SchemeAccount } from "@goodstrata/integrations";
 import { BANK_ACCOUNT_KINDS, type BankAccountKind } from "@goodstrata/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -39,18 +40,37 @@ export type ActivateBankAccountInput = z.infer<typeof activateBankAccountInput>;
  * Provision the per-OC segregated account for `kind`. Idempotent per
  * (schemeId, kind) — the UNIQUE index is the guard. Calls the payments provider
  * to create the scheme's OWN account (never a shared pool) and records it.
+ *
+ * GRACEFUL DEGRADATION: a provider outage (e.g. Monoova account provisioning
+ * blocked upstream) must not stall the money loop. On provider failure the
+ * account is recorded as `pending` with no details — levies still issue with
+ * manual payment instructions — and every later `ensure…` call retries the
+ * provider, so the account heals itself the moment the provider unblocks.
  */
 export async function provisionTrustAccount(
   ctx: ServiceContext,
   schemeId: string,
   input: ProvisionTrustAccountInput,
 ): Promise<BankAccount> {
-  // Fast path: already provisioned.
+  // Fast path: already provisioned (retrying provider details if pending).
   const existing = await getBankAccount(ctx, schemeId, input.kind);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.status === "pending" && !existing.providerAccountId) {
+      return await retryDeferredProvisioning(ctx, schemeId, existing);
+    }
+    return existing;
+  }
 
   // Ask the provider for THIS scheme's own account before opening the tx.
-  const account = await ctx.integrations.payments.createSchemeAccount({ schemeId });
+  let account: SchemeAccount | null = null;
+  try {
+    account = await ctx.integrations.payments.createSchemeAccount({ schemeId });
+  } catch (err) {
+    console.error(
+      `[trust] provider account provisioning failed for scheme ${schemeId} — recording a PENDING account (manual payment rail applies until the provider unblocks)`,
+      err,
+    );
+  }
 
   return await ctx.db.transaction(async (tx) => {
     const rows = await tx
@@ -59,11 +79,11 @@ export async function provisionTrustAccount(
         schemeId,
         kind: input.kind,
         provider: input.provider,
-        providerAccountId: account.providerAccountId,
-        bsb: account.bsb,
-        accountNumber: account.accountNumber,
-        payidRoot: account.payidRoot ?? null,
-        status: "active",
+        providerAccountId: account?.providerAccountId ?? null,
+        bsb: account?.bsb ?? null,
+        accountNumber: account?.accountNumber ?? null,
+        payidRoot: account?.payidRoot ?? null,
+        status: account ? "active" : "pending",
       })
       // The UNIQUE (schemeId, kind) index serialises concurrent provisioners.
       .onConflictDoNothing({ target: [bankAccounts.schemeId, bankAccounts.kind] })
@@ -82,7 +102,7 @@ export async function provisionTrustAccount(
     await publishEvent(tx, {
       schemeId,
       stream: `bank_account:${created.id}`,
-      type: "trust_account.provisioned",
+      type: account ? "trust_account.provisioned" : "trust_account.provision_deferred",
       payload: {
         bankAccountId: created.id,
         kind: created.kind,
@@ -94,6 +114,66 @@ export async function provisionTrustAccount(
     });
 
     return created;
+  });
+}
+
+/**
+ * A pending account from an earlier failed provider call: retry the provider
+ * now and activate on success. On another failure, keep the pending row —
+ * the manual rail keeps working and the next ensure retries again.
+ */
+async function retryDeferredProvisioning(
+  ctx: ServiceContext,
+  schemeId: string,
+  pending: BankAccount,
+): Promise<BankAccount> {
+  let account: SchemeAccount;
+  try {
+    account = await ctx.integrations.payments.createSchemeAccount({ schemeId });
+  } catch (err) {
+    console.error(
+      `[trust] provider account provisioning still failing for scheme ${schemeId}`,
+      err,
+    );
+    return pending;
+  }
+
+  return await ctx.db.transaction(async (tx) => {
+    const rows = await tx
+      .update(bankAccounts)
+      .set({
+        status: "active",
+        providerAccountId: account.providerAccountId,
+        bsb: account.bsb,
+        accountNumber: account.accountNumber,
+        payidRoot: account.payidRoot ?? null,
+      })
+      // Only heal a row still pending — a concurrent healer may have won.
+      .where(and(eq(bankAccounts.id, pending.id), eq(bankAccounts.status, "pending")))
+      .returning();
+    const healed = rows[0];
+    if (!healed) {
+      const other = await tx.query.bankAccounts.findFirst({
+        where: eq(bankAccounts.id, pending.id),
+      });
+      return other ?? pending;
+    }
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `bank_account:${healed.id}`,
+      type: "trust_account.provisioned",
+      payload: {
+        bankAccountId: healed.id,
+        kind: healed.kind,
+        provider: healed.provider,
+        providerAccountId: healed.providerAccountId,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return healed;
   });
 }
 

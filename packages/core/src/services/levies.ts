@@ -151,15 +151,29 @@ export async function issueLevyRun(
   // in-transaction/statement timeouts, pool starvation) and, on a rollback/retry,
   // orphan already-registered PayIDs with no ledger record. Here the external
   // state is settled first; the tx below is pure DB work.
+  //
+  // GRACEFUL DEGRADATION: a provider PayID failure (e.g. Monoova registration
+  // blocked upstream) must not stop the levy run — the notice issues with
+  // payid=null and the notice/email fall back to bank-transfer instructions
+  // (BSB/account + the notice number as reference); the treasurer records the
+  // money via the manual rail through the identical allocation/receipt chain.
   const prepared = await Promise.all(
     run.map(async (entry) => {
       const lot = lotRows.find((l) => l.id === entry.lotId)!;
       const noticeNumber = `LN-${year}-${String(instalment).padStart(2, "0")}-${lot.lotNumber}`;
-      const payid = await ctx.integrations.payments.createPaymentReference({
-        schemeId,
-        noticeNumber,
-        account,
-      });
+      let payid: string | null = null;
+      try {
+        payid = await ctx.integrations.payments.createPaymentReference({
+          schemeId,
+          noticeNumber,
+          account,
+        });
+      } catch (err) {
+        console.error(
+          `[levies] PayID registration failed for ${noticeNumber} — issuing with manual payment instructions`,
+          err,
+        );
+      }
       return { entry, noticeNumber, payid };
     }),
   );
@@ -245,8 +259,17 @@ export async function issueLevyRun(
     ];
     if (notice.payid) {
       detailRows.push({ label: "Pay by (PayID)", value: notice.payid });
+    } else if (account.bsb && account.accountNumber) {
+      detailRows.push({ label: "Pay by bank transfer", value: `BSB ${account.bsb}` });
+      detailRows.push({ label: "Account number", value: account.accountNumber });
     }
     detailRows.push({ label: "Payment reference", value: notice.noticeNumber });
+
+    const howToPay = notice.payid
+      ? `To pay, use PayID ${notice.payid} and quote reference ${notice.noticeNumber}. Your payment is matched to this lot automatically.`
+      : account.bsb && account.accountNumber
+        ? `To pay, transfer to BSB ${account.bsb}, account ${account.accountNumber}, and quote reference ${notice.noticeNumber} so your payment is matched to this lot.`
+        : `To pay, use the payment details shown in the portal and quote reference ${notice.noticeNumber}.`;
 
     const { html, text } = renderEmail({
       preheader: `${amountDue} due ${dueOn} for lot ${lot.lotNumber} at ${scheme.name}.`,
@@ -255,9 +278,7 @@ export async function issueLevyRun(
       blocks: [
         amountPanel("Amount due", amountDue, { sublabel: `Due ${dueOn}` }),
         keyValueTable(detailRows, "Notice details"),
-        paragraph(
-          `To pay, use PayID ${notice.payid ?? "shown in the portal"} and quote reference ${notice.noticeNumber}. Your payment is matched to this lot automatically.`,
-        ),
+        paragraph(howToPay),
         infoNote(
           "Payment is due at least 28 days after this notice under the Owners Corporations Act 2006 (Vic). If you are experiencing hardship, contact the committee to discuss a payment plan.",
         ),

@@ -190,3 +190,84 @@ describe("per-OC trust accounts (OC Act s 122)", () => {
     expect(noticeB.status).toBe("issued");
   });
 });
+
+describe("graceful degradation when the provider is blocked", () => {
+  // Simulates prod with PAYMENTS_PROVIDER=monoova but account provisioning
+  // blocked upstream (PayID registration 400s): the money loop must keep
+  // working on the manual rail and heal itself when the provider unblocks.
+  let c: Seeded;
+  let providerBlocked = true;
+  const upstream = mockPaymentsProvider();
+  const flakyProvider: typeof integrations.payments = {
+    ...upstream,
+    async createSchemeAccount(input) {
+      if (providerBlocked) throw new Error("Monoova account creation failed (HTTP 400)");
+      return upstream.createSchemeAccount(input);
+    },
+    async createPaymentReference(input) {
+      if (providerBlocked) throw new Error("Monoova PayID registration failed (HTTP 400)");
+      return upstream.createPaymentReference(input);
+    },
+  };
+  const flakyIntegrations = { ...integrations, payments: flakyProvider };
+  const flakyCtx = (iso: string): ServiceContext => ({
+    db: tdb.db,
+    clock: fixedClock(iso) as Clock,
+    integrations: flakyIntegrations,
+    actor: systemActor("test"),
+  });
+
+  beforeAll(async () => {
+    c = await seedScheme("Trust OC C", "PS100003C");
+  });
+
+  it("records a PENDING account and still issues levies with manual instructions", async () => {
+    providerBlocked = true;
+    const ctx = flakyCtx(T0);
+
+    const acct = await trustAccountsService.ensureSchemeTrustAccount(ctx, c.schemeId);
+    expect(acct.status).toBe("pending");
+    expect(acct.providerAccountId).toBeNull();
+
+    // The levy run must NOT fail — notices issue without a PayID and the
+    // owner pays by bank transfer / the treasurer records it manually.
+    const result = await leviesService.issueLevyRun(ctx, c.schemeId, c.scheduleId, 1);
+    expect(result.issued).toBe(1);
+    const notice = (await leviesService.listNotices(ctx, c.schemeId))[0]!;
+    expect(notice.status).toBe("issued");
+    expect(notice.payid).toBeNull();
+  });
+
+  it("collects the levy through the manual rail while degraded", async () => {
+    const ctx = flakyCtx("2026-06-02T00:00:00Z");
+    const notice = (await leviesService.listNotices(ctx, c.schemeId))[0]!;
+    const result = await paymentsService.recordManualPayment(ctx, c.schemeId, {
+      levyNoticeId: notice.id,
+      amountCents: notice.totalCents,
+      paidAt: "2026-06-02",
+      payerName: "Pat Owner",
+      reference: "EFT-20260602-1",
+    });
+    expect(result.matched).toBe(true);
+    expect(result.receiptNumber).toBeTruthy();
+    const after = (await leviesService.listNotices(ctx, c.schemeId))[0]!;
+    expect(after.status).toBe("paid");
+  });
+
+  it("heals the pending account automatically once the provider unblocks", async () => {
+    providerBlocked = false;
+    const ctx = flakyCtx("2026-06-03T00:00:00Z");
+
+    const acct = await trustAccountsService.ensureSchemeTrustAccount(ctx, c.schemeId);
+    expect(acct.status).toBe("active");
+    expect(acct.providerAccountId).toBeTruthy();
+    expect(acct.accountNumber).toBeTruthy();
+
+    // Subsequent levy runs register PayIDs again.
+    const run = await leviesService.issueLevyRun(ctx, c.schemeId, c.scheduleId, 2);
+    expect(run.issued).toBe(1);
+    const notices = await leviesService.listNotices(ctx, c.schemeId);
+    const inst2 = notices.find((n) => n.instalment === 2)!;
+    expect(inst2.payid).toContain(acct.providerAccountId);
+  });
+});

@@ -189,6 +189,26 @@ describe("per-OC trust reconciliation (OC Act s 122)", () => {
     expect(stmtA.bankBalanceCents).toBe(stmtA.closingBalanceCents + 12_345);
   });
 
+  it("clears the variance once the parked payment is manually matched", async () => {
+    const ctx = ctxAt("2026-06-08T00:00:00Z");
+
+    // Give A an open notice to absorb the suspense item, then resolve it via
+    // the treasurer's manual-match rail (the same allocation/receipt chain).
+    await leviesService.issueLevyRun(ctx, a.schemeId, a.scheduleId, 2);
+    const inst2 = (await leviesService.listNotices(ctx, a.schemeId)).find(
+      (n) => n.instalment === 2,
+    )!;
+    const parked = await tdb.db.query.payments.findFirst({
+      where: eq(payments.providerRef, "UNMATCHED-001"),
+    });
+    await paymentsService.matchPaymentToNotice(ctx, a.schemeId, parked!.id, inst2.id);
+
+    // Ledger caught up with the cash: bank and books agree again.
+    const stmtA = await trustReconciliationService.schemeTrustStatement(ctx, a.schemeId);
+    expect(stmtA.reconciled).toBe(true);
+    expect(stmtA.varianceCents).toBe(0);
+  });
+
   it("produces a CSV audit export scoped to the scheme", async () => {
     const ctx = ctxAt("2026-06-07T00:00:00Z");
     const pack = await trustReconciliationService.exportTrustAudit(ctx, a.schemeId);

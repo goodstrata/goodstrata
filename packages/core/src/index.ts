@@ -54,6 +54,7 @@ export * as notificationsService from "./services/notifications.js";
 export * as notifierService from "./services/notifier.js";
 export * as onboardingService from "./services/onboarding.js";
 export * as paymentsService from "./services/payments.js";
+export { recordManualPaymentInput } from "./services/payments.js";
 export * as peopleService from "./services/people.js";
 export { createPersonInput } from "./services/people.js";
 export * as recoveryService from "./services/recovery.js";

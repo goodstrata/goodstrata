@@ -36,6 +36,16 @@ export const eventDefs = {
     provider: z.string(),
     providerAccountId: z.string().nullable(),
   }),
+  /**
+   * Provider account provisioning failed; a PENDING account was recorded so
+   * the money loop keeps working on the manual rail. Retried on next ensure.
+   */
+  "trust_account.provision_deferred": z.object({
+    bankAccountId: z.string(),
+    kind: z.string(),
+    provider: z.string(),
+    providerAccountId: z.string().nullable(),
+  }),
   "budget.drafted": z.object({
     budgetId: z.string(),
     fiscalYearStart: z.string(),
@@ -56,14 +66,22 @@ export const eventDefs = {
     paymentId: z.string(),
     amountCents: z.number().int(),
     payid: z.string().nullable(),
+    /** Set for treasurer-recorded bank transfers ("manual"). */
+    rail: z.string().optional(),
   }),
   "payment.matched": z.object({
     paymentId: z.string(),
     levyNoticeId: z.string(),
-    via: z.enum(["payid", "amount"]),
+    /** "manual" = a treasurer matched/recorded it by hand. */
+    via: z.enum(["payid", "amount", "manual"]),
     amountCents: z.number().int(),
   }),
-  "payment.unmatched": z.object({ paymentId: z.string(), reason: z.string() }),
+  "payment.unmatched": z.object({
+    paymentId: z.string(),
+    reason: z.string(),
+    amountCents: z.number().int().optional(),
+    payid: z.string().nullable().optional(),
+  }),
   "receipt.issued": z.object({
     receiptId: z.string(),
     paymentId: z.string(),

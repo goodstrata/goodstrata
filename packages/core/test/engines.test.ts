@@ -164,4 +164,34 @@ describe("matchPayment", () => {
       kind: "unmatched",
     });
   });
+
+  it("parks a payment whose reference belongs to a SETTLED notice — even when the amount would match another lot", () => {
+    // gs-0100 was paid off; a second payment quoting it with n3's exact
+    // outstanding amount must NOT be amount-guessed onto n3.
+    expect(
+      matchPayment({ payid: "gs-0100", amountCents: 75_000 }, notices, {
+        settledPayids: ["gs-0100"],
+      }),
+    ).toEqual({ kind: "unmatched", reason: "reference matches a settled notice" });
+    // …while a genuinely unknown reference still gets the amount heuristic.
+    expect(
+      matchPayment({ payid: "gs-0100", amountCents: 75_000 }, notices, { settledPayids: [] }),
+    ).toMatchObject({ kind: "matched", via: "amount" });
+  });
+
+  it("rejects non-positive and non-integer amounts outright", () => {
+    expect(matchPayment({ payid: "gs-0002", amountCents: 0 }, notices)).toMatchObject({
+      kind: "unmatched",
+      reason: "non-positive payment amount",
+    });
+    expect(matchPayment({ payid: "gs-0002", amountCents: -50_000 }, notices)).toMatchObject({
+      kind: "unmatched",
+    });
+    expect(matchPayment({ payid: "gs-0002", amountCents: Number.NaN }, notices)).toMatchObject({
+      kind: "unmatched",
+    });
+    expect(matchPayment({ payid: "gs-0002", amountCents: 500.5 }, notices)).toMatchObject({
+      kind: "unmatched",
+    });
+  });
 });
