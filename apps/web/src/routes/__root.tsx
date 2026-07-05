@@ -67,8 +67,8 @@ function RootLayout() {
       >
         Skip to content
       </a>
-      <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-        <div className="mx-auto flex h-14 w-full max-w-(--breakpoint-2xl) items-center justify-between gap-3 px-4 md:px-6">
+      <header className="sticky top-0 z-40 border-b bg-card/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-card/80">
+        <div className="mx-auto flex h-14 w-full max-w-(--breakpoint-2xl) items-center justify-between gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]">
           <div className="flex min-w-0 items-center gap-3">
             <Link to="/" className="flex shrink-0 items-center" aria-label="GoodStrata home">
               <img src="/logo-on-light.svg" alt="GoodStrata" className="h-7 w-auto dark:hidden" />
@@ -149,7 +149,7 @@ function RootLayout() {
       <main
         id="main"
         tabIndex={-1}
-        className="mx-auto w-full max-w-(--breakpoint-2xl) flex-1 px-4 py-6 outline-none md:px-6 md:py-8"
+        className="mx-auto w-full max-w-(--breakpoint-2xl) flex-1 py-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] outline-none md:py-8 md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]"
       >
         <Outlet />
       </main>

@@ -1339,7 +1339,7 @@ function MotionCard({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs"
+                      className="min-h-11 px-3 text-xs"
                       onClick={() => demandPoll.mutate()}
                       pending={demandPoll.isPending}
                     >

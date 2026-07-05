@@ -131,13 +131,15 @@ function SchemePage() {
   const { schemeId } = Route.useParams();
   const { section } = Route.useSearch();
   const { data } = useQuery(schemeQueryOptions(schemeId));
-  const isMobile = useIsMobile();
+  // Show the register-index sidebar from md (768px) so tablets/small laptops
+  // get it instead of the phone bottom bar; the shared hook stays at 1024.
+  const isMobile = useIsMobile(768);
 
   return (
     <>
-      <div className="lg:grid lg:grid-cols-[14rem_1fr] lg:gap-8">
+      <div className="md:grid md:grid-cols-[14rem_1fr] md:gap-8">
         {!isMobile && <SidebarNav schemeId={schemeId} active={section} />}
-        <div className="min-w-0 space-y-6 pb-24 lg:pb-8">
+        <div className="min-w-0 space-y-6 pb-24 md:pb-8">
           {data ? (
             <RegistryPlate
               eyebrow={`${data.scheme.planOfSubdivision} · Tier ${data.scheme.tier}`}
@@ -217,7 +219,7 @@ function SectionLink({
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex min-h-11 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors lg:min-h-0 lg:py-2",
+        "relative flex min-h-11 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors md:min-h-0 md:py-2",
         active
           ? "bg-accent font-medium text-primary"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -274,7 +276,7 @@ function NavGroups({
   );
 }
 
-/** Desktop (≥ lg) register index: sticky left sidebar. */
+/** Tablet/desktop (≥ md) register index: sticky left sidebar. */
 function SidebarNav({ schemeId, active }: { schemeId: string; active: Section }) {
   return (
     <nav aria-label="Scheme sections" className="sticky top-20 self-start">
@@ -283,7 +285,7 @@ function SidebarNav({ schemeId, active }: { schemeId: string; active: Section })
   );
 }
 
-/** Mobile (< lg) fixed bottom bar; "More" opens a sheet with every section. */
+/** Mobile (< md) fixed bottom bar; "More" opens a sheet with every section. */
 function BottomNav({ schemeId, active }: { schemeId: string; active: Section }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const primary = ALL_ITEMS.filter((item) => MOBILE_PRIMARY.includes(item.key));
