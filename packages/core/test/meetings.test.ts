@@ -201,7 +201,7 @@ describe("AGM lifecycle", () => {
     ).rejects.toThrow(/already/i);
   });
 
-  it("s 94: a lot in arrears cannot vote on ordinary resolutions", async () => {
+  it("s 89B: a lot in arrears cannot vote on ordinary resolutions", async () => {
     // Put Pat's lot 4 into arrears: adopt a budget, issue levies due long ago.
     const mgr = userActor("mgr-agm");
     await tdb.db.insert((await import("@goodstrata/db")).users).values({
@@ -245,14 +245,14 @@ describe("AGM lifecycle", () => {
       await paymentsService.recordInboundPayment(ctxAt(NOW), "mock", provider.parseWebhook(body));
     }
 
-    // Pat (lot 4, in arrears) is barred from the ordinary motion.
+    // Pat (lot 4, in arrears) is barred from the ordinary motion (s 89B, ex-s 94).
     await expect(
       meetingsService.castVote(ctxAt(NOW), schemeId, personByName.get("Pat")!, {
         motionId,
         lotId: lotByNumber.get("4")!,
         choice: "against",
       }),
-    ).rejects.toThrow(/s 94/i);
+    ).rejects.toThrow(/s 89B/i);
   });
 
   it("closes the motion with the entitlement-weighted tally", async () => {
@@ -294,10 +294,19 @@ describe("AGM lifecycle", () => {
       lotId: lotByNumber.get("3")!,
       choice: "for",
     });
-    // 30/50 = 60% < 75% — lost without Sam.
+    // 30/50 = 60% for, 0 against — short of the s 96 75% but, at this quorate
+    // AGM, an INTERIM special resolution under s 97 (provisionally carried,
+    // ripening after 29 days).
     const tally = await meetingsService.closeMotion(ctx, schemeId, specialMotionId);
-    expect(tally.carried).toBe(false);
     expect(tally.forWeight).toBe(30);
+    expect(tally.carried).toBe(true);
+    expect(tally.interim).toBe(true);
+    expect(tally.interimKind).toBe("interim_special");
+    const row = await tdb.db.query.motions.findFirst({
+      where: (t, { eq }) => eq(t.id, specialMotionId),
+    });
+    expect(row!.status).toBe("carried");
+    expect((row!.result as { interim: boolean }).interim).toBe(true);
   });
 
   it("closing the meeting records quorum and emits meeting.closed", async () => {

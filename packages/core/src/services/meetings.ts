@@ -1,10 +1,13 @@
 import {
   agendaItems,
+  type DbHandle,
+  lotLedgerEntries,
   lots,
   meetingAttendance,
   meetings,
   motions,
   ownerships,
+  payments,
   people,
   proxies,
   schemes,
@@ -12,22 +15,210 @@ import {
 } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import {
+  addDays,
+  addMonthsDateOnly,
   CHAIR_NOTE_KINDS,
   type ChairLogEntry,
   daysBetween,
+  formatCents,
+  toDateOnly,
   type VoteChoice,
 } from "@goodstrata/shared";
-import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
-import { emailBrand, infoNote, keyValueTable, paragraph, renderEmail } from "../email/index.js";
-import { type CastVote, quorumMet, tallyMotion } from "../engines/voting.js";
+import {
+  type EmailBlock,
+  emailBrand,
+  infoNote,
+  keyValueTable,
+  paragraph,
+  renderEmail,
+} from "../email/index.js";
+import {
+  type CastVote,
+  lotMayVote,
+  type MotionTally,
+  quorumMet,
+  tallyMotion,
+} from "../engines/voting.js";
 import { DomainError, notFound } from "../errors.js";
-import { arrearsForScheme } from "./arrears.js";
+import { arrearsForScheme, lotStatement } from "./arrears.js";
+import { listBudgets } from "./budgets.js";
 import { sendEmail } from "./comms.js";
 import { uploadDocument } from "./documents.js";
+import { generateS159Report } from "./grievances.js";
 
-const AGM_NOTICE_DAYS = 14; // s 71: at least 14 days' notice
+// ---------------------------------------------------------------------------
+// Statutory constants (Owners Corporations Act 2006 (Vic), authorised
+// consolidation v023 — see docs/legal/statute-map.md §5). Part 4 Div 6 was
+// substituted by No. 4/2021 s 42: the former ss 91–94 are REPEALED; the
+// current provisions are ss 72, 76–78, 85–89H, 95–97.
+// ---------------------------------------------------------------------------
+
+const GM_NOTICE_DAYS = 14; // ss 72(1)/76(1): ≥14 days' notice for a general meeting
+const BALLOT_NOTICE_DAYS = 14; // s 85(1): 14 days' written notice of a ballot (circular resolution)
+const INTERIM_RIPEN_DAYS = 29; // ss 78(4)/97(5): an interim resolution ripens after 29 days absent a challenge/petition
+const CLEARED_FUNDS_BUSINESS_DAYS = 4; // s 89B(3)(b): a non-cash payment counts only if made ≥4 business days out
+const PROXY_LAPSE_MONTHS = 12; // s 89C(6): a proxy authorisation lapses 12 months after it is given
+const PROXY_CAP_SMALL_SCHEME_LOTS = 20; // s 89D(1)(a): ≤20 occupiable lots → 1 proxy
+const PROXY_CAP_LARGE_SCHEME_FRACTION = 0.05; // s 89D(1)(b): >20 lots → 5% of lot owners
+
+/**
+ * The service-level overlay stored alongside the engine tally in `motions.result`
+ * (jsonb). Kept here rather than in dedicated columns to avoid a schema
+ * migration; the fields are governance-critical and each is anchored to a cited
+ * section below.
+ */
+interface MotionResult extends Partial<MotionTally> {
+  /** s 89C(7): captured at addMotion — a non-owner proxy may not vote on it. */
+  managerAppointment?: boolean;
+  /** ss 78/97: a provisional resolution awaiting ripening. */
+  interim?: boolean;
+  interimKind?: "interim_ordinary" | "interim_special" | null;
+  /** ss 78(4)/97(5): ISO instant this interim resolution ripens into a final one. */
+  ripensOn?: string | null;
+  /** Set when challenged (s 78) or petitioned (s 97(5)) before ripening. */
+  challengedAt?: string | null;
+  /** Set when an interim resolution ripened into a final one. */
+  ripenedAt?: string | null;
+  /** s 77 quorum at close, for a general-meeting motion (null otherwise). */
+  quorate?: boolean | null;
+  /** s 86(2)(a): a circular ordinary ballot fell below the returned-votes floor. */
+  belowQuorumFloor?: boolean;
+}
+
+/**
+ * The instant `n` business days before `from` (weekends skipped). Victorian
+ * public holidays are NOT modelled — a documented approximation of the s 89B(3)
+ * "4 business days" cutoff; counsel/product may refine it with a holiday table.
+ */
+function businessDaysBefore(from: Date, n: number): Date {
+  const d = new Date(from.getTime());
+  let remaining = n;
+  while (remaining > 0) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) remaining -= 1;
+  }
+  return d;
+}
+
+/**
+ * s 89B(3): sum (as positive owing) of a lot's payments not yet CLEARED for
+ * voting at `at`. A payment counts toward clearing arrears only if made "(a) in
+ * cash; or (b) otherwise, not less than 4 business days before" voting. The
+ * platform has no cash rail, so every recorded payment is treated as non-cash
+ * and must clear the 4-business-day window — this is the fix for the statute-map
+ * §5.3 gap where a same-day electronic payment immediately re-enfranchised. If a
+ * cash-receipt method is added, the s 89B(3)(a) immediate-clear path applies.
+ */
+async function unclearedPaymentCents(
+  ctx: ServiceContext,
+  schemeId: string,
+  lotId: string,
+  at: Date,
+): Promise<number> {
+  const cutoff = businessDaysBefore(at, CLEARED_FUNDS_BUSINESS_DAYS);
+  const rows = await ctx.db
+    .select({ amountCents: lotLedgerEntries.amountCents, paidAt: payments.paidAt })
+    .from(lotLedgerEntries)
+    .innerJoin(payments, eq(lotLedgerEntries.paymentId, payments.id))
+    .where(
+      and(
+        eq(lotLedgerEntries.schemeId, schemeId),
+        eq(lotLedgerEntries.lotId, lotId),
+        eq(lotLedgerEntries.kind, "payment"),
+      ),
+    );
+  let uncleared = 0;
+  for (const r of rows) {
+    // Payment ledger entries are negative; count only those made too recently.
+    if (r.paidAt.getTime() > cutoff.getTime()) uncleared += -Number(r.amountCents);
+  }
+  return uncleared;
+}
+
+/**
+ * s 89B(1)/(3): is `lotId` barred from voting at `at` by unpaid or uncleared
+ * arrears? Barred if it owes counting every payment, OR if it only looks clear
+ * because of a payment that has not yet cleared the s 89B(3) window.
+ */
+async function lotBarredByArrears(
+  ctx: ServiceContext,
+  schemeId: string,
+  lotId: string,
+  at: Date,
+): Promise<boolean> {
+  const arrears = await arrearsForScheme(ctx, schemeId);
+  if (arrears.some((a) => a.lotId === lotId)) return true;
+  const uncleared = await unclearedPaymentCents(ctx, schemeId, lotId, at);
+  if (uncleared <= 0) return false;
+  const { balanceCents } = await lotStatement(ctx, schemeId, lotId);
+  // Disregarding the uncleared payment, does the lot still owe?
+  return balanceCents + uncleared > 0;
+}
+
+/**
+ * s 89C(10): is `personId` — as a lot owner — themselves in arrears, and so
+ * barred from voting AS PROXY for another lot? (No special/unanimous carve-out:
+ * the bar is on the proxy-holder, not the motion.)
+ */
+async function personInArrears(
+  ctx: ServiceContext,
+  schemeId: string,
+  personId: string,
+  at: Date,
+): Promise<boolean> {
+  const owned = await ctx.db.query.ownerships.findMany({
+    where: and(
+      eq(ownerships.schemeId, schemeId),
+      eq(ownerships.personId, personId),
+      isNull(ownerships.endedOn),
+    ),
+  });
+  for (const o of owned) {
+    if (await lotBarredByArrears(ctx, schemeId, o.lotId, at)) return true;
+  }
+  return false;
+}
+
+/**
+ * s 97: a special resolution short of the s 96 75% threshold still becomes an
+ * INTERIM special resolution if either (1) ≥50% of the total entitlement voted
+ * in favour and ≤25% against; or (1A, inserted 2021) the meeting was quorate and
+ * there were zero votes against. Entitlement basis, consistent with the engine's
+ * s 96 limb (a); the limb (b) meeting-vote basis is the open counsel question in
+ * statute-map §5.3.
+ */
+function qualifiesInterimSpecial(tally: MotionTally, quorate: boolean): boolean {
+  if (tally.forWeight <= 0) return false;
+  const majorityInFavour = tally.forWeight * 2 >= tally.totalEntitlement; // ≥50%
+  const limitedAgainst = tally.againstWeight * 4 <= tally.totalEntitlement; // ≤25%
+  if (majorityInFavour && limitedAgainst) return true; // s 97(1)
+  if (quorate && tally.againstWeight === 0) return true; // s 97(1A)
+  return false;
+}
+
+/**
+ * s 77 quorum for a general (AGM/SGM) meeting — the trigger for the ss 78/97
+ * interim-resolution machinery. Returns null for committee meetings (own quorum
+ * rules, out of scope) and circular motions, where interim resolutions never
+ * apply.
+ */
+async function generalMeetingQuorate(
+  ctx: ServiceContext,
+  schemeId: string,
+  meetingId: string | null,
+): Promise<boolean | null> {
+  if (!meetingId) return null;
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting || (meeting.kind !== "agm" && meeting.kind !== "sgm")) return null;
+  const q = await quorumStatus(ctx, schemeId, meetingId);
+  return q.quorate;
+}
 
 // ---------------------------------------------------------------------------
 // Meetings + notice
@@ -90,7 +281,13 @@ export async function createMeeting(
   });
 }
 
-/** Send the statutory meeting notice to every owner (14-day rule for GMs). */
+/**
+ * Send the statutory meeting notice to every owner. ss 72(1)/76(1): a general
+ * meeting needs at least 14 days' written notice. s 72(2): an AGM notice must
+ * also carry the substantive papers (financial statements, proposed budget,
+ * the text of any special/unanimous resolution, the s 159 grievance report and
+ * the previous AGM minutes) — assembled in `generalMeetingNoticeBlocks`.
+ */
 export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, meetingId: string) {
   const meeting = await ctx.db.query.meetings.findFirst({
     where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
@@ -101,10 +298,10 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
   }
   if (meeting.kind !== "committee") {
     const days = daysBetween(ctx.clock.now(), meeting.scheduledAt);
-    if (days < AGM_NOTICE_DAYS) {
+    if (days < GM_NOTICE_DAYS) {
       throw new DomainError(
         "NOTICE_TOO_LATE",
-        `General meetings need at least ${AGM_NOTICE_DAYS} days' notice (meeting is in ${days})`,
+        `General meetings need at least ${GM_NOTICE_DAYS} days' notice (meeting is in ${days})`,
         422,
       );
     }
@@ -159,6 +356,11 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
       ? agenda.map((a) => `${a.order}. ${a.title}`).join("\n")
       : "The agenda will be tabled at the meeting.";
 
+  // s 72(2): general-meeting notices carry the substantive papers; committee
+  // notices stay agenda-only. Assembled once and reused for every recipient.
+  const statutoryBlocks =
+    meeting.kind === "committee" ? [] : await generalMeetingNoticeBlocks(ctx, schemeId, meeting);
+
   for (const owner of reachable) {
     const { html, text } = renderEmail({
       preheader: `Notice of ${meeting.title} for ${scheme?.name} — ${when}.`,
@@ -168,8 +370,9 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
         paragraph(meeting.title),
         keyValueTable(detailRows, "Meeting details"),
         paragraph(`Agenda\n${agendaText}`),
+        ...statutoryBlocks,
         infoNote(
-          "You may vote in person, online, or appoint a proxy via the portal before the meeting.",
+          "You may vote in person, online, or appoint a proxy via the portal before the meeting. A proxy appointment lapses 12 months after it is given (s 89C(6)).",
         ),
       ],
       cta: { label: "View meeting & agenda", url: meetingUrl },
@@ -188,6 +391,89 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
   }
 
   return { recipients: reachable.length };
+}
+
+/**
+ * s 72(2) AGM / s 76 SGM notice content, beyond the agenda + proxy statement.
+ * Best-effort: a required item with no data yet is shown as "to be tabled"
+ * rather than silently dropped. The s 159 report is de-identified by its
+ * generator (s 159(2)); this only summarises its counts.
+ */
+async function generalMeetingNoticeBlocks(
+  ctx: ServiceContext,
+  schemeId: string,
+  meeting: typeof meetings.$inferSelect,
+): Promise<EmailBlock[]> {
+  const blocks: EmailBlock[] = [];
+
+  // s 72(2)/s 76: the text of any special or unanimous resolution to be moved.
+  const special = await ctx.db.query.motions.findMany({
+    where: and(
+      eq(motions.schemeId, schemeId),
+      eq(motions.meetingId, meeting.id),
+      inArray(motions.resolutionType, ["special", "unanimous"]),
+    ),
+    orderBy: (t, { asc }) => asc(t.createdAt),
+  });
+  if (special.length > 0) {
+    const text = special.map((m) => `• (${m.resolutionType}) ${m.title}: ${m.text}`).join("\n");
+    blocks.push(paragraph(`Special/unanimous resolutions to be moved\n${text}`));
+  }
+
+  // The remaining s 72(2) papers are AGM-specific; s 76 SGM notices stop here.
+  if (meeting.kind !== "agm") return blocks;
+
+  // s 72(2): the proposed annual budget.
+  const budgets = await listBudgets(ctx, schemeId);
+  const latest = budgets[0]; // listBudgets orders by fiscalYearStart desc
+  if (latest && latest.lines.length > 0) {
+    const rows = latest.lines.map((l) => ({
+      label: `${l.fundKind} — ${l.category}`,
+      value: formatCents(l.amountCents),
+    }));
+    rows.push({
+      label: "Total",
+      value: formatCents(latest.lines.reduce((a, l) => a + l.amountCents, 0)),
+    });
+    blocks.push(keyValueTable(rows, `Proposed annual budget (FY ${latest.fiscalYearStart})`));
+  } else {
+    blocks.push(infoNote("Proposed annual budget: to be tabled at the meeting."));
+  }
+
+  // s 72(2): the s 159 grievance report (both parties de-identified by the generator).
+  const s159 = await generateS159Report(ctx, schemeId);
+  blocks.push(
+    keyValueTable(
+      [
+        { label: "Complaints (total)", value: String(s159.complaints.total) },
+        { label: "Resolved", value: String(s159.complaints.resolved) },
+        { label: "Unresolved", value: String(s159.complaints.unresolved) },
+        { label: "Breach notices", value: String(s159.breachNotices.total) },
+      ],
+      "Grievance report (s 159)",
+    ),
+  );
+
+  // s 72(2): financial statements + the previous AGM minutes — referenced (the
+  // documents themselves live behind the portal's access-tiered viewer).
+  const priorAgms = await ctx.db.query.meetings.findMany({
+    where: and(eq(meetings.schemeId, schemeId), eq(meetings.kind, "agm")),
+    orderBy: (t, { desc }) => desc(t.scheduledAt),
+  });
+  const priorWithMinutes = priorAgms.find(
+    (m) => m.id !== meeting.id && m.scheduledAt < meeting.scheduledAt && m.minutesDocumentId,
+  );
+  blocks.push(
+    infoNote(
+      `Financial statements are available in the portal for review. ${
+        priorWithMinutes
+          ? "The previous AGM minutes are attached in the portal."
+          : "No previous AGM minutes are on file."
+      }`,
+    ),
+  );
+
+  return blocks;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +693,7 @@ async function stopTranscriptionBestEffort(ctx: ServiceContext, meetingId: strin
 }
 
 // ---------------------------------------------------------------------------
-// Motions + voting (s 94 enforced at cast time)
+// Motions + voting (s 89B arrears bar enforced at cast time)
 // ---------------------------------------------------------------------------
 
 export const addMotionInput = z.object({
@@ -415,6 +701,8 @@ export const addMotionInput = z.object({
   title: z.string().min(3).max(200),
   text: z.string().min(3).max(5000),
   resolutionType: z.enum(["ordinary", "special", "unanimous"]).default("ordinary"),
+  /** s 89C(7): mark a motion to appoint/pay/remove the manager. */
+  managerAppointment: z.boolean().optional(),
 });
 export type AddMotionInput = z.infer<typeof addMotionInput>;
 
@@ -428,16 +716,52 @@ export async function addMotion(ctx: ServiceContext, schemeId: string, input: Ad
       text: input.text,
       resolutionType: input.resolutionType,
       status: "draft",
+      // Persist the s 89C(7) flag in result (no dedicated column) so cast-time
+      // enforcement can read it; the closing tally is merged in later.
+      result: input.managerAppointment
+        ? ({ managerAppointment: true } satisfies MotionResult)
+        : null,
     })
     .returning();
   return rows[0]!;
 }
 
+/** Standing (s 89(3)): a poll may only be demanded by a lot owner or a proxy. */
+async function assertPollStanding(ctx: ServiceContext, schemeId: string, personId: string) {
+  const ownership = await ctx.db.query.ownerships.findFirst({
+    where: and(
+      eq(ownerships.schemeId, schemeId),
+      eq(ownerships.personId, personId),
+      isNull(ownerships.endedOn),
+    ),
+  });
+  if (ownership) return;
+  const proxy = await ctx.db.query.proxies.findFirst({
+    where: and(
+      eq(proxies.schemeId, schemeId),
+      eq(proxies.proxyPersonId, personId),
+      isNull(proxies.revokedAt),
+    ),
+  });
+  if (!proxy) {
+    throw new DomainError(
+      "NO_STANDING",
+      "Only a lot owner or a proxy holder may demand a poll (s 89(3))",
+      403,
+    );
+  }
+}
+
 /**
- * s 92(3)–(5): a lot owner or proxy may demand a poll on an ordinary
- * resolution before the result is declared; the motion is then decided by
- * lot entitlement instead of one vote per lot. Recorded on the motion and
- * applied when voting closes. Idempotent — a second demand is a no-op.
+ * s 89(3)–(5): a lot owner or proxy may demand a poll on an ordinary resolution,
+ * decided by lot entitlement instead of one vote per lot. The demand may be made
+ * "before or after the vote is taken" (s 89(3)):
+ *
+ * - BEFORE (motion open): recorded on the motion and applied when voting closes.
+ * - AFTER (motion declared): valid only while a GENERAL meeting is still in
+ *   progress; the poll is re-tallied and DISPLACES the declared result (s 89(5)).
+ *
+ * Circular ballots and committee motions have no s 89(3) poll. Idempotent.
  */
 export async function demandPoll(
   ctx: ServiceContext,
@@ -456,42 +780,68 @@ export async function demandPoll(
       422,
     );
   }
-  if (motion.status !== "open") {
-    throw new DomainError("BAD_STATUS", "A poll can only be demanded while voting is open", 409);
+
+  await assertPollStanding(ctx, schemeId, personId);
+
+  if (motion.status === "open") {
+    // Pre-vote demand — recorded now, applied when voting closes.
+    if (!motion.pollDemanded) {
+      await ctx.db.update(motions).set({ pollDemanded: true }).where(eq(motions.id, motionId));
+    }
+    return { motionId, pollDemanded: true, displaced: false };
   }
 
-  // Standing (s 92(3)): the demander must be a lot owner or hold a proxy.
-  const ownership = await ctx.db.query.ownerships.findFirst({
-    where: and(
-      eq(ownerships.schemeId, schemeId),
-      eq(ownerships.personId, personId),
-      isNull(ownerships.endedOn),
-    ),
-  });
-  if (!ownership) {
-    const proxy = await ctx.db.query.proxies.findFirst({
-      where: and(
-        eq(proxies.schemeId, schemeId),
-        eq(proxies.proxyPersonId, personId),
-        isNull(proxies.revokedAt),
-      ),
-    });
-    if (!proxy) {
+  if (motion.status === "carried" || motion.status === "lost") {
+    // Post-vote demand (s 89(3) "after the vote is taken"). Valid only while a
+    // general meeting the motion belongs to is still in progress; the poll then
+    // displaces the show-of-hands result (s 89(5)).
+    const meeting = motion.meetingId
+      ? await ctx.db.query.meetings.findFirst({
+          where: and(eq(meetings.id, motion.meetingId), eq(meetings.schemeId, schemeId)),
+        })
+      : null;
+    const generalInProgress =
+      meeting &&
+      (meeting.kind === "agm" || meeting.kind === "sgm") &&
+      meeting.status !== "closed" &&
+      meeting.status !== "minutes_distributed";
+    if (!generalInProgress) {
       throw new DomainError(
-        "NO_STANDING",
-        "Only a lot owner or a proxy holder may demand a poll (s 92(3))",
-        403,
+        "BAD_STATUS",
+        "A poll can only be demanded while voting is open, or after the vote at a general meeting that is still in progress (s 89(3))",
+        409,
       );
     }
+    if (motion.pollDemanded) {
+      // Already decided on the poll basis — idempotent.
+      return { motionId, pollDemanded: true, displaced: true };
+    }
+
+    const quorate = await generalMeetingQuorate(ctx, schemeId, motion.meetingId);
+    const outcome = await ctx.db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(motions)
+        .where(and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)))
+        .for("update");
+      const locked = rows[0];
+      if (!locked) throw notFound("Motion");
+      if (locked.status !== "carried" && locked.status !== "lost") {
+        throw new DomainError("BAD_STATUS", "Motion is not in a declared state", 409);
+      }
+      if (locked.pollDemanded) return null; // raced — already displaced
+      // s 89(5): force the entitlement re-tally and overwrite the recorded result.
+      locked.pollDemanded = true;
+      return await resolveMotion(tx, ctx, schemeId, locked, quorate);
+    });
+    return { motionId, pollDemanded: true, displaced: true, result: outcome };
   }
 
-  if (!motion.pollDemanded) {
-    // No dedicated event yet (the events catalog would need a new type); the
-    // demand is still auditable — the closing tally records pollDemanded and
-    // basis in motions.result.
-    await ctx.db.update(motions).set({ pollDemanded: true }).where(eq(motions.id, motionId));
-  }
-  return { motionId, pollDemanded: true };
+  throw new DomainError(
+    "BAD_STATUS",
+    "A poll can only be demanded while voting is open or before the meeting closes",
+    409,
+  );
 }
 
 export async function openMotion(ctx: ServiceContext, schemeId: string, motionId: string) {
@@ -527,7 +877,10 @@ export type CastVoteInput = z.infer<typeof castVoteInput>;
 
 /**
  * Cast a vote for a lot. The caster must own the lot or hold a current proxy
- * for it. s 94: lots with overdue levies cannot vote on ordinary resolutions.
+ * for it. Eligibility bars applied at cast time: s 89B (arrears, with the
+ * s 89B(3) cleared-funds rule and the s 89B(2) special/unanimous carve-out),
+ * s 89C(10) (an owner in arrears may not vote as proxy), and s 89C(7) (a
+ * non-owner proxy may not vote on a manager-appointment motion).
  */
 export async function castVote(
   ctx: ServiceContext,
@@ -586,16 +939,51 @@ export async function castVote(
     viaProxyId = proxy.id;
   }
 
-  // s 94: overdue lots are barred from ordinary resolutions.
-  if (motion.resolutionType === "ordinary") {
-    const arrears = await arrearsForScheme(ctx, schemeId);
-    if (arrears.some((a) => a.lotId === input.lotId)) {
+  const at = ctx.clock.now();
+
+  if (viaProxyId !== null) {
+    // s 89C(7): a non-owner proxy may not vote on the appointment, payment or
+    // removal of the manager.
+    const motionResult = (motion.result ?? null) as MotionResult | null;
+    if (motionResult?.managerAppointment) {
+      const castsOwnLot = await ctx.db.query.ownerships.findFirst({
+        where: and(
+          eq(ownerships.schemeId, schemeId),
+          eq(ownerships.personId, personId),
+          isNull(ownerships.endedOn),
+        ),
+      });
+      if (!castsOwnLot) {
+        throw new DomainError(
+          "S89C7_INELIGIBLE",
+          "A proxy who is not a lot owner cannot vote on the appointment, payment or removal of the manager (s 89C(7))",
+          403,
+        );
+      }
+    }
+
+    // s 89C(10): a lot owner who is themselves in arrears cannot vote as proxy
+    // for another lot (no special/unanimous carve-out — the bar is on the proxy).
+    if (await personInArrears(ctx, schemeId, personId, at)) {
       throw new DomainError(
-        "S94_INELIGIBLE",
-        "This lot has overdue levies and cannot vote on ordinary resolutions (s 94)",
+        "S89C10_INELIGIBLE",
+        "You are in arrears and cannot vote as a proxy for another lot (s 89C(10))",
         403,
       );
     }
+  }
+
+  // s 89B(1)–(3): a lot in arrears cannot vote, except where a special or
+  // unanimous resolution is required (s 89B(2)); a payment counts only once
+  // cleared (s 89B(3)). The engine owns the carve-out; the service computes the
+  // cleared-funds bar.
+  const barredByArrears = await lotBarredByArrears(ctx, schemeId, input.lotId, at);
+  if (!lotMayVote({ resolutionType: motion.resolutionType, barredByArrears })) {
+    throw new DomainError(
+      "S89B_INELIGIBLE",
+      "This lot is in arrears and cannot vote on this resolution (s 89B)",
+      403,
+    );
   }
 
   return await ctx.db.transaction(async (tx) => {
@@ -635,14 +1023,160 @@ export async function castVote(
   });
 }
 
+/**
+ * Tally a locked, open (or, for a poll displacement, declared) motion, apply the
+ * statutory outcome overlay, write status/result and publish motion.resolved.
+ *
+ * Outcome overlay:
+ * - circular ballot (no meeting) — s 86(2)(a): an ordinary resolution's returned
+ *   votes must reach the s 77 quorum floor, else it cannot pass;
+ * - general meeting (AGM/SGM) — ss 78/97: an ordinary resolution passed while
+ *   inquorate becomes an INTERIM resolution, and a special resolution in the
+ *   s 97 50–75% band becomes an INTERIM special resolution (provisionally
+ *   carried, ripening after 29 days).
+ *
+ * @param quorate s 77 quorum for a general-meeting motion (null for committee
+ *   and circular motions, where interim resolutions do not apply).
+ */
+async function resolveMotion(
+  tx: DbHandle,
+  ctx: ServiceContext,
+  schemeId: string,
+  motion: typeof motions.$inferSelect,
+  quorate: boolean | null,
+) {
+  const cast = await tx.query.votes.findMany({ where: eq(votes.motionId, motion.id) });
+  const allLots = await tx.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
+  const totalEntitlement = allLots.reduce((a, l) => a + l.entitlement, 0);
+
+  const tally = tallyMotion(
+    cast.map(
+      (v): CastVote => ({
+        lotId: v.lotId,
+        choice: v.choice as VoteChoice,
+        entitlementWeight: v.entitlementWeight,
+      }),
+    ),
+    totalEntitlement,
+    motion.resolutionType,
+    motion.pollDemanded,
+  );
+
+  let carried = tally.carried;
+  let interim = false;
+  let interimKind: MotionResult["interimKind"] = null;
+  let belowQuorumFloor = false;
+
+  if (!motion.meetingId) {
+    // s 86(2)(a): returned votes on a circular ordinary ballot must reach the
+    // s 77 quorum floor. (Special/unanimous already need 75%/100% of ALL
+    // entitlements, which necessarily clears the floor.)
+    if (motion.resolutionType === "ordinary" && carried) {
+      const returnedLots = new Set(cast.map((v) => v.lotId));
+      const returnedEntitlement = allLots
+        .filter((l) => returnedLots.has(l.id))
+        .reduce((a, l) => a + l.entitlement, 0);
+      const floor = quorumMet({
+        representedLotCount: returnedLots.size,
+        totalLotCount: allLots.length,
+        representedEntitlement: returnedEntitlement,
+        totalEntitlement,
+      });
+      if (!floor.met) {
+        carried = false;
+        belowQuorumFloor = true;
+      }
+    }
+  } else if (quorate !== null) {
+    if (motion.resolutionType === "ordinary" && carried && !quorate) {
+      interim = true; // s 78
+      interimKind = "interim_ordinary";
+    } else if (
+      motion.resolutionType === "special" &&
+      !carried &&
+      qualifiesInterimSpecial(tally, quorate)
+    ) {
+      interim = true; // s 97
+      interimKind = "interim_special";
+      carried = true; // provisionally carried, pending ripening
+    }
+  }
+
+  const ripensOn = interim ? addDays(ctx.clock.now(), INTERIM_RIPEN_DAYS) : null;
+  const prior = (motion.result ?? {}) as MotionResult;
+  const result: MotionResult = {
+    ...prior,
+    ...tally,
+    // Preserve the s 89C(7) flag captured at creation; reset any stale overlay.
+    managerAppointment: prior.managerAppointment,
+    interim,
+    interimKind,
+    ripensOn: ripensOn ? ripensOn.toISOString() : null,
+    challengedAt: null,
+    ripenedAt: null,
+    quorate: motion.meetingId ? quorate : null,
+    belowQuorumFloor,
+  };
+
+  await tx
+    .update(motions)
+    .set({
+      status: carried ? "carried" : "lost",
+      closesAt: ctx.clock.now(),
+      pollDemanded: motion.pollDemanded,
+      result,
+    })
+    .where(eq(motions.id, motion.id));
+  await publishEvent(tx, {
+    schemeId,
+    stream: `motion:${motion.id}`,
+    type: "motion.resolved",
+    payload: {
+      motionId: motion.id,
+      carried,
+      basis: tally.basis,
+      pollDemanded: tally.pollDemanded,
+      interim,
+      forCount: tally.forCount,
+      againstCount: tally.againstCount,
+      abstainCount: tally.abstainCount,
+      forWeight: tally.forWeight,
+      againstWeight: tally.againstWeight,
+      abstainWeight: tally.abstainWeight,
+    },
+    actor: ctx.actor,
+    ...causationFields(ctx),
+  });
+
+  // Engine tally augmented with the statutory overlay for the caller/UI.
+  return {
+    ...tally,
+    carried,
+    interim,
+    interimKind,
+    ripensOn: result.ripensOn,
+    quorate: result.quorate,
+    belowQuorumFloor,
+  };
+}
+
 /** Close voting: tally with the engine and record the statutory result. */
 export async function closeMotion(ctx: ServiceContext, schemeId: string, motionId: string) {
+  // s 77 quorum for a general-meeting motion is read BEFORE the row lock (a
+  // stable read — attendance is settled by close time — that avoids nesting
+  // service reads under the lock). Null for committee/circular motions.
+  const pre = await ctx.db.query.motions.findFirst({
+    where: and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)),
+  });
+  if (!pre) throw notFound("Motion");
+  const quorate = await generalMeetingQuorate(ctx, schemeId, pre.meetingId);
+
   return await ctx.db.transaction(async (tx) => {
     // Lock the motion row FIRST, then tally from reads taken under that lock:
     // - a concurrent close blocks here, then sees carried/lost → BAD_STATUS
     //   (one motion.resolved event, not two);
     // - a poll demanded before we got the lock is seen by the tally rather
-    //   than lost to a stale pre-transaction read (s 92(3));
+    //   than lost to a stale pre-transaction read (s 89(3));
     // - votes are snapshotted after the lock, so the recorded result reflects
     //   everything committed when closing began.
     const motionRows = await tx
@@ -654,52 +1188,123 @@ export async function closeMotion(ctx: ServiceContext, schemeId: string, motionI
     if (!motion) throw notFound("Motion");
     if (motion.status !== "open") throw new DomainError("BAD_STATUS", "Motion is not open", 409);
 
-    const cast = await tx.query.votes.findMany({ where: eq(votes.motionId, motionId) });
-    const allLots = await tx.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
-    const totalEntitlement = allLots.reduce((a, l) => a + l.entitlement, 0);
+    // s 85(1): a circular resolution ballot must run its 14-day notice period
+    // before it can be closed and counted.
+    if (
+      !motion.meetingId &&
+      motion.opensAt &&
+      daysBetween(motion.opensAt, ctx.clock.now()) < BALLOT_NOTICE_DAYS
+    ) {
+      throw new DomainError(
+        "BALLOT_OPEN",
+        `A circular resolution ballot must stay open at least ${BALLOT_NOTICE_DAYS} days (s 85)`,
+        409,
+      );
+    }
 
-    const tally = tallyMotion(
-      cast.map(
-        (v): CastVote => ({
-          lotId: v.lotId,
-          choice: v.choice as VoteChoice,
-          entitlementWeight: v.entitlementWeight,
-        }),
-      ),
-      totalEntitlement,
-      motion.resolutionType,
-      motion.pollDemanded,
+    return await resolveMotion(tx, ctx, schemeId, motion, quorate);
+  });
+}
+
+/**
+ * ss 78(4)/97(5): ripen an interim resolution into a final one once its 29-day
+ * window has elapsed and it was not challenged/petitioned. A challenged interim
+ * resolution does NOT ripen — it is set aside (status → lost); re-passing it
+ * requires a fresh motion at a reconvened meeting (not modelled here).
+ */
+export async function ripenInterimResolution(
+  ctx: ServiceContext,
+  schemeId: string,
+  motionId: string,
+) {
+  return await ctx.db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(motions)
+      .where(and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)))
+      .for("update");
+    const motion = rows[0];
+    if (!motion) throw notFound("Motion");
+    const result = (motion.result ?? {}) as MotionResult;
+    if (!result.interim) {
+      throw new DomainError("NOT_INTERIM", "Motion is not an interim resolution", 409);
+    }
+
+    if (result.challengedAt) {
+      const updated: MotionResult = { ...result, interim: false, ripenedAt: null };
+      await tx
+        .update(motions)
+        .set({ status: "lost", result: updated })
+        .where(eq(motions.id, motionId));
+      return { ripened: false, outcome: "challenged" as const };
+    }
+    const ripensOn = result.ripensOn ? new Date(result.ripensOn) : null;
+    if (!ripensOn || ctx.clock.now() < ripensOn) {
+      throw new DomainError(
+        "NOT_YET_RIPE",
+        `An interim resolution ripens on ${result.ripensOn ?? "an unknown date"} (ss 78(4)/97(5))`,
+        409,
+      );
+    }
+    // Status stays "carried"; the interim flag clears — it is now final.
+    const updated: MotionResult = {
+      ...result,
+      interim: false,
+      ripenedAt: ctx.clock.now().toISOString(),
+    };
+    await tx.update(motions).set({ result: updated }).where(eq(motions.id, motionId));
+    return { ripened: true, outcome: "final" as const };
+  });
+}
+
+/**
+ * s 78 (challenge) / s 97(5) (25% petition): record an objection to an interim
+ * resolution before it ripens, blocking automatic ripening. Standing: a lot
+ * owner. The 25%-petition threshold for interim SPECIAL resolutions is a
+ * documented product follow-up — this records the objection; the threshold test
+ * is left to counsel/product.
+ */
+export async function challengeInterimResolution(
+  ctx: ServiceContext,
+  schemeId: string,
+  personId: string,
+  motionId: string,
+) {
+  const owner = await ctx.db.query.ownerships.findFirst({
+    where: and(
+      eq(ownerships.schemeId, schemeId),
+      eq(ownerships.personId, personId),
+      isNull(ownerships.endedOn),
+    ),
+  });
+  if (!owner) {
+    throw new DomainError(
+      "NO_STANDING",
+      "Only a lot owner may challenge an interim resolution",
+      403,
     );
+  }
 
-    await tx
-      .update(motions)
-      .set({
-        status: tally.carried ? "carried" : "lost",
-        closesAt: ctx.clock.now(),
-        result: tally,
-      })
-      .where(eq(motions.id, motionId));
-    await publishEvent(tx, {
-      schemeId,
-      stream: `motion:${motionId}`,
-      type: "motion.resolved",
-      payload: {
-        motionId,
-        carried: tally.carried,
-        basis: tally.basis,
-        pollDemanded: tally.pollDemanded,
-        forCount: tally.forCount,
-        againstCount: tally.againstCount,
-        abstainCount: tally.abstainCount,
-        forWeight: tally.forWeight,
-        againstWeight: tally.againstWeight,
-        abstainWeight: tally.abstainWeight,
-      },
-      actor: ctx.actor,
-      ...causationFields(ctx),
-    });
-
-    return tally;
+  return await ctx.db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(motions)
+      .where(and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)))
+      .for("update");
+    const motion = rows[0];
+    if (!motion) throw notFound("Motion");
+    const result = (motion.result ?? {}) as MotionResult;
+    if (!result.interim) {
+      throw new DomainError("NOT_INTERIM", "Motion is not an interim resolution", 409);
+    }
+    const ripensOn = result.ripensOn ? new Date(result.ripensOn) : null;
+    if (ripensOn && ctx.clock.now() >= ripensOn) {
+      throw new DomainError("TOO_LATE", "The interim resolution has already ripened", 409);
+    }
+    if (result.challengedAt) return { challenged: true }; // idempotent
+    const updated: MotionResult = { ...result, challengedAt: ctx.clock.now().toISOString() };
+    await tx.update(motions).set({ result: updated }).where(eq(motions.id, motionId));
+    return { challenged: true };
   });
 }
 
@@ -717,6 +1322,60 @@ export const submitProxyInput = z.object({
     .optional(),
 });
 export type SubmitProxyInput = z.infer<typeof submitProxyInput>;
+
+/**
+ * s 89D(1): a person must not act as proxy for more than one lot owner in a
+ * scheme of ≤20 occupiable lots, or more than 5% of lot owners in a larger one.
+ * Enforced at appointment against the proxies the person already holds that
+ * would be usable at the same meeting.
+ *
+ * Not code-enforced (data notes for counsel/product): the reg 8A exceptions
+ * (multi-lot owners; commercial/retail/industrial developments) and the s 89D
+ * family exceptions — they need relationship/development-type data the platform
+ * does not yet capture, so the cap is applied conservatively without them.
+ */
+async function assertProxyCap(
+  ctx: ServiceContext,
+  schemeId: string,
+  proxyPersonId: string,
+  lotId: string,
+  meetingId: string | null,
+) {
+  const allLots = await ctx.db.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
+  const activeOwnerships = await ctx.db.query.ownerships.findMany({
+    where: and(eq(ownerships.schemeId, schemeId), isNull(ownerships.endedOn)),
+  });
+  const ownerCount = new Set(activeOwnerships.map((o) => o.personId)).size;
+  const cap =
+    allLots.length <= PROXY_CAP_SMALL_SCHEME_LOTS
+      ? 1
+      : Math.max(1, Math.floor(PROXY_CAP_LARGE_SCHEME_FRACTION * ownerCount));
+
+  const today = toDateOnly(ctx.clock.now());
+  const held = await ctx.db.query.proxies.findMany({
+    where: and(
+      eq(proxies.schemeId, schemeId),
+      eq(proxies.proxyPersonId, proxyPersonId),
+      isNull(proxies.revokedAt),
+    ),
+  });
+  // Proxies usable alongside the new one at the same meeting: same-meeting or
+  // standing, unexpired, for a DIFFERENT lot (re-appointing the same lot is not
+  // farming).
+  const distinctLots = new Set<string>();
+  for (const p of held) {
+    const current = !p.expiresOn || p.expiresOn >= today;
+    const scopeOverlaps = !meetingId || !p.meetingId || p.meetingId === meetingId;
+    if (current && scopeOverlaps && p.lotId !== lotId) distinctLots.add(p.lotId);
+  }
+  if (distinctLots.size >= cap) {
+    throw new DomainError(
+      "PROXY_CAP",
+      `A person may act as proxy for at most ${cap} lot(s) at a meeting in this scheme (s 89D)`,
+      422,
+    );
+  }
+}
 
 export async function submitProxy(
   ctx: ServiceContext,
@@ -738,6 +1397,23 @@ export async function submitProxy(
     throw new DomainError("SELF_PROXY", "You cannot appoint yourself as your proxy", 422);
   }
 
+  // s 89C(6): a proxy authorisation lapses 12 months after it is given. Default
+  // the expiry to that statutory maximum and reject anything beyond it, so a
+  // "standing" proxy can no longer live forever.
+  const statutoryMax = addMonthsDateOnly(toDateOnly(ctx.clock.now()), PROXY_LAPSE_MONTHS);
+  if (input.expiresOn && input.expiresOn > statutoryMax) {
+    throw new DomainError(
+      "PROXY_LAPSE",
+      `A proxy authorisation lapses 12 months after it is given (s 89C(6)); expiry cannot be later than ${statutoryMax}`,
+      422,
+    );
+  }
+  const expiresOn = input.expiresOn ?? statutoryMax;
+
+  // s 89D: proxy-farming cap. A person may act as proxy for at most one lot in a
+  // scheme of ≤20 occupiable lots, or 5% of lot owners in a larger scheme.
+  await assertProxyCap(ctx, schemeId, input.proxyPersonId, input.lotId, input.meetingId ?? null);
+
   return await ctx.db.transaction(async (tx) => {
     const rows = await tx
       .insert(proxies)
@@ -748,7 +1424,7 @@ export async function submitProxy(
         proxyPersonId: input.proxyPersonId,
         scope: input.meetingId ? "meeting" : "standing",
         meetingId: input.meetingId ?? null,
-        expiresOn: input.expiresOn ?? null,
+        expiresOn,
       })
       .returning();
     const proxy = rows[0]!;
