@@ -33,6 +33,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <link rel="icon" href="/icon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icon.png" />
   <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- The page's payoff (.headline-num, the receipt figures) renders in IBM Plex
+       Mono 600; preload it so the dollar numbers don't flash a fallback face. -->
+  <link rel="preload" href="/fonts/ibm-plex-mono-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/style.css" />
   <style>
     .estimator { padding: 52px 0 72px; }
@@ -51,7 +54,33 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     .dropzone h3 { font-size: 19px; font-weight: 600; }
     .dropzone p { color: var(--muted-ink); font-size: 15px; margin-top: 6px; }
     .dropzone .pick { color: var(--primary); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+    /* Busy state: the moment a file is chosen the dropzone itself acknowledges
+       it (filename + reading…) and stops accepting a second submission. */
+    .dropzone.busy { pointer-events: none; cursor: default; border-style: solid; border-color: var(--primary);
+      display: flex; align-items: center; justify-content: center; }
+    .dropzone.busy .dz-mark, .dropzone.busy .dz-idle-head, .dropzone.busy .dz-idle { display: none; }
+    .dropzone .dz-busy { font-size: 16px; color: var(--ink); overflow-wrap: anywhere; }
+    .dropzone .dz-busy b { font-weight: 600; }
     .privacy-line { margin-top: 14px; font-size: 13.5px; color: var(--faint-ink); text-align: center; }
+    /* Result-shaped skeleton shown while the document is read, so the answer
+       fills in place instead of a collapse-then-expand around a spinner. */
+    .skeleton { margin-top: 32px; }
+    .sk-bar, .sk-row::before, .sk-row::after {
+      display: block; border-radius: 6px;
+      background: linear-gradient(90deg, var(--line) 25%, var(--card) 45%, var(--line) 65%);
+      background-size: 200% 100%; animation: skm 1.3s linear infinite;
+    }
+    .sk-kicker { width: 200px; max-width: 60%; height: 12px; }
+    .sk-num { margin-top: 14px; width: 300px; max-width: 75%; height: clamp(40px, 8vw, 68px); border-radius: 10px; }
+    .sk-sub { margin-top: 12px; width: 420px; max-width: 90%; height: 20px; }
+    .skeleton .sk-rows { margin-top: 28px; border-top: 1px solid var(--line); }
+    .sk-row { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+    .sk-row::before { content: ""; width: 40%; height: 13px; }
+    .sk-row::after { content: ""; width: 72px; height: 13px; }
+    @keyframes skm { to { background-position: -200% 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .sk-bar, .sk-row::before, .sk-row::after { animation: none; }
+    }
     .result { margin-top: 32px; }
     .result .headline-num {
       font-family: var(--font-mono); font-variant-numeric: tabular-nums;
@@ -96,8 +125,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 <div class="wrap">
   <header class="site">
     <a class="logo" href="/">
-      <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
-      <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/logo-on-dark.svg" />
+        <img src="/logo-on-light.svg" alt="GoodStrata" width="1243" height="260" />
+      </picture>
     </a>
     <nav aria-label="Primary">
       <a href="/how-it-works/">How it works</a>
@@ -125,8 +156,11 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     <div id="dropzone" class="dropzone" role="button" tabindex="0"
          aria-label="Upload your strata AGM, budget or financial statement">
       <span class="dz-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-      <h3>Drop your AGM, budget or financial statement here</h3>
-      <p>PDF or an image — or <span class="pick">choose a file</span></p>
+      <h3 class="dz-idle-head">Drop your AGM, budget or financial statement here</h3>
+      <p class="dz-idle">PDF or an image — or <span class="pick">choose a file</span></p>
+      <!-- Shown (and the idle copy hidden) while a document is being read:
+           echoes the chosen filename so the drop visibly "took" instantly. -->
+      <p class="dz-busy" id="dzBusy" hidden><span class="spin" aria-hidden="true"></span><b id="dzFile"></b> — reading…</p>
       <input id="fileInput" type="file" accept="application/pdf,image/*" class="hidden" />
     </div>
     <p class="privacy-line">
@@ -208,7 +242,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 <footer class="site-footer">
   <div class="wrap footer-inner">
     <div class="footer-brand">
-      <span class="footer-mark" aria-hidden="true"><img class="on-light" src="/logo-on-light.svg" alt="" /><img class="on-dark" src="/logo-on-dark.svg" alt="" /></span>
+      <span class="footer-mark" aria-hidden="true"><picture><source media="(prefers-color-scheme: dark)" srcset="/logo-on-dark.svg" /><img src="/logo-on-light.svg" alt="" width="1243" height="260" /></picture></span>
       <p class="footer-tag">Free, open-source strata management that shows its working — every levy, every dollar, on the record.</p>
     </div>
     <nav class="footer-cols" aria-label="Footer">
@@ -259,21 +293,71 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   }
   function clearStatus() { statusEl.classList.add("hidden"); statusEl.innerHTML = ""; }
 
-  dz.addEventListener("click", () => input.click());
-  dz.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
-  ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
+  dz.addEventListener("click", () => { if (!busy) input.click(); });
+  dz.addEventListener("keydown", (e) => { if (busy) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
+  ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); if (!busy) dz.classList.add("drag"); }));
   ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
   dz.addEventListener("drop", (e) => { const f = e.dataTransfer?.files?.[0]; if (f) upload(f); });
   input.addEventListener("change", () => { const f = input.files?.[0]; if (f) upload(f); });
 
   const sampleEl = document.getElementById("sample");
+  const dzBusy = document.getElementById("dzBusy");
+  const dzFile = document.getElementById("dzFile");
 
-  async function upload(file) {
+  // One read at a time: while busy the dropzone is inert (pointer-events off,
+  // keyboard guarded above) so an impatient re-click can't race a second fetch
+  // and interleave a stale result into the page.
+  let busy = false;
+  function setBusy(file) {
+    busy = true;
+    // Pin the current height so swapping to the one-line busy copy doesn't
+    // shrink the box and shift everything below it (box-sizing: border-box).
+    dz.style.minHeight = dz.offsetHeight + "px";
+    dz.classList.add("busy");
+    dz.setAttribute("aria-disabled", "true");
+    dzFile.textContent = file.name;
+    dzBusy.hidden = false;
+  }
+  function clearBusy() {
+    busy = false;
+    dz.style.minHeight = "";
+    dz.classList.remove("busy");
+    dz.removeAttribute("aria-disabled");
+    dzBusy.hidden = true;
+    input.value = ""; // re-picking the same file must fire 'change' again
+  }
+
+  // Mirrors the .result geometry (kicker, headline number, sub, fee rows) so
+  // the answer fills in place rather than collapse-spinner-expand.
+  const SKELETON = `
+    <div class="skeleton" aria-hidden="true">
+      <span class="sk-bar sk-kicker"></span>
+      <span class="sk-bar sk-num"></span>
+      <span class="sk-bar sk-sub"></span>
+      <div class="sk-rows">
+        <div class="sk-row"></div>
+        <div class="sk-row"></div>
+        <div class="sk-row"></div>
+        <div class="sk-row"></div>
+      </div>
+    </div>`;
+
+  // Error path: drop the skeleton and bring the worked example back, so a
+  // failed read never strands the visitor on an emptied page.
+  function restoreIdle() {
     resultEl.classList.add("hidden");
     resultEl.innerHTML = "";
-    if (sampleEl) sampleEl.classList.add("hidden");
+    if (sampleEl) sampleEl.classList.remove("hidden");
+  }
+
+  async function upload(file) {
+    if (busy) return;
     if (file.size > 12 * 1024 * 1024) { setStatus("That file is over 12 MB — try a smaller export or a single page.", true); return; }
-    setStatus('<span class="spin" aria-hidden="true"></span>Reading your document…');
+    setBusy(file);
+    if (sampleEl) sampleEl.classList.add("hidden");
+    resultEl.innerHTML = SKELETON;
+    resultEl.classList.remove("hidden");
+    setStatus("Reading your document…"); // the dropzone carries the spinner
     try {
       const fd = new FormData();
       fd.set("file", file);
@@ -281,18 +365,23 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       const data = await res.json();
       if (!res.ok) {
         const msg = data?.error?.message || "We couldn't read that document. Try a clearer PDF or photo.";
+        restoreIdle();
         setStatus(msg, true);
         return;
       }
       render(data);
     } catch (err) {
+      restoreIdle();
       setStatus("Something went wrong reaching the reader. Please try again.", true);
+    } finally {
+      clearBusy();
     }
   }
 
   function render(d) {
     clearStatus();
     if (!d.isStrataFinancialDoc) {
+      restoreIdle();
       setStatus(
         "That doesn't look like a strata financial statement. Try your AGM papers, the annual budget, or the financial statement your manager sends each year.",
         true,

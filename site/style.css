@@ -293,24 +293,16 @@ header.site .logo {
     animation: none;
   }
 }
+/* The logo ships as a <picture> (dark-scheme <source> + light <img>) so only
+   the active theme's SVG downloads; width/height attributes on the <img>
+   reserve the box before the file decodes — no nav jump on first paint. */
+header.site .logo picture {
+  display: flex;
+}
 header.site .logo img {
+  display: block;
   height: 34px;
   width: auto;
-}
-.logo .on-light {
-  display: block;
-}
-.logo .on-dark {
-  display: none;
-}
-/* Placed after the base rules so the swap wins at equal specificity. */
-@media (prefers-color-scheme: dark) {
-  .logo .on-light {
-    display: none;
-  }
-  .logo .on-dark {
-    display: block;
-  }
 }
 header.site nav a {
   margin-left: 26px;
@@ -558,22 +550,15 @@ section p.lede b {
   height: 34px;
   overflow: hidden;
 }
+/* Same single-download <picture> pattern as the header logo. */
+.site-footer .footer-mark picture {
+  display: block;
+}
 .site-footer .footer-mark img {
   display: block;
   height: 34px;
   width: auto;
   max-width: none;
-}
-.site-footer .footer-mark .on-dark {
-  display: none;
-}
-@media (prefers-color-scheme: dark) {
-  .site-footer .footer-mark .on-light {
-    display: none;
-  }
-  .site-footer .footer-mark .on-dark {
-    display: block;
-  }
 }
 .site-footer .footer-tag {
   font-size: 14.5px;

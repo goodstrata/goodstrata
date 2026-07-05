@@ -44,7 +44,19 @@
     var frame = clip.querySelector(".clip-frame") || video.parentNode;
     var againBtn = clip.querySelector(".clip-again");
 
+    // Below-the-fold clips ship their poster in `data-poster` (no `poster`
+    // attribute) so ~280KB of imagery stops competing with the hero at page
+    // load; assign it only when the clip is actually needed. The .clip-frame's
+    // dark band background stands in until then, so a late poster fades in
+    // rather than popping into a blank box.
+    function ensurePoster() {
+      if (!video.poster && video.dataset && video.dataset.poster) {
+        video.poster = video.dataset.poster;
+      }
+    }
+
     if (reduce || saveData) {
+      ensurePoster(); // the poster IS the experience here — load it now
       clip.classList.add("clip-static");
       return; // no video load, no controls (they ship `hidden`)
     }
@@ -59,6 +71,7 @@
         function (entries, obs) {
           entries.forEach(function (entry) {
             if (!entry.isIntersecting) return;
+            ensurePoster();
             if (video.readyState === 0 && video.paused) {
               video.preload = "auto";
               try {
@@ -246,6 +259,7 @@
 
     // No IntersectionObserver (very old browser): load + play once, best effort.
     if (!("IntersectionObserver" in window)) {
+      ensurePoster();
       ambientPlay();
       return;
     }

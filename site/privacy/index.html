@@ -42,8 +42,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 <div class="wrap">
   <header class="site">
     <a class="logo" href="/">
-      <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
-      <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/logo-on-dark.svg" />
+        <img src="/logo-on-light.svg" alt="GoodStrata" width="1243" height="260" />
+      </picture>
     </a>
     <nav aria-label="Primary">
       <a href="/how-it-works/">How it works</a>
@@ -258,7 +260,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 <footer class="site-footer">
   <div class="wrap footer-inner">
     <div class="footer-brand">
-      <span class="footer-mark" aria-hidden="true"><img class="on-light" src="/logo-on-light.svg" alt="" /><img class="on-dark" src="/logo-on-dark.svg" alt="" /></span>
+      <span class="footer-mark" aria-hidden="true"><picture><source media="(prefers-color-scheme: dark)" srcset="/logo-on-dark.svg" /><img src="/logo-on-light.svg" alt="" width="1243" height="260" /></picture></span>
       <p class="footer-tag">Free, open-source strata management that shows its working — every levy, every dollar, on the record.</p>
     </div>
     <nav class="footer-cols" aria-label="Footer">

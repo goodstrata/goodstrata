@@ -33,6 +33,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <link rel="icon" href="/icon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icon.png" />
   <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- The hero's flagship dollar figures render in IBM Plex Mono 600; preload it
+       so they don't first paint in a fallback face and reflow on swap. -->
+  <link rel="preload" href="/fonts/ibm-plex-mono-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- C1's poster is the hero's LCP image on mobile (the clip is pulled to the
+       top of the hero); the other clips' posters are deferred via data-poster. -->
+  <link rel="preload" href="/clips/c1-poster.jpg" as="image" />
   <link rel="stylesheet" href="/style.css" />
   <script type="application/ld+json">
   {
@@ -91,8 +97,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 <div class="wrap">
   <header class="site">
     <a class="logo" href="/">
-      <img class="on-light" src="/logo-on-light.svg" alt="GoodStrata" />
-      <img class="on-dark" src="/logo-on-dark.svg" alt="GoodStrata" />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/logo-on-dark.svg" />
+        <img src="/logo-on-light.svg" alt="GoodStrata" width="1243" height="260" />
+      </picture>
     </a>
     <nav aria-label="Primary">
       <a href="/how-it-works/">How it works</a>
@@ -255,7 +263,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       <div class="clip-frame">
         <video
           class="clip-video"
-          poster="/clips/c4-schedule-b-poster.jpg"
+          data-poster="/clips/c4-schedule-b-poster.jpg"
           muted
           loop
           playsinline
@@ -324,7 +332,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       <div class="clip-frame">
         <video
           class="clip-video"
-          poster="/clips/c2-money-is-code-poster.jpg"
+          data-poster="/clips/c2-money-is-code-poster.jpg"
           muted
           loop
           playsinline
@@ -448,7 +456,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       <div class="clip-frame">
         <video
           class="clip-video"
-          poster="/clips/c3-one-laptop-poster.jpg"
+          data-poster="/clips/c3-one-laptop-poster.jpg"
           muted
           loop
           playsinline
@@ -515,7 +523,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       <div class="clip-frame">
         <video
           class="clip-video"
-          poster="/clips/c5-handbook-poster.jpg"
+          data-poster="/clips/c5-handbook-poster.jpg"
           muted
           loop
           playsinline
@@ -561,7 +569,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 <footer class="site-footer">
   <div class="wrap footer-inner">
     <div class="footer-brand">
-      <span class="footer-mark" aria-hidden="true"><img class="on-light" src="/logo-on-light.svg" alt="" /><img class="on-dark" src="/logo-on-dark.svg" alt="" /></span>
+      <span class="footer-mark" aria-hidden="true"><picture><source media="(prefers-color-scheme: dark)" srcset="/logo-on-dark.svg" /><img src="/logo-on-light.svg" alt="" width="1243" height="260" /></picture></span>
       <p class="footer-tag">Free, open-source strata management that shows its working — every levy, every dollar, on the record.</p>
     </div>
     <nav class="footer-cols" aria-label="Footer">
