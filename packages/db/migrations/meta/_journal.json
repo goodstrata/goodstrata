@@ -71,6 +71,13 @@
       "when": 1783076986374,
       "tag": "0009_harsh_doctor_faustus",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783254697342,
+      "tag": "0010_greedy_quasimodo",
+      "breakpoints": true
     }
   ]
 }

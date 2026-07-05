@@ -52,6 +52,14 @@ const STATUS_TONES: Record<string, Tone> = {
   work_ordered: "info",
   in_progress: "info",
   completed: "positive",
+  // rfqs, rfq channels & quotes
+  published: "info",
+  awarded: "positive",
+  sent: "info",
+  responded: "positive",
+  withdrawn: "neutral",
+  requested: "caution",
+  selected: "positive",
   // meetings & motions
   notice_sent: "info",
   closed: "positive",

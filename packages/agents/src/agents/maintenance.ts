@@ -1,7 +1,8 @@
-import { maintenanceService } from "@goodstrata/core";
-import { schemes } from "@goodstrata/db";
+import { maintenanceService, tradeRfqService } from "@goodstrata/core";
+import { maintenanceRequests, rfqs, schemes } from "@goodstrata/db";
 import { formatCents } from "@goodstrata/shared";
-import { eq } from "drizzle-orm";
+import type { ToolSet } from "ai";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { defineAgentTool } from "../tool-factory.js";
 import type { AgentDefinition } from "../types.js";
@@ -13,18 +14,35 @@ interface RequestPayload {
   lotId: string | null;
 }
 
+interface RfqCreatedPayload {
+  rfqId: string;
+  requestId: string;
+  title: string;
+  category: string;
+}
+
 /**
  * The maintenance agent triages new requests and proposes work orders. It
  * classifies and chooses a contractor; CODE routes the work order by the
  * scheme's thresholds (auto / decision gate / emergency + post-hoc review).
+ *
+ * It is also the RFQ scope drafter: when an officer creates an RFQ, the agent
+ * writes the anonymized scope-of-works DRAFT for human review. It never
+ * dispatches an RFQ, never records or evaluates quotes, and never awards —
+ * those tools do not exist on this agent, and it is not subscribed to any
+ * quote event. Dispatch is the officer's button; the award runs only through
+ * the decisions service (human committee approval).
  */
 export const maintenanceAgent: AgentDefinition = {
   name: "maintenance",
-  description: "Triages maintenance requests and proposes work orders",
-  subscribedEvents: ["maintenance.request.created"],
+  description:
+    "Triages maintenance requests, proposes work orders, and drafts anonymized RFQ scopes of work",
+  subscribedEvents: ["maintenance.request.created", "rfq.created"],
   systemPrompt: [
     "You are the maintenance agent for an Australian owners corporation.",
-    "A new maintenance request has arrived. Work through it:",
+    "The user message states which of two tasks this run is.",
+    "",
+    "TASK A — a new maintenance request has arrived. Work through it:",
     "1. Call triageRequest exactly once: category (plumbing/electrical/roofing/cleaning/",
     "   structural/garden/other), urgency (emergency = active danger or major water/gas/power",
     "   failure; high = worsening damage; routine = everything else), and whether it concerns",
@@ -36,11 +54,62 @@ export const maintenanceAgent: AgentDefinition = {
     "   the provided list, a clear scope of work, and a realistic cost estimate in cents.",
     "   The platform decides whether it auto-dispatches or goes to the committee — not you.",
     "Then finish with a one-line summary.",
+    "",
+    "TASK B — a request for quotes (RFQ) was created and needs its scope of works drafted.",
+    "Call draftRfqSpec exactly once with a contractor-ready Markdown spec:",
+    "- the trade category and a clear scope of works (what is wrong, what work is required,",
+    "  likely materials), drawn from the maintenance request;",
+    "- access constraints (common-area access, occupied areas, hours) and how many photos are",
+    "  on file for the successful contractor;",
+    "- compliance flags where relevant: working at heights, asbestos risk (older buildings),",
+    "  licensed electrical/plumbing/gas work, confined spaces.",
+    "The spec is sent to tradespeople OUTSIDE the platform before any award, so the location",
+    "must stay at suburb level ONLY. NEVER include owner or resident names, email addresses,",
+    "phone numbers, lot or unit numbers, the plan number, the scheme name, or the street",
+    "address — the exact address is revealed to the winner after the committee awards.",
+    "You draft the spec for human review only: you do not choose contractors, send the RFQ,",
+    "assess quotes, or award work, and you have no tools to do so.",
+    "Then finish with a one-line summary.",
   ].join("\n"),
 
   async buildContext(event, services) {
-    const payload = event.payload as RequestPayload;
     if (!event.schemeId) return null;
+
+    if (event.type === "rfq.created") {
+      const payload = event.payload as RfqCreatedPayload;
+      const rfq = await services.db.query.rfqs.findFirst({
+        where: and(eq(rfqs.id, payload.rfqId), eq(rfqs.schemeId, event.schemeId)),
+      });
+      // The spec is only editable while the RFQ is a draft — skip otherwise.
+      if (!rfq || rfq.status !== "draft") return null;
+      const request = await services.db.query.maintenanceRequests.findFirst({
+        where: and(
+          eq(maintenanceRequests.id, rfq.requestId),
+          eq(maintenanceRequests.schemeId, event.schemeId),
+        ),
+      });
+      if (!request) return null;
+
+      return [
+        "TASK B — draft the scope of works for this RFQ.",
+        "",
+        `RFQ title: ${rfq.title}`,
+        `Trade category: ${rfq.category}`,
+        `Location for the spec: ${rfq.suburb} (suburb only — nothing more precise)`,
+        `Quotes due: ${rfq.quotesDueOn ?? "not set"}`,
+        `Photos on file: ${request.photoDocumentIds.length}`,
+        "",
+        "Underlying maintenance request (INTERNAL — never copy identifying details into the spec):",
+        `Title: ${request.title}`,
+        `Description: ${request.description}`,
+        `Urgency: ${request.urgency ?? "not assessed"}`,
+        "",
+        "Current placeholder spec (replace it with a proper scope of works):",
+        rfq.specMd,
+      ].join("\n");
+    }
+
+    const payload = event.payload as RequestPayload;
     const scheme = await services.db.query.schemes.findFirst({
       where: eq(schemes.id, event.schemeId),
     });
@@ -48,6 +117,8 @@ export const maintenanceAgent: AgentDefinition = {
     const pool = await maintenanceService.listContractors(services, event.schemeId);
 
     return [
+      "TASK A — triage this new maintenance request.",
+      "",
       `Scheme: ${scheme.name}`,
       `Request title: ${payload.title}`,
       `Description: ${payload.description}`,
@@ -62,7 +133,30 @@ export const maintenanceAgent: AgentDefinition = {
     ].join("\n");
   },
 
-  tools(ctx) {
+  tools(ctx): ToolSet {
+    if (ctx.triggerEvent.type === "rfq.created") {
+      const payload = ctx.triggerEvent.payload as RfqCreatedPayload;
+      // The ONLY tool on an RFQ run. No dispatch, no quote, no award — the
+      // draft lands on the RFQ for an officer to review and send.
+      return {
+        draftRfqSpec: defineAgentTool(ctx, {
+          description:
+            "Save the drafted anonymized scope of works onto the RFQ for officer review (the platform re-scrubs identifying details before storing)",
+          inputSchema: tradeRfqService.applyRfqSpecInput,
+          mutates: true,
+          async execute(input) {
+            if (!ctx.schemeId) throw new Error("no scheme");
+            return await tradeRfqService.applyRfqSpec(
+              ctx.services,
+              ctx.schemeId,
+              payload.rfqId,
+              input,
+            );
+          },
+        }),
+      };
+    }
+
     const payload = ctx.triggerEvent.payload as RequestPayload;
 
     return {

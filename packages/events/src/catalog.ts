@@ -115,7 +115,53 @@ export const eventDefs = {
     urgency: z.string(),
     isCommonProperty: z.boolean(),
   }),
-  "quote.received": lax,
+  // trade market (RFQ → quotes → human award)
+  "rfq.created": z.object({
+    rfqId: z.string(),
+    requestId: z.string(),
+    title: z.string(),
+    category: z.string(),
+  }),
+  "rfq.spec_drafted": z.object({ rfqId: z.string(), title: z.string(), category: z.string() }),
+  "rfq.dispatched": z.object({
+    rfqId: z.string(),
+    providers: z.array(z.string()),
+    channelsSent: z.number().int(),
+    channelsFailed: z.number().int(),
+  }),
+  "rfq.channel.sent": z.object({
+    rfqId: z.string(),
+    channelId: z.string(),
+    provider: z.string(),
+    contractorId: z.string().nullable(),
+  }),
+  "rfq.channel.failed": z.object({
+    rfqId: z.string(),
+    channelId: z.string(),
+    provider: z.string(),
+    error: z.string(),
+  }),
+  // ZERO HIDDEN MARGIN: fee fields are required on the wire — a quote event
+  // that omits them fails validation at publish time.
+  "quote.received": z.object({
+    quoteId: z.string(),
+    rfqId: z.string(),
+    contractorId: z.string(),
+    amountCents: z.number().int(),
+    platformFeeCents: z.number().int(),
+    referralFeeCents: z.number().int(),
+    feeRecipient: z.string().nullable(),
+  }),
+  "rfq.awarded": z.object({
+    rfqId: z.string(),
+    quoteId: z.string(),
+    workOrderId: z.string(),
+    contractorId: z.string(),
+    amountCents: z.number().int(),
+    platformFeeCents: z.number().int(),
+    referralFeeCents: z.number().int(),
+    feeRecipient: z.string().nullable(),
+  }),
   "work_order.created": z.object({
     workOrderId: z.string(),
     requestId: z.string().nullable(),

@@ -60,6 +60,13 @@ export { createPersonInput } from "./services/people.js";
 export * as recoveryService from "./services/recovery.js";
 export * as schemesService from "./services/schemes.js";
 export { createSchemeInput } from "./services/schemes.js";
+export * as tradeRfqService from "./services/tradeRfq.js";
+export {
+  applyRfqSpecInput,
+  createRfqInput,
+  dispatchRfqInput,
+  recordQuoteInput,
+} from "./services/tradeRfq.js";
 export * as trustAccountsService from "./services/trustAccounts.js";
 export {
   activateBankAccountInput,

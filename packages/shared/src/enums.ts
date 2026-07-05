@@ -322,6 +322,18 @@ export type ContractorStatus = (typeof CONTRACTOR_STATUSES)[number];
 export const CREDENTIAL_KINDS = ["public_liability", "workcover", "licence"] as const;
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
 
+export const RFQ_STATUSES = ["draft", "published", "quoting", "awarded", "cancelled"] as const;
+export type RfqStatus = (typeof RFQ_STATUSES)[number];
+
+export const RFQ_CHANNEL_STATUSES = [
+  "pending",
+  "sent",
+  "responded",
+  "failed",
+  "withdrawn",
+] as const;
+export type RfqChannelStatus = (typeof RFQ_CHANNEL_STATUSES)[number];
+
 /**
  * CAV tier per OC Act, banded by the number of OCCUPIABLE lots:
  *   T1 >100, T2 51–100, T3 10–50, T4 3–9, T5 2-lot or services-only.

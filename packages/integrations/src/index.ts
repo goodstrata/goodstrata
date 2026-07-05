@@ -4,6 +4,7 @@ export * from "./email.js";
 export * from "./payments.js";
 export * from "./sms.js";
 export * from "./storage.js";
+export * from "./tradeMarket.js";
 export * from "./video.js";
 
 import {
@@ -30,6 +31,12 @@ import {
   type StorageProvider,
   s3StorageProvider,
 } from "./storage.js";
+import {
+  consoleTradeMarketProvider,
+  emailRfqTradeMarketProvider,
+  schemeBookTradeMarketProvider,
+  type TradeMarketProvider,
+} from "./tradeMarket.js";
 import { consoleVideoProvider, dailyVideoProvider, type VideoProvider } from "./video.js";
 
 export interface Integrations {
@@ -38,6 +45,8 @@ export interface Integrations {
   storage: StorageProvider;
   payments: PaymentsProvider;
   video: VideoProvider;
+  /** All enabled trade-market channels; look one up with `tradeMarketByName`. */
+  tradeMarkets: TradeMarketProvider[];
 }
 
 export interface IntegrationsEnv {
@@ -46,6 +55,8 @@ export interface IntegrationsEnv {
   STORAGE_PROVIDER?: string;
   PAYMENTS_PROVIDER?: string;
   VIDEO_PROVIDER?: string;
+  /** CSV of enabled trade-market providers, e.g. "scheme_book,email_rfq". */
+  TRADE_MARKET_PROVIDERS?: string;
   DATA_DIR?: string;
   MOCK_PAYMENTS_SECRET?: string;
   // S3 / Cloudflare R2 (STORAGE_PROVIDER=r2|s3)
@@ -203,5 +214,32 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
     }
   })();
 
-  return { email, sms, storage, payments, video };
+  // Built AFTER email: the email-backed trade-market drivers take it as a dep.
+  const tradeMarkets = (env.TRADE_MARKET_PROVIDERS ?? "scheme_book")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+    .map((name): TradeMarketProvider => {
+      switch (name) {
+        case "scheme_book":
+          return schemeBookTradeMarketProvider(email);
+        case "email_rfq":
+          return emailRfqTradeMarketProvider(email);
+        case "console":
+          return consoleTradeMarketProvider();
+        default:
+          throw new Error(`integrations: unknown trade-market provider "${name}"`);
+      }
+    });
+
+  return { email, sms, storage, payments, video, tradeMarkets };
+}
+
+/** Look up an enabled trade-market provider by its name (e.g. from an rfq_channels row). */
+export function tradeMarketByName(integrations: Integrations, name: string): TradeMarketProvider {
+  const provider = integrations.tradeMarkets.find((p) => p.name === name);
+  if (!provider) {
+    throw new Error(`integrations: trade-market provider "${name}" is not enabled`);
+  }
+  return provider;
 }

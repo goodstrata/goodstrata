@@ -1,15 +1,17 @@
 import type { Causation, ServiceContext } from "@goodstrata/core";
-import { maintenanceService } from "@goodstrata/core";
-import { people, schemes } from "@goodstrata/db";
+import { maintenanceService, tradeRfqService } from "@goodstrata/core";
+import { people, rfqChannels, rfqs, schemes } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import { loadEvent } from "@goodstrata/events";
 import { integrationsFromEnv } from "@goodstrata/integrations";
 import { type Actor, fixedClock, systemActor } from "@goodstrata/shared";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { maintenanceAgent } from "../src/agents/maintenance.js";
 import { createModelResolver } from "../src/models.js";
 import { type RuntimeDeps, runAgent } from "../src/runtime.js";
 import { type ScriptStep, scriptedModel } from "../src/testing.js";
+import type { AgentRunCtx } from "../src/types.js";
 
 let tdb: TestDatabase;
 let schemeId: string;
@@ -227,5 +229,130 @@ describe("maintenance agent", () => {
     expect(requests.find((r) => r.id === request.id)!.status).toBe("rejected");
     expect(memoryEmail.sent).toHaveLength(1);
     expect(memoryEmail.sent[0]!.to).toBe("renata@example.com");
+  });
+});
+
+describe("maintenance agent — RFQ scope drafting", () => {
+  async function createDraftRfq(title: string, description: string) {
+    const request = await maintenanceService.createMaintenanceRequest(svc(), schemeId, {
+      title,
+      description,
+    });
+    await maintenanceService.applyTriage(svc(), schemeId, request.id, {
+      category: "roofing",
+      urgency: "high",
+      isCommonProperty: true,
+      reasoning: "test fixture",
+    });
+    const rfq = await tradeRfqService.createRfqFromRequest(svc(), schemeId, {
+      requestId: request.id,
+    });
+    const events = await tdb.db.query.eventLog.findMany({
+      where: (t, { eq }) => eq(t.type, "rfq.created"),
+      orderBy: (t, { desc }) => desc(t.seq),
+    });
+    const event = (await loadEvent(tdb.db, events[0]!.id))!;
+    return { request, rfq, event };
+  }
+
+  it("subscribes to rfq.created but to no quote or award event", () => {
+    expect(maintenanceAgent.subscribedEvents).toEqual([
+      "maintenance.request.created",
+      "rfq.created",
+    ]);
+    expect(
+      maintenanceAgent.subscribedEvents.some(
+        (t) => t.startsWith("quote.") || t.includes("award") || t.includes("dispatch"),
+      ),
+    ).toBe(false);
+  });
+
+  it("exposes ONLY draftRfqSpec on an RFQ run — no dispatch, quote, or award tool", () => {
+    const ctx = {
+      triggerEvent: { type: "rfq.created", payload: { rfqId: "irrelevant" } },
+    } as unknown as AgentRunCtx;
+    expect(Object.keys(maintenanceAgent.tools(ctx))).toEqual(["draftRfqSpec"]);
+  });
+
+  it("drafts the spec into the RFQ (re-scrubbed) and leaves it a draft for humans", async () => {
+    const { rfq, event } = await createDraftRfq(
+      "Roof membrane failing over stairwell",
+      "Water pooling in the top-floor stairwell after rain; membrane likely perished.",
+    );
+
+    // The scripted model writes PII into the spec on purpose — the platform
+    // must scrub it before it lands on the RFQ.
+    const deps = makeDeps([
+      {
+        toolCalls: [
+          {
+            toolName: "draftRfqSpec",
+            input: {
+              title: "Roof membrane repair — top-floor stairwell",
+              category: "roofing",
+              specMd: [
+                "## Scope of works",
+                "Strip and reseal the failed membrane above the top-floor stairwell",
+                "at Agent Maint OC, 9 Drip Ln. Contact the reporter on 0412 345 678",
+                "or reporter@example.com to arrange access.",
+                "Working at heights compliance applies; 0 photos on file.",
+                "Location: Fitzroy.",
+              ].join("\n"),
+            },
+          },
+        ],
+      },
+      { text: "Drafted the RFQ scope for officer review." },
+    ]);
+
+    const outcome = await runAgent(deps, maintenanceAgent, event);
+    expect(outcome.kind).toBe("ran");
+    if (outcome.kind !== "ran") return;
+    expect(outcome.status).toBe("succeeded");
+
+    const updated = (await tdb.db.query.rfqs.findFirst({
+      where: (t, { eq }) => eq(t.id, rfq.id),
+    }))!;
+    // The draft landed…
+    expect(updated.title).toBe("Roof membrane repair — top-floor stairwell");
+    expect(updated.specMd).toContain("Strip and reseal the failed membrane");
+    expect(updated.specMd).toContain("Working at heights");
+    // …anonymized: scheme name, street address, phone, and email are gone,
+    // suburb-level location remains.
+    expect(updated.specMd).not.toContain("Agent Maint OC");
+    expect(updated.specMd).not.toContain("9 Drip Ln");
+    expect(updated.specMd).not.toContain("0412 345 678");
+    expect(updated.specMd).not.toContain("reporter@example.com");
+    expect(updated.specMd).toContain("Fitzroy");
+    // The agent drafted — it did NOT dispatch: RFQ stays a human-reviewable
+    // draft with zero channels.
+    expect(updated.status).toBe("draft");
+    const channels = await tdb.db.query.rfqChannels.findMany({
+      where: eq(rfqChannels.rfqId, rfq.id),
+    });
+    expect(channels).toHaveLength(0);
+
+    const drafted = await tdb.db.query.eventLog.findMany({
+      where: (t, { eq }) => eq(t.type, "rfq.spec_drafted"),
+    });
+    expect(drafted.some((e) => (e.payload as { rfqId: string }).rfqId === rfq.id)).toBe(true);
+  });
+
+  it("skips the run when the RFQ is no longer a draft", async () => {
+    const { rfq, event } = await createDraftRfq(
+      "Cracked balustrade panel",
+      "Glass balustrade panel on level 2 walkway is cracked.",
+    );
+    await tdb.db.update(rfqs).set({ status: "published" }).where(eq(rfqs.id, rfq.id));
+
+    const context = await maintenanceAgent.buildContext(event, svc());
+    expect(context).toBeNull();
+
+    const outcome = await runAgent(
+      makeDeps([{ text: "should never generate" }]),
+      maintenanceAgent,
+      event,
+    );
+    expect(outcome).toEqual({ kind: "skipped", reason: "buildContext returned null" });
   });
 });

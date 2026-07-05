@@ -30,6 +30,7 @@ import {
 } from "./routes/onboarding.js";
 import { overviewRoutes } from "./routes/overview.js";
 import { profileRoutes } from "./routes/profile.js";
+import { rfqsRoutes } from "./routes/rfqs.js";
 import { schemesRoutes } from "./routes/schemes.js";
 import { trustRoutes } from "./routes/trust.js";
 import { securityHeaders } from "./security-headers.js";
@@ -54,6 +55,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", trustRoutes(deps))
     .route("/schemes", decisionsRoutes(deps))
     .route("/schemes", maintenanceRoutes(deps))
+    .route("/schemes", rfqsRoutes(deps))
     .route("/schemes", grievancesRoutes(deps))
     .route("/schemes", complianceRoutes(deps))
     .route("/schemes", communityRoutes(deps))

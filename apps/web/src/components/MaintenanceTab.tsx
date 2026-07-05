@@ -3,6 +3,7 @@ import { Bot, ClipboardCheck, HardHat, Plus, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { RequestQuotesButton, RfqSection } from "@/components/RfqSection";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,7 +76,7 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
   const invalidate = () => {
-    for (const key of ["maintenance", "work-orders", "contractors", "decisions"]) {
+    for (const key of ["maintenance", "work-orders", "contractors", "decisions", "rfqs", "rfq"]) {
       void queryClient.invalidateQueries({ queryKey: [key, schemeId] });
     }
   };
@@ -89,6 +90,7 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
         actions={<ReportIssueDialog schemeId={schemeId} onChange={invalidate} />}
       />
       <RequestList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
+      <RfqSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       {isOfficer && <ContractorSection schemeId={schemeId} onChange={invalidate} />}
     </div>
@@ -304,7 +306,8 @@ function RequestList({
                 </p>
               )}
               {isOfficer && r.status === "triaged" && (
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <RequestQuotesButton schemeId={schemeId} requestId={r.id} onChange={onChange} />
                   <RaiseWorkOrderDialog schemeId={schemeId} request={r} onChange={onChange} />
                 </div>
               )}
