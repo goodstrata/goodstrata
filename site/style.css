@@ -76,6 +76,10 @@
   --muted-ink: oklch(0.44 0.024 258);
   --faint-ink: oklch(0.47 0.02 256);
   --line: oklch(0.905 0.008 250);
+  /* control boundary — a darker line for interactive edges (ghost buttons,
+     dropzone). >=3:1 on paper/card for WCAG 2.1 1.4.11 (non-text contrast),
+     unlike the hairline --line used for decorative rules. */
+  --control-line: oklch(0.64 0.02 250);
   /* eucalypt */
   --primary: oklch(0.42 0.085 165);
   --primary-strong: oklch(0.35 0.08 165);
@@ -93,6 +97,7 @@
     --muted-ink: oklch(0.74 0.016 252);
     --faint-ink: oklch(0.64 0.015 252);
     --line: oklch(0.31 0.02 255);
+    --control-line: oklch(0.52 0.02 255);
     --primary: oklch(0.78 0.09 165);
     --primary-strong: oklch(0.85 0.09 165);
     --on-primary: oklch(0.18 0.03 260);
@@ -388,7 +393,7 @@ h2 em {
   color: var(--on-primary);
 }
 .btn.ghost {
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-line);
   color: var(--ink);
 }
 .btn.ghost:hover {
@@ -1581,6 +1586,12 @@ ul.proof-list li strong {
 }
 .proof-band .kicker {
   color: var(--band-fig);
+}
+/* the global --primary focus ring only reaches ~1.65:1 on the band's dark
+   --band-bg; use the light figure colour the band already gives its links so
+   a keyboard focus indicator stays visible here (WCAG 2.4.11 / 1.4.11). */
+.proof-band :focus-visible {
+  outline-color: var(--band-fig);
 }
 .proof-band h2,
 .proof-band .section-head {

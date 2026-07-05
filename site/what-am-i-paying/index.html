@@ -40,7 +40,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <style>
     .estimator { padding: 52px 0 72px; }
     .dropzone {
-      margin-top: 32px; border: 2px dashed var(--line); border-radius: 14px;
+      margin-top: 32px; border: 2px dashed var(--control-line); border-radius: 14px;
       background: var(--card); padding: 44px 24px; text-align: center;
       cursor: pointer; transition: border-color .15s ease, background .15s ease;
     }
@@ -142,7 +142,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   </header>
 </div>
 
-<main id="content">
+<main id="content" tabindex="-1">
 
 <div class="hero estimator">
   <div class="wrap">
@@ -172,7 +172,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
     <div id="sample">
       <p class="sample-lead">No papers handy? Drag the slider to your building's size.</p>
-      <div class="sample" aria-label="Example: what a typical Australian building pays a strata manager">
+      <div class="sample" role="group" aria-label="Example: what a typical Australian building pays a strata manager">
         <span class="sample-badge">Example · a typical Australian building</span>
         <div class="receipt-slider">
           <label for="lotSlider">Your building — <b><span id="lotCount">12</span> lots</b></label>
