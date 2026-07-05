@@ -24,7 +24,28 @@ export default function SignIn() {
   const [password, setPassword] = useState("");
   const [focused, setFocused] = useState<Field | null>(null);
   const [pending, setPending] = useState(false);
+  const [googlePending, setGooglePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function google() {
+    setGooglePending(true);
+    setError(null);
+    // Opens the system browser against the server's Google OAuth flow; the
+    // Expo plugin converts the relative callbackURL into a goodstrata:// deep
+    // link and completes the session on return.
+    const { error: err } = await authClient.signIn.social({
+      provider: "google",
+      callbackURL: "/",
+    });
+    setGooglePending(false);
+    if (err) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setError(err.message ?? "Google sign-in didn't complete. Try again.");
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    router.replace("/(tabs)");
+  }
 
   async function submit() {
     setPending(true);
@@ -119,6 +140,19 @@ export default function SignIn() {
               onPress={submit}
             />
           </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space(3), marginVertical: space(1) }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: theme.line }} />
+            <Text style={{ ...t.label, color: theme.muted }}>or</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: theme.line }} />
+          </View>
+          <Button
+            variant="secondary"
+            full
+            label="Continue with Google"
+            pending={googlePending}
+            disabled={pending}
+            onPress={google}
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
