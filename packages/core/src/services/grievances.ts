@@ -12,14 +12,16 @@ import { breachNotices, complaintEvents, complaints, lots, people } from "@goods
 import { publishEvent } from "@goodstrata/events";
 import {
   addDays,
+  BREACH_NOTICE_STATUSES,
   BREACH_NOTICE_TYPES,
   type BreachNoticeStatus,
+  type BreachNoticeType,
   COMPLAINT_STATUSES,
   type ComplaintEventKind,
   type ComplaintStatus,
   toDateOnly,
 } from "@goodstrata/shared";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError, notFound } from "../errors.js";
@@ -481,7 +483,49 @@ export async function listBreachNotices(
 
 // ---------------------------------------------------------------------------
 // s 159 report — grievances handled in the period, for the AGM.
+//
+// s 159(1) requires the OC to report to the AGM the number and nature of
+// complaints, actions taken, VCAT applications and outcomes. s 159(2): "The
+// report must not identify the person who made a complaint or the lot owner
+// or occupier alleged to have committed the breach."
+//
+// Anonymity is STRUCTURAL, not redactive: every report entry is built by
+// picking a fixed set of non-identifying fields — date-only timestamps, enum
+// statuses, audit-trail kinds, rule citations and report-local ref numbers.
+// No complaint/notice row is ever spread into the report, and no person, lot
+// or row id, subject line, details body or event note appears, so the
+// artifact is safe to table at the AGM exactly as generated. The identified
+// view the committee needs to actually handle a matter stays where it already
+// lives: listComplaints / getComplaintDetail behind the officer-gated
+// register — never in this report.
 // ---------------------------------------------------------------------------
+
+/** One complaint in the AGM report, de-identified per s 159(2). */
+export interface S159ComplaintSummary {
+  /** 1-based chronological position in this report — NOT the complaint id (row ids join back to people). */
+  ref: number;
+  receivedOn: string;
+  status: ComplaintStatus;
+  /** Whether it was lodged on the OC's approved grievance form (s 152(2)). */
+  onApprovedForm: boolean;
+  /** Audit-trail step kinds in order — the s 159(1) "actions taken". Kinds only; event notes are free text and may identify the parties. */
+  actionsTaken: ComplaintEventKind[];
+  resolvedOn: string | null;
+}
+
+/** One breach notice in the AGM report, de-identified per s 159(2). */
+export interface S159BreachNoticeSummary {
+  /** 1-based chronological position in this report — NOT the notice id. */
+  ref: number;
+  /** Report-local ref of the linked complaint when it falls in the period. */
+  complaintRef: number | null;
+  type: BreachNoticeType;
+  /** The contravened rule citation (e.g. "Model Rule 4.1") — the "nature" of the alleged breach. A citation, never a narrative. */
+  ruleRef: string;
+  issuedOn: string;
+  rectifyByDate: string;
+  status: BreachNoticeStatus;
+}
 
 export interface S159Report {
   schemeId: string;
@@ -493,18 +537,22 @@ export interface S159Report {
     resolved: number;
     unresolved: number;
     byStatus: Record<ComplaintStatus, number>;
-    items: Complaint[];
+    items: S159ComplaintSummary[];
   };
   breachNotices: {
     total: number;
-    items: BreachNotice[];
+    byType: Record<BreachNoticeType, number>;
+    byStatus: Record<BreachNoticeStatus, number>;
+    items: S159BreachNoticeSummary[];
   };
 }
 
 /**
  * The s 159 grievance report for the AGM: complaints and breach notices dealt
- * with in the period (defaults to all-time when no window is given). Exposed
- * here; wiring it into the AGM agenda is a later item.
+ * with in the period (defaults to all-time when no window is given), with
+ * both parties de-identified per s 159(2) — see the section comment above for
+ * how anonymity is guaranteed structurally. Exposed here; wiring it into the
+ * AGM agenda is a later item.
  */
 /**
  * Resolve an AGM reporting window to millisecond bounds. A date-only `to`
@@ -545,8 +593,32 @@ export async function generateS159Report(
   const allComplaints = await listComplaints(ctx, schemeId);
   const allNotices = await listBreachNotices(ctx, schemeId);
 
-  const scopedComplaints = allComplaints.filter((c) => inWindow(c.receivedAt));
-  const scopedNotices = allNotices.filter((n) => inWindow(n.issuedAt));
+  // Chronological order so report refs read as a timeline ("Complaint 1" was
+  // received first in the period).
+  const scopedComplaints = allComplaints
+    .filter((c) => inWindow(c.receivedAt))
+    .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime());
+  const scopedNotices = allNotices
+    .filter((n) => inWindow(n.issuedAt))
+    .sort((a, b) => a.issuedAt.getTime() - b.issuedAt.getTime());
+
+  // Audit-trail kinds per complaint — the s 159(1) "actions taken". Kinds
+  // only: notes are officer-written free text and are never read here.
+  const events = scopedComplaints.length
+    ? await ctx.db.query.complaintEvents.findMany({
+        where: inArray(
+          complaintEvents.complaintId,
+          scopedComplaints.map((c) => c.id),
+        ),
+        orderBy: (t, { asc }) => asc(t.at),
+      })
+    : [];
+  const actionsByComplaint = new Map<string, ComplaintEventKind[]>();
+  for (const e of events) {
+    const kinds = actionsByComplaint.get(e.complaintId) ?? [];
+    kinds.push(e.kind as ComplaintEventKind);
+    actionsByComplaint.set(e.complaintId, kinds);
+  }
 
   const byStatus = Object.fromEntries(COMPLAINT_STATUSES.map((s) => [s, 0])) as Record<
     ComplaintStatus,
@@ -556,6 +628,40 @@ export async function generateS159Report(
 
   const resolved = byStatus.resolved;
   const unresolved = scopedComplaints.length - resolved - byStatus.withdrawn;
+
+  // Explicit field picks (never a row spread): this closed set of
+  // non-identifying fields IS the s 159(2) guarantee.
+  const complaintRefById = new Map(scopedComplaints.map((c, i) => [c.id, i + 1]));
+  const complaintItems: S159ComplaintSummary[] = scopedComplaints.map((c, i) => ({
+    ref: i + 1,
+    receivedOn: toDateOnly(c.receivedAt),
+    status: c.status,
+    onApprovedForm: c.approvedForm,
+    actionsTaken: actionsByComplaint.get(c.id) ?? [],
+    resolvedOn: c.resolvedAt ? toDateOnly(c.resolvedAt) : null,
+  }));
+
+  const noticesByType = Object.fromEntries(BREACH_NOTICE_TYPES.map((t) => [t, 0])) as Record<
+    BreachNoticeType,
+    number
+  >;
+  const noticesByStatus = Object.fromEntries(BREACH_NOTICE_STATUSES.map((s) => [s, 0])) as Record<
+    BreachNoticeStatus,
+    number
+  >;
+  for (const n of scopedNotices) {
+    noticesByType[n.type] += 1;
+    noticesByStatus[n.status] += 1;
+  }
+  const noticeItems: S159BreachNoticeSummary[] = scopedNotices.map((n, i) => ({
+    ref: i + 1,
+    complaintRef: n.complaintId ? (complaintRefById.get(n.complaintId) ?? null) : null,
+    type: n.type,
+    ruleRef: n.ruleRef,
+    issuedOn: toDateOnly(n.issuedAt),
+    rectifyByDate: n.rectifyByDate,
+    status: n.status,
+  }));
 
   return {
     schemeId,
@@ -567,11 +673,13 @@ export async function generateS159Report(
       resolved,
       unresolved,
       byStatus,
-      items: scopedComplaints,
+      items: complaintItems,
     },
     breachNotices: {
       total: scopedNotices.length,
-      items: scopedNotices,
+      byType: noticesByType,
+      byStatus: noticesByStatus,
+      items: noticeItems,
     },
   };
 }
