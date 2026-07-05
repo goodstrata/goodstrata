@@ -1,4 +1,4 @@
-import { schemes } from "@goodstrata/db";
+import { documents, schemes } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import { integrationsFromEnv } from "@goodstrata/integrations";
 import { type Actor, fixedClock, userActor } from "@goodstrata/shared";
@@ -138,5 +138,58 @@ describe("documents service", () => {
       })
       .returning();
     expect(await documentsService.getDocument(ctx(), other[0]!.id, doc!.id)).toBeNull();
+  });
+});
+
+describe("enforceRetention", () => {
+  it("purges a document once its retention date has passed, leaves others alone, and is idempotent", async () => {
+    const [expired] = await tdb.db
+      .insert(documents)
+      .values({
+        schemeId,
+        category: "financial",
+        title: "Old FY19 financials",
+        storageKey: "retention-test/old-financials.pdf",
+        mime: "application/pdf",
+        sizeBytes: 10,
+        retentionUntil: "2020-01-01",
+        uploadedBy: userActor("secretary-1"),
+      })
+      .returning();
+    await integrations.storage.put(
+      expired!.storageKey,
+      new TextEncoder().encode("old content"),
+      "application/pdf",
+    );
+
+    const [notYetDue] = await tdb.db
+      .insert(documents)
+      .values({
+        schemeId,
+        category: "financial",
+        title: "Still-current financials",
+        storageKey: "retention-test/current-financials.pdf",
+        mime: "application/pdf",
+        sizeBytes: 10,
+        retentionUntil: "2099-01-01",
+        uploadedBy: userActor("secretary-1"),
+      })
+      .returning();
+
+    const result = await documentsService.enforceRetention(ctx());
+    expect(result.purged).toBe(1);
+
+    const purged = await documentsService.getDocument(ctx(), schemeId, expired!.id);
+    expect(purged?.title).toBe("[Deleted — retention period expired]");
+    expect(purged?.purgedAt).not.toBeNull();
+    await expect(integrations.storage.get(expired!.storageKey)).rejects.toThrow();
+
+    const untouched = await documentsService.getDocument(ctx(), schemeId, notYetDue!.id);
+    expect(untouched?.title).toBe("Still-current financials");
+    expect(untouched?.purgedAt).toBeNull();
+
+    // Idempotent: re-running finds nothing left to purge.
+    const second = await documentsService.enforceRetention(ctx());
+    expect(second.purged).toBe(0);
   });
 });

@@ -223,6 +223,12 @@ export const eventDefs = {
   // documents / compliance / comms
   "document.uploaded": lax,
   "document.classified": lax,
+  /** The retention sweep deleted the stored object and de-identified the row. */
+  "document.retention.purged": z.object({
+    documentId: z.string(),
+    category: z.string(),
+    retentionUntil: z.string(),
+  }),
   "compliance.item.due": lax,
   /** An obligation was raised on the compliance calendar (idempotent per dedupeKey). */
   "compliance.obligation.raised": z.object({

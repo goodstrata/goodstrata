@@ -129,7 +129,14 @@ export const decisions = pgTable(
     followUp: jsonb(),
     status: decisionStatusEnum().notNull().default("pending"),
     requestedByRunId: uuid(),
-    decidedByUserId: text().references(() => users.id),
+    /**
+     * ON DELETE SET NULL. This is the one link in the set where the actor is
+     * historically load-bearing (who approved this?) and there is no
+     * denormalised name to fall back on — deleting the decider's account
+     * loses that attribution. Accepted tradeoff: the resolution itself
+     * (option, note, resolvedAt) is untouched, only "who" is forgotten.
+     */
+    decidedByUserId: text().references(() => users.id, { onDelete: "set null" }),
     resolution: jsonb(),
     decisionNote: text(),
     resolvedAt: timestamp({ withTimezone: true }),
@@ -151,9 +158,8 @@ export const decisionVotes = pgTable(
     decisionId: uuid()
       .notNull()
       .references(() => decisions.id),
-    userId: text()
-      .notNull()
-      .references(() => users.id),
+    /** ON DELETE SET NULL: the ballot (choice + note) survives; only the voter link severs. */
+    userId: text().references(() => users.id, { onDelete: "set null" }),
     /** approve | decline */
     choice: text().notNull(),
     note: text(),

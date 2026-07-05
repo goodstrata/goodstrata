@@ -10,7 +10,7 @@ import {
 } from "@goodstrata/db";
 import type { EventRecord } from "@goodstrata/events";
 import { formatCents, type MembershipRole } from "@goodstrata/shared";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { ServiceContext } from "../context.js";
 import { emailBrand, paragraph, renderEmail } from "../email/index.js";
 import { notifyUsers } from "./notifications.js";
@@ -42,7 +42,13 @@ const COMMITTEE_NOTIFY_ROLES: MembershipRole[] = [
   "manager_admin",
 ];
 
-/** Distinct users holding any of the given active roles in the scheme. */
+/**
+ * Distinct users holding any of the given active roles in the scheme.
+ * `memberships.userId` is nullable (ON DELETE SET NULL severs a deleted
+ * account) — `isNotNull` filters those out at the query, and the map/filter
+ * below narrows the TS type; a role-holder with no login left can't be
+ * notified anyway.
+ */
 async function userIdsWithRoles(
   ctx: ServiceContext,
   schemeId: string,
@@ -56,17 +62,24 @@ async function userIdsWithRoles(
         eq(memberships.schemeId, schemeId),
         inArray(memberships.role, [...roles]),
         isNull(memberships.endedOn),
+        isNotNull(memberships.userId),
       ),
     );
-  return rows.map((r) => r.userId);
+  return rows.map((r) => r.userId).filter((id): id is string => id !== null);
 }
 
 async function allMemberUserIds(ctx: ServiceContext, schemeId: string): Promise<string[]> {
   const rows = await ctx.db
     .selectDistinct({ userId: memberships.userId })
     .from(memberships)
-    .where(and(eq(memberships.schemeId, schemeId), isNull(memberships.endedOn)));
-  return rows.map((r) => r.userId);
+    .where(
+      and(
+        eq(memberships.schemeId, schemeId),
+        isNull(memberships.endedOn),
+        isNotNull(memberships.userId),
+      ),
+    );
+  return rows.map((r) => r.userId).filter((id): id is string => id !== null);
 }
 
 /**
@@ -79,7 +92,7 @@ async function orgAdminTargets(
   ctx: ServiceContext,
   organizationId: string,
 ): Promise<{ schemeId: string; userId: string }[]> {
-  return await ctx.db
+  const rows = await ctx.db
     .selectDistinct({ schemeId: memberships.schemeId, userId: memberships.userId })
     .from(memberships)
     .innerJoin(schemes, eq(memberships.schemeId, schemes.id))
@@ -88,8 +101,10 @@ async function orgAdminTargets(
         eq(schemes.organizationId, organizationId),
         eq(memberships.role, "manager_admin"),
         isNull(memberships.endedOn),
+        isNotNull(memberships.userId),
       ),
     );
+  return rows.filter((r): r is { schemeId: string; userId: string } => r.userId !== null);
 }
 
 /**
@@ -359,8 +374,12 @@ export async function handleEventForNotifications(
       const post = await ctx.db.query.communityPosts.findFirst({
         where: eq(communityPosts.id, payload.postId),
       });
-      // Don't notify the author about their own comment.
-      if (!post || post.authorUserId === payload.authorUserId) return { created: 0 };
+      // Don't notify the author about their own comment. A null authorUserId
+      // means the post's author account has since been deleted — no login
+      // left to notify.
+      if (!post || !post.authorUserId || post.authorUserId === payload.authorUserId) {
+        return { created: 0 };
+      }
       const created = await notifyUsers(ctx, schemeId, [post.authorUserId], {
         title: "New comment on your post",
         body: "Someone replied to your community board post.",

@@ -2,7 +2,7 @@ import { invites, lots, memberships, ownerships, people, users } from "@goodstra
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { ServiceContext } from "../context.js";
-import { DomainError } from "../errors.js";
+import { DomainError, notFound } from "../errors.js";
 
 export const createPersonInput = z
   .object({
@@ -48,6 +48,79 @@ export async function createPerson(
       email: input.email || null,
       phone: input.phone || null,
     })
+    .returning();
+  return rows[0]!;
+}
+
+/** Shape of `people.mailingAddress` (free-form jsonb; see documents-pdf.ts's addressLines). */
+export const mailingAddressInput = z
+  .object({
+    line1: z.string().trim().max(200).optional(),
+    line2: z.string().trim().max(200).optional(),
+    suburb: z.string().trim().max(100).optional(),
+    state: z.string().trim().max(50).optional(),
+    postcode: z.string().trim().max(20).optional(),
+  })
+  .strict();
+export type MailingAddressInput = z.infer<typeof mailingAddressInput>;
+
+/** Partial update of a roll entry (APP 13 correction). Every field is optional. */
+export const updatePersonInput = z
+  .object({
+    givenName: z.string().trim().max(200).optional(),
+    familyName: z.string().trim().max(200).optional(),
+    companyName: z.string().trim().max(200).optional(),
+    email: z.string().trim().email().optional(),
+    phone: z.string().trim().max(50).optional(),
+    /** `null` clears a previously recorded mailing address. */
+    mailingAddress: mailingAddressInput.nullable().optional(),
+  })
+  .strict();
+export type UpdatePersonInput = z.infer<typeof updatePersonInput>;
+
+/**
+ * Correct a roll entry's own details — the person-record equivalent of the
+ * self-serve profile edit, but for the contact record an officer maintains on
+ * someone's behalf (owners/tenants often never log in at all). Only supplied
+ * fields are touched; omitted fields are left as they were.
+ */
+export async function updatePerson(
+  ctx: ServiceContext,
+  schemeId: string,
+  personId: string,
+  input: UpdatePersonInput,
+) {
+  const existing = await ctx.db.query.people.findFirst({
+    where: and(eq(people.schemeId, schemeId), eq(people.id, personId)),
+  });
+  if (!existing) throw notFound("Person");
+
+  // Same one-person-per-email rule as create: a correction shouldn't collide
+  // with another roll entry.
+  if (input.email && input.email !== existing.email) {
+    const dupe = await ctx.db.query.people.findFirst({
+      where: and(eq(people.schemeId, schemeId), eq(people.email, input.email)),
+    });
+    if (dupe && dupe.id !== personId) {
+      throw new DomainError(
+        "DUPLICATE_PERSON",
+        "Someone with that email address is already on the roll",
+        409,
+      );
+    }
+  }
+
+  const rows = await ctx.db
+    .update(people)
+    .set({
+      ...(input.givenName !== undefined ? { givenName: input.givenName || null } : {}),
+      ...(input.familyName !== undefined ? { familyName: input.familyName || null } : {}),
+      ...(input.companyName !== undefined ? { companyName: input.companyName || null } : {}),
+      ...(input.email !== undefined ? { email: input.email || null } : {}),
+      ...(input.phone !== undefined ? { phone: input.phone || null } : {}),
+      ...(input.mailingAddress !== undefined ? { mailingAddress: input.mailingAddress } : {}),
+    })
+    .where(eq(people.id, personId))
     .returning();
   return rows[0]!;
 }

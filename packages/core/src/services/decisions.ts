@@ -6,7 +6,7 @@ import {
   type DecisionKind,
   type MembershipRole,
 } from "@goodstrata/shared";
-import { and, asc, desc, eq, getTableColumns, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError, notFound } from "../errors.js";
@@ -146,7 +146,11 @@ async function finalizeDecision(
   return { decisionId: decision.id, status, optionId };
 }
 
-/** Distinct users currently eligible to vote on a decision of this tier. */
+/**
+ * Distinct users currently eligible to vote on a decision of this tier. A
+ * membership whose login has since been deleted (`userId` SET NULL) can't
+ * cast a ballot, so it's excluded from the eligible/majority denominator.
+ */
 async function countEligibleVoters(
   tx: DbHandle,
   schemeId: string,
@@ -161,6 +165,7 @@ async function countEligibleVoters(
         eq(memberships.schemeId, schemeId),
         inArray(memberships.role, [...allowed]),
         isNull(memberships.endedOn),
+        isNotNull(memberships.userId),
       ),
     );
   return rows.length;

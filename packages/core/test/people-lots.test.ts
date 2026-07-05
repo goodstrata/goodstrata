@@ -143,3 +143,60 @@ describe("people & lots roll", () => {
     expect(person.phone).toBeNull();
   });
 });
+
+describe("updatePerson (APP 13 correction)", () => {
+  it("corrects phone and mailing address without touching omitted fields", async () => {
+    const ctx = ctxAt(NOW);
+    const person = await peopleService.createPerson(ctx, schemeId, {
+      givenName: "Drew",
+      familyName: "Resident",
+      email: "drew@example.com",
+    });
+
+    const updated = await peopleService.updatePerson(ctx, schemeId, person.id, {
+      phone: "0400 111 222",
+      mailingAddress: { line1: "12 Fix St", suburb: "Brunswick", state: "VIC", postcode: "3056" },
+    });
+
+    expect(updated.phone).toBe("0400 111 222");
+    expect(updated.mailingAddress).toEqual({
+      line1: "12 Fix St",
+      suburb: "Brunswick",
+      state: "VIC",
+      postcode: "3056",
+    });
+    // Untouched fields survive the partial update.
+    expect(updated.givenName).toBe("Drew");
+    expect(updated.email).toBe("drew@example.com");
+  });
+
+  it("clears the mailing address when explicitly set to null", async () => {
+    const ctx = ctxAt(NOW);
+    const person = await peopleService.createPerson(ctx, schemeId, { givenName: "Sam" });
+    await peopleService.updatePerson(ctx, schemeId, person.id, {
+      mailingAddress: { line1: "1 Temp St" },
+    });
+
+    const cleared = await peopleService.updatePerson(ctx, schemeId, person.id, {
+      mailingAddress: null,
+    });
+    expect(cleared.mailingAddress).toBeNull();
+  });
+
+  it("rejects a correction that collides with another roll entry's email", async () => {
+    const ctx = ctxAt(NOW);
+    const person = await peopleService.createPerson(ctx, schemeId, { givenName: "Jordan" });
+    await expect(
+      peopleService.updatePerson(ctx, schemeId, person.id, { email: "billie@example.com" }),
+    ).rejects.toMatchObject({ code: "DUPLICATE_PERSON" });
+  });
+
+  it("404s for a person outside the scheme", async () => {
+    const ctx = ctxAt(NOW);
+    await expect(
+      peopleService.updatePerson(ctx, schemeId, "00000000-0000-0000-0000-000000000000", {
+        phone: "0400 000 000",
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});

@@ -56,7 +56,7 @@ export * as onboardingService from "./services/onboarding.js";
 export * as paymentsService from "./services/payments.js";
 export { recordManualPaymentInput } from "./services/payments.js";
 export * as peopleService from "./services/people.js";
-export { createPersonInput } from "./services/people.js";
+export { createPersonInput, updatePersonInput } from "./services/people.js";
 export * as recoveryService from "./services/recovery.js";
 export * as schemesService from "./services/schemes.js";
 export { createSchemeInput } from "./services/schemes.js";

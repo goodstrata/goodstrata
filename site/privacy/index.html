@@ -127,9 +127,13 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       calculated by ordinary code, and the AI does not determine financial figures. Agents assist
       and draft; people make the decisions that spend money or commit the building; and every action
       is written to the audit log. Depending on the deployment, the model that powers the agents may
-      run locally or through a model provider engaged to process operational data on our behalf under
-      appropriate confidentiality and security terms. We do not use your personal information to train
-      third-party AI models.
+      run locally, or through <strong>Anthropic's</strong> hosted Claude API (United States) as the
+      primary model provider, with OpenRouter as a fallback if configured. These providers see only
+      the operational data an agent needs for its task — for example a levy-reminder draft may
+      include an owner's name, email address, and arrears figures, and the AI meeting chair processes
+      a portion of the live meeting transcript. We do not use your personal information to train
+      third-party AI models, and providers are engaged under confidentiality and security terms
+      appropriate to that processing.
     </p>
 
     <h2>4. Where your information is stored</h2>
@@ -175,6 +179,28 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             <td>Document and file storage</td>
             <td>Uploaded documents, quotes, minutes, and generated files</td>
           </tr>
+          <tr>
+            <td>Anthropic (United States)</td>
+            <td>AI processing — primary provider for agent drafting (levy reminders, minutes,
+              maintenance triage, the AI meeting chair)</td>
+            <td>Operational data relevant to the agent's task — e.g. an owner's name and email with
+              arrears figures, or a portion of a meeting transcript. Anthropic does not train its
+              models on this data by default. OpenRouter (also United States) is used as a fallback
+              provider if configured, on the same basis.</td>
+          </tr>
+          <tr>
+            <td>Daily.co (United States)</td>
+            <td>Video meetings and live transcription</td>
+            <td>Participant display names in meeting room access tokens; live audio during a meeting;
+              the resulting transcript, which we then store as a document</td>
+          </tr>
+          <tr>
+            <td>Google (United States)</td>
+            <td>"Sign in with Google"; Google Tag Manager on the marketing site</td>
+            <td>Sign-in: your name, email address, and profile photo, if you choose that sign-in
+              method. Tag Manager: standard browser analytics data when you visit our marketing site
+              (goodstrata.com.au) — see section 6.</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -182,12 +208,24 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       We may also disclose information where required or authorised by law, to protect our legal
       rights, or in connection with a sale or restructure of the business (in which case it stays
       subject to protections consistent with this policy). We do not sell your personal information,
-      and we do not disclose it for third-party advertising. Some providers may process or store data
-      outside Australia; where that occurs, we take reasonable steps to ensure the information is
-      handled consistently with the APPs.
+      and we do not disclose it for third-party advertising. As the table above shows, some
+      providers — Anthropic and OpenRouter, Daily.co, and Google — are based in the United States and
+      process information outside Australia; where that occurs, we take reasonable steps to ensure
+      the information is handled consistently with the APPs.
     </p>
 
-    <h2>6. How we keep it secure</h2>
+    <h2>6. Cookies and analytics</h2>
+    <p>
+      Our marketing site (<code>goodstrata.com.au</code>, including this page) uses Google Tag
+      Manager to load basic web analytics, which may set cookies or similar technologies in your
+      browser to measure how visitors use the site. The hosted application
+      (<code>my.goodstrata.com.au</code>) does not run third-party analytics or advertising
+      trackers; it uses only the session cookie needed to keep you signed in. You can control
+      cookies through your browser settings — blocking analytics cookies does not affect your
+      ability to use the hosted application.
+    </p>
+
+    <h2>7. How we keep it secure</h2>
     <p>
       We take reasonable steps to protect personal information from misuse, interference, loss, and
       unauthorised access, modification, or disclosure. These include encryption in transit,
@@ -197,17 +235,21 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       obligations under the Notifiable Data Breaches scheme where they apply.
     </p>
 
-    <h2>7. How long we keep it</h2>
+    <h2>8. How long we keep it</h2>
     <p>
       We keep personal information for as long as needed to provide the service and to meet the legal
-      record-keeping obligations that apply to owners corporations, which can require financial and
-      meeting records to be retained for several years. Because the audit log is append-only, entries
-      in it are retained as part of the corporation's permanent record. When information is no longer
-      required and we are not obliged to retain it, we take reasonable steps to delete or de-identify
-      it.
+      record-keeping obligations that apply to owners corporations. Financial records — including
+      levy notices, receipts, and their supporting documents — are retained for seven years from the
+      date they are created, matching the retention period owners corporations must meet under the
+      Owners Corporations Act. Once that period passes, a scheduled process deletes the stored file
+      and removes identifying details from the record. Because the audit log is append-only, entries
+      in it are retained as part of the corporation's permanent record, and other operational records
+      (such as messages, meeting transcripts, and AI-agent logs) are retained for as long as your
+      account is active. Where we are not obliged to retain other information and it is no longer
+      required, we take reasonable steps to delete or de-identify it.
     </p>
 
-    <h2>8. Your rights — access and correction</h2>
+    <h2>9. Your rights — access and correction</h2>
     <p>
       You may ask to access the personal information we hold about you, and to have it corrected if it
       is inaccurate, out of date, incomplete, or misleading. Much of your own data is also visible to
@@ -218,7 +260,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       and we will help route your request appropriately.
     </p>
 
-    <h2>9. Self-hosting</h2>
+    <h2>10. Self-hosting</h2>
     <p>
       GoodStrata's source code is open source under the Apache-2.0 licence, and an owners corporation
       or operator can run its own copy on its own infrastructure. If you use a self-hosted deployment,
@@ -227,13 +269,13 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       <code>my.goodstrata.com.au</code>.
     </p>
 
-    <h2>10. Changes to this policy</h2>
+    <h2>11. Changes to this policy</h2>
     <p>
       We may update this policy from time to time. When we make a material change, we will update the
       "last updated" date above and, where appropriate, notify you through the platform or by email.
     </p>
 
-    <h2>11. Contact and complaints</h2>
+    <h2>12. Contact and complaints</h2>
     <p>
       For privacy questions, access or correction requests, or to make a complaint about how we have
       handled your personal information, contact Good Strata Pty Ltd via

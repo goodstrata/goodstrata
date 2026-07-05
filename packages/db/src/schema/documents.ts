@@ -1,5 +1,15 @@
 import { DOCUMENT_ACCESS_LEVELS, DOCUMENT_CATEGORIES } from "@goodstrata/shared";
-import { bigint, date, index, jsonb, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  date,
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { createdAt, pk } from "./_common.js";
 import { schemes } from "./tenancy.js";
 
@@ -22,6 +32,8 @@ export const documents = pgTable(
     accessLevel: documentAccessLevelEnum().notNull().default("owners"),
     /** Statutory retention (financial records: 7 years). */
     retentionUntil: date(),
+    /** Stamped by the daily retention sweep once the object is deleted and the row de-identified. */
+    purgedAt: timestamp({ withTimezone: true }),
     supersedesDocumentId: uuid(),
     uploadedBy: jsonb().notNull(), // Actor
     createdAt: createdAt(),

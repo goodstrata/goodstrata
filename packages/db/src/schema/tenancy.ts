@@ -116,7 +116,12 @@ export const people = pgTable(
     schemeId: uuid()
       .notNull()
       .references(() => schemes.id),
-    userId: text().references(() => users.id),
+    /**
+     * Optional login link. ON DELETE SET NULL: the roll entry — and every
+     * ownership, tenancy, and voting record hung off it — must outlive a
+     * better-auth account deletion. Deleting the login only severs this link.
+     */
+    userId: text().references(() => users.id, { onDelete: "set null" }),
     givenName: text(),
     familyName: text(),
     companyName: text(),
@@ -187,9 +192,12 @@ export const memberships = pgTable(
     schemeId: uuid()
       .notNull()
       .references(() => schemes.id),
-    userId: text()
-      .notNull()
-      .references(() => users.id),
+    /**
+     * ON DELETE SET NULL, not cascade: who held a role and when is itself
+     * part of the statutory register, so the period row is kept even after
+     * the login behind it is deleted — only the link to that account severs.
+     */
+    userId: text().references(() => users.id, { onDelete: "set null" }),
     role: membershipRoleEnum().notNull(),
     startedOn: date().notNull(),
     endedOn: date(),

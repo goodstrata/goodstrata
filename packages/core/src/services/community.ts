@@ -41,6 +41,14 @@ export interface PostAuthor {
   image: string | null;
 }
 
+/**
+ * `communityPosts.authorUserId` / `communityComments.authorUserId` are
+ * nullable at the schema level (ON DELETE SET NULL severs a deleted author's
+ * link), but every feed/thread read below INNER JOINs on `users` — a post or
+ * comment whose author account is gone simply drops out of the join, so the
+ * `!` assertions on `authorUserId` further down are safe.
+ */
+
 export interface PostImageView {
   id: string;
   mime: string;
@@ -224,7 +232,7 @@ export async function listFeed(
     id: p.id,
     body: p.body,
     status: p.status,
-    author: { userId: p.authorUserId, name: p.authorName, image: p.authorImage },
+    author: { userId: p.authorUserId!, name: p.authorName, image: p.authorImage },
     images: images.get(p.id) ?? [],
     likeCount: likeCounts.get(p.id) ?? 0,
     commentCount: commentCounts.get(p.id) ?? 0,
@@ -295,7 +303,7 @@ export async function getThread(
   const comments: CommentView[] = commentRows.map((c) => ({
     id: c.id,
     body: c.body,
-    author: { userId: c.authorUserId, name: c.authorName, image: c.authorImage },
+    author: { userId: c.authorUserId!, name: c.authorName, image: c.authorImage },
     likeCount: commentLikeCounts.get(c.id) ?? 0,
     likedByMe: myCommentLikeSet.has(c.id),
     createdAt: c.createdAt.toISOString(),
@@ -306,7 +314,7 @@ export async function getThread(
       id: p.id,
       body: p.body,
       status: p.status,
-      author: { userId: p.authorUserId, name: p.authorName, image: p.authorImage },
+      author: { userId: p.authorUserId!, name: p.authorName, image: p.authorImage },
       images: images.get(p.id) ?? [],
       likeCount: likeCounts.get(p.id) ?? 0,
       commentCount: comments.length,

@@ -8,6 +8,7 @@ import {
   arrearsService,
   complianceService,
   decisionsService,
+  documentsService,
   meetingsService,
   notifierService,
 } from "@goodstrata/core";
@@ -26,6 +27,7 @@ import type { AppDeps } from "./deps.js";
 const DECISION_EXECUTE_QUEUE = "decision.execute";
 const NOTIFY_QUEUE = "notify";
 const CRON_ARREARS = "cron.arrears.daily";
+const CRON_RETENTION = "cron.retention.daily";
 const MEETING_CONDUCT_QUEUE = "meeting.conduct";
 const MEETING_CONDUCT_KICKOFF_QUEUE = "meeting.conduct.kickoff";
 /** First conductor tick fires shortly after the video room opens. */
@@ -208,6 +210,19 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
       "[cron:compliance]",
       await complianceService.sweep(deps.serviceContext(systemActor("cron.compliance.daily"))),
     );
+  });
+
+  // Retention: delete stored objects + de-identify document rows once their
+  // retentionUntil date has passed. Global sweep (documents span every
+  // scheme), same idempotent-cron shape as the compliance sweep above.
+  await boss.createQueue(CRON_RETENTION).catch(() => {});
+  await boss.schedule(CRON_RETENTION, "0 8 * * *", null, { tz: "Australia/Melbourne" });
+  await boss.work(CRON_RETENTION, async () => {
+    const ctx = deps.serviceContext(systemActor(CRON_RETENTION));
+    const result = await documentsService.enforceRetention(ctx);
+    if (result.purged > 0) {
+      console.log(`[cron:retention] purged ${result.purged} of ${result.scanned} due document(s)`);
+    }
   });
 
   return {

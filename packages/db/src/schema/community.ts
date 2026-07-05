@@ -27,9 +27,8 @@ export const communityPosts = pgTable(
     schemeId: uuid()
       .notNull()
       .references(() => schemes.id),
-    authorUserId: text()
-      .notNull()
-      .references(() => users.id),
+    /** ON DELETE SET NULL: the post survives account deletion; only the author link severs. */
+    authorUserId: text().references(() => users.id, { onDelete: "set null" }),
     body: text().notNull(),
     status: communityPostStatusEnum().notNull().default("visible"),
     createdAt: createdAt(),
@@ -68,9 +67,8 @@ export const communityComments = pgTable(
     postId: uuid()
       .notNull()
       .references(() => communityPosts.id),
-    authorUserId: text()
-      .notNull()
-      .references(() => users.id),
+    /** ON DELETE SET NULL: the comment survives account deletion; only the author link severs. */
+    authorUserId: text().references(() => users.id, { onDelete: "set null" }),
     body: text().notNull(),
     status: communityPostStatusEnum().notNull().default("visible"),
     createdAt: createdAt(),
@@ -90,9 +88,8 @@ export const communityPostLikes = pgTable(
     postId: uuid()
       .notNull()
       .references(() => communityPosts.id),
-    userId: text()
-      .notNull()
-      .references(() => users.id),
+    /** ON DELETE SET NULL: the like count survives account deletion; only the liker link severs. */
+    userId: text().references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("community_post_likes_post_user_idx").on(t.postId, t.userId)],
@@ -109,9 +106,8 @@ export const communityCommentLikes = pgTable(
     commentId: uuid()
       .notNull()
       .references(() => communityComments.id),
-    userId: text()
-      .notNull()
-      .references(() => users.id),
+    /** ON DELETE SET NULL: the like count survives account deletion; only the liker link severs. */
+    userId: text().references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("community_comment_likes_comment_user_idx").on(t.commentId, t.userId)],

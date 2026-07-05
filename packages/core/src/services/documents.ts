@@ -2,7 +2,7 @@ import { documents } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import { storageKey } from "@goodstrata/integrations";
 import type { DocumentAccessLevel, DocumentCategory } from "@goodstrata/shared";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { causationFields, type ServiceContext } from "../context.js";
 
 export interface UploadDocumentInput {
@@ -106,4 +106,56 @@ export async function getDocument(ctx: ServiceContext, schemeId: string, documen
       where: and(eq(documents.schemeId, schemeId), eq(documents.id, documentId)),
     })) ?? null
   );
+}
+
+export interface RetentionResult {
+  scanned: number;
+  purged: number;
+}
+
+/**
+ * Enforce `documents.retentionUntil`: once the retention date has passed,
+ * delete the stored object and de-identify the row — clear the title and
+ * stamp `purgedAt` — while the row itself (category, access tier, retention
+ * date, createdAt) stays behind as the statutory record that something
+ * existed here and was disposed of on schedule. Idempotent: a row with
+ * `purgedAt` already set is skipped, so a retried/duplicate cron tick is a
+ * no-op. Intended to run daily (see boot.ts CRON_RETENTION).
+ */
+export async function enforceRetention(ctx: ServiceContext): Promise<RetentionResult> {
+  const today = ctx.clock.now().toISOString().slice(0, 10);
+  const due = await ctx.db.query.documents.findMany({
+    where: and(
+      isNotNull(documents.retentionUntil),
+      lt(documents.retentionUntil, today),
+      isNull(documents.purgedAt),
+    ),
+  });
+
+  let purged = 0;
+  for (const doc of due) {
+    // Best-effort: if the object is already gone (e.g. a prior run deleted it
+    // but a crash left the row unmarked), that shouldn't block de-identifying
+    // the row on this pass.
+    await ctx.integrations.storage.delete(doc.storageKey).catch(() => {});
+
+    await ctx.db.transaction(async (tx) => {
+      await tx
+        .update(documents)
+        .set({ title: "[Deleted — retention period expired]", purgedAt: ctx.clock.now() })
+        .where(eq(documents.id, doc.id));
+
+      await publishEvent(tx, {
+        schemeId: doc.schemeId,
+        stream: `document:${doc.id}`,
+        type: "document.retention.purged",
+        payload: { documentId: doc.id, category: doc.category, retentionUntil: doc.retentionUntil },
+        actor: ctx.actor,
+        ...causationFields(ctx),
+      });
+    });
+    purged += 1;
+  }
+
+  return { scanned: due.length, purged };
 }

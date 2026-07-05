@@ -14,9 +14,8 @@ export const notifications = pgTable(
     schemeId: uuid()
       .notNull()
       .references(() => schemes.id),
-    userId: text()
-      .notNull()
-      .references(() => users.id),
+    /** ON DELETE SET NULL: keeps the notification row on the spine; the recipient link severs. */
+    userId: text().references(() => users.id, { onDelete: "set null" }),
     title: text().notNull(),
     body: text().notNull(),
     /** finance | maintenance | meeting | decision | general */

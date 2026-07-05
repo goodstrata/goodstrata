@@ -6,6 +6,7 @@ import {
   lotsService,
   onboardingService,
   peopleService,
+  updatePersonInput,
 } from "@goodstrata/core";
 import {
   DOCUMENT_ACCESS_LEVELS,
@@ -86,6 +87,22 @@ export function peopleRoutes(deps: AppDeps) {
           c.req.valid("json"),
         );
         return c.json({ person }, 201);
+      },
+    )
+    .patch(
+      "/:schemeId/people/:personId",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      zv("json", updatePersonInput),
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const person = await peopleService.updatePerson(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("personId"),
+          c.req.valid("json"),
+        );
+        return c.json({ person });
       },
     )
     .post(
