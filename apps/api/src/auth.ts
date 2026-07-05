@@ -12,6 +12,7 @@ import {
   verifications,
 } from "@goodstrata/db";
 import type { EmailProvider } from "@goodstrata/integrations";
+import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { jwt, magicLink, mcp } from "better-auth/plugins";
 
@@ -49,8 +50,16 @@ export function createAuth(opts: {
     secret: opts.secret,
     baseURL: `${opts.appUrl}/api/auth`,
     // claude.ai is the MCP client; loopback covers local MCP inspectors and
-    // native clients doing the loopback OAuth redirect.
-    trustedOrigins: [opts.appUrl, "https://claude.ai", "http://localhost", "http://127.0.0.1"],
+    // native clients doing the loopback OAuth redirect. goodstrata:// is the
+    // native app (better-auth Expo client); exp:// covers Expo Go in dev.
+    trustedOrigins: [
+      opts.appUrl,
+      "https://claude.ai",
+      "http://localhost",
+      "http://127.0.0.1",
+      "goodstrata://",
+      "exp://",
+    ],
     database: drizzleAdapter(opts.db, {
       provider: "pg",
       schema: {
@@ -200,6 +209,8 @@ export function createAuth(opts: {
       },
     },
     plugins: [
+      // Native app support: origin/cookie handling for the Expo client.
+      expo(),
       magicLink({
         sendMagicLink: async ({ email, url }) => {
           const { html, text } = renderEmail({

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "catalog:",
+    "@better-auth/expo": "^1.6.23",
     "@goodstrata/agents": "workspace:*",
     "@goodstrata/core": "workspace:*",
     "@goodstrata/db": "workspace:*",
@@ -25,9 +26,9 @@
     "@hono/zod-validator": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "better-auth": "catalog:",
+    "drizzle-orm": "catalog:",
     "hono": "catalog:",
     "pg-boss": "catalog:",
-    "drizzle-orm": "catalog:",
     "tsx": "catalog:",
     "zod": "catalog:"
   },
