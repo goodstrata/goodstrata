@@ -20,7 +20,7 @@ export function parseCsv(text: string): string[][] {
   };
 
   while (i < text.length) {
-    const ch = text[i]!;
+    const ch = text.charAt(i);
     if (inQuotes) {
       if (ch === '"') {
         if (text[i + 1] === '"') {

@@ -55,12 +55,13 @@ export const INVITABLE_ROLES = [
 export type InvitableRole = (typeof INVITABLE_ROLES)[number];
 
 /** Roles that sit on the committee (used for decision routing). */
-export const COMMITTEE_ROLES: readonly MembershipRole[] = [
+export const COMMITTEE_ROLES = [
   "committee_member",
   "chair",
   "secretary",
   "treasurer",
-];
+] as const satisfies readonly MembershipRole[];
+export type CommitteeRole = (typeof COMMITTEE_ROLES)[number];
 
 export const OWNERSHIP_KINDS = ["sole", "joint", "company_nominee"] as const;
 export type OwnershipKind = (typeof OWNERSHIP_KINDS)[number];

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AgentName } from "./enums.js";
 
 /** Who performed an action — stamped on every event. */
 export const actorSchema = z.discriminatedUnion("kind", [
@@ -15,7 +16,7 @@ export type Actor = z.infer<typeof actorSchema>;
 
 export const systemActor = (id: string): Actor => ({ kind: "system", id });
 export const userActor = (id: string): Actor => ({ kind: "user", id });
-export const agentActor = (name: string, agentRunId: string): Actor => ({
+export const agentActor = (name: AgentName, agentRunId: string): Actor => ({
   kind: "agent",
   id: name,
   agentRunId,
