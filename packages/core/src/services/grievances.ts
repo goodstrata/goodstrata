@@ -112,11 +112,11 @@ async function personIdForActor(ctx: ServiceContext, schemeId: string): Promise<
     where: and(eq(people.schemeId, schemeId), eq(people.userId, ctx.actor.id)),
   });
   if (!person) {
-    throw new DomainError(
-      "NO_PERSON",
-      "Your login isn't linked to a person in this scheme; name the complainant explicitly",
-      422,
-    );
+    const message =
+      "Your login isn't linked to a person in this scheme — choose who the complaint is from";
+    // Zod-issue-shaped details: the API envelope forwards `details` verbatim,
+    // and form clients attach `{path, message}` issues to the matching input.
+    throw new DomainError("NO_PERSON", message, 422, [{ path: ["complainantPersonId"], message }]);
   }
   return person.id;
 }

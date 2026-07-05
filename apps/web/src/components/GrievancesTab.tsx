@@ -283,6 +283,7 @@ function MyComplaints({ schemeId, onChange }: { schemeId: string; onChange: () =
 const raiseSchema = z.object({
   subject: z.string().trim().min(3, "Give the complaint a short subject."),
   details: z.string().trim().min(3, "Describe what happened."),
+  complainantPersonId: z.string(),
   respondentPersonId: z.string(),
   approvedForm: z.boolean(),
 });
@@ -300,6 +301,7 @@ function RaiseComplaintDialog({ schemeId, onChange }: { schemeId: string; onChan
             subject: values.subject,
             details: values.details,
             approvedForm: values.approvedForm,
+            complainantPersonId: values.complainantPersonId || undefined,
             respondentPersonId: values.respondentPersonId || undefined,
           },
         }),
@@ -314,7 +316,13 @@ function RaiseComplaintDialog({ schemeId, onChange }: { schemeId: string; onChan
 
   const form = useAppForm({
     schema: raiseSchema,
-    defaultValues: { subject: "", details: "", respondentPersonId: "", approvedForm: true },
+    defaultValues: {
+      subject: "",
+      details: "",
+      complainantPersonId: "",
+      respondentPersonId: "",
+      approvedForm: true,
+    },
     onSubmit: (values) => create.mutateAsync(values),
   });
 
@@ -374,6 +382,34 @@ function RaiseComplaintDialog({ schemeId, onChange }: { schemeId: string; onChan
               </Field>
             )}
           </form.Field>
+          <form.Field name="complainantPersonId">
+            {(field) => (
+              <Field
+                label="Who is the complaint from?"
+                hint="Leave as “Myself” unless you're lodging on someone's behalf, or your login isn't linked to a person on the roll."
+                error={fieldError(field.state.meta.errors)}
+              >
+                {(controlProps) => (
+                  <Select
+                    value={field.state.value || "self"}
+                    onValueChange={(v) => field.handleChange(v === "self" ? "" : v)}
+                  >
+                    <SelectTrigger {...controlProps} data-testid="complaint-complainant">
+                      <SelectValue placeholder="Myself" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="self">Myself</SelectItem>
+                      {(people.data?.people ?? []).map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {personName(p)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+            )}
+          </form.Field>
           <form.Field name="respondentPersonId">
             {(field) => (
               <Field
@@ -391,7 +427,7 @@ function RaiseComplaintDialog({ schemeId, onChange }: { schemeId: string; onChan
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No one in particular</SelectItem>
-                      {(people.data ?? []).map((p) => (
+                      {(people.data?.people ?? []).map((p) => (
                         <SelectItem key={p.id} value={p.id}>
                           {personName(p)}
                         </SelectItem>
@@ -435,12 +471,13 @@ function usePeople(schemeId: string, enabled = true) {
   return useQuery({
     queryKey: ["people", schemeId],
     enabled,
+    // Cache the SAME shape as PeopleSection/MeetingsTab, which share this
+    // queryKey — caching the bare array here poisons their cache (and vice
+    // versa: their envelope makes `.map` crash in this tab).
     queryFn: async () =>
-      (
-        await unwrap<{ people: Person[] }>(
-          await api.schemes[":schemeId"].people.$get({ param: { schemeId } }),
-        )
-      ).people,
+      unwrap<{ people: Person[] }>(
+        await api.schemes[":schemeId"].people.$get({ param: { schemeId } }),
+      ),
   });
 }
 
@@ -461,7 +498,7 @@ function ComplaintRegister({
   const people = usePeople(schemeId);
   const [showClosed, setShowClosed] = useState(false);
   const nameOf = useMemo(() => {
-    const map = new Map((people.data ?? []).map((p) => [p.id, personName(p)]));
+    const map = new Map((people.data?.people ?? []).map((p) => [p.id, personName(p)]));
     return (id: string | null) => (id ? (map.get(id) ?? "Unknown") : null);
   }, [people.data]);
 
@@ -615,7 +652,7 @@ function ComplaintDetailBody({
   const people = usePeople(schemeId);
   const nameOf = (id: string | null) => {
     if (!id) return null;
-    return personName((people.data ?? []).find((p) => p.id === id));
+    return personName((people.data?.people ?? []).find((p) => p.id === id));
   };
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["complaint", schemeId, complaintId] });
