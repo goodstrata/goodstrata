@@ -23,6 +23,7 @@ import {
   type ComplianceStatus,
   daysBetween,
   fromDateOnly,
+  isRealDateOnly,
   type MembershipRole,
   toDateOnly,
 } from "@goodstrata/shared";
@@ -59,7 +60,7 @@ export const raiseObligationInput = z
     kind: z.enum(COMPLIANCE_KINDS),
     /** Human title; defaults to a per-kind label when omitted. */
     title: z.string().min(1).max(200).optional(),
-    /** ISO date-only (YYYY-MM-DD). */
+    /** ISO date-only (YYYY-MM-DD). Calendar validity is enforced in raiseObligation. */
     dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "dueOn must be an ISO date (YYYY-MM-DD)"),
     /** Stable identity of the subject within its kind (policyId, planId, "registration", …). */
     subjectRef: z.string().min(1),
@@ -167,6 +168,13 @@ export async function raiseObligation(
   input: RaiseObligationInput,
 ): Promise<ComplianceObligation> {
   const parsed = raiseObligationInput.parse(input);
+  // The dueOn regex only checks shape; reject impossible calendar dates
+  // (2026-13-40) here so a forced API call gets a fielded 422 instead of a
+  // Postgres error surfacing as a 500.
+  if (!isRealDateOnly(parsed.dueOn)) {
+    const message = "dueOn must be a real calendar date";
+    throw new DomainError("INVALID_DATE", message, 422, [{ path: ["dueOn"], message }]);
+  }
   const periodKey = parsed.periodKey ?? parsed.dueOn.slice(0, 4);
   const dedupeKey = `${scopeKey(parsed)}:${parsed.kind}:${parsed.subjectRef}:${periodKey}`;
   const responsibleRole = parsed.responsibleRole ?? KIND_DEFAULT_ROLE[parsed.kind];

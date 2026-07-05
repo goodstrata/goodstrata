@@ -31,6 +31,17 @@ export function toDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Date-only helper: true when `dateOnly` is a real calendar date. A shape
+ * regex alone admits impossible dates ("2026-02-30" silently rolls over to
+ * March 2, "2026-13-40" parses invalid); round-tripping through UTC catches
+ * both, and non-canonical shapes ("2026-9-1") fail the compare too.
+ */
+export function isRealDateOnly(dateOnly: string): boolean {
+  const parsed = fromDateOnly(dateOnly);
+  return !Number.isNaN(parsed.getTime()) && toDateOnly(parsed) === dateOnly;
+}
+
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 86_400_000);
 }

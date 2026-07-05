@@ -17,7 +17,7 @@ import {
   daysBetween,
   type VoteChoice,
 } from "@goodstrata/shared";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { emailBrand, infoNote, keyValueTable, paragraph, renderEmail } from "../email/index.js";
@@ -558,19 +558,25 @@ export async function castVote(
   });
   let viaProxyId: string | null = null;
   if (!ownership) {
+    // A person can hold several proxy rows for one lot (a lapsed or
+    // otherwise-scoped one alongside a current one), so validity — expiry and
+    // meeting scope — must be part of the lookup itself. Checking a single
+    // arbitrary row after the fact lets a stale proxy shadow a valid one.
+    const today = ctx.clock.now().toISOString().slice(0, 10);
     const proxy = await ctx.db.query.proxies.findFirst({
       where: and(
         eq(proxies.lotId, input.lotId),
         eq(proxies.proxyPersonId, personId),
         eq(proxies.schemeId, schemeId),
         isNull(proxies.revokedAt),
+        or(isNull(proxies.expiresOn), gte(proxies.expiresOn, today)),
+        // Circular resolutions (meetingId null) accept only general proxies.
+        motion.meetingId
+          ? or(isNull(proxies.meetingId), eq(proxies.meetingId, motion.meetingId))
+          : isNull(proxies.meetingId),
       ),
     });
-    const valid =
-      proxy &&
-      (!proxy.expiresOn || proxy.expiresOn >= ctx.clock.now().toISOString().slice(0, 10)) &&
-      (!proxy.meetingId || proxy.meetingId === motion.meetingId);
-    if (!valid) {
+    if (!proxy) {
       throw new DomainError(
         "NO_STANDING",
         "You are not an owner of this lot and hold no valid proxy for it",

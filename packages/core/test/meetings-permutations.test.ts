@@ -592,18 +592,9 @@ describe("proxy permutations", () => {
     expect(quorumB.representedEntitlement).toBe(10);
   });
 
-  // BUG (documented, not fixed here): castVote resolves standing with a single
-  // `findFirst` on proxies(lotId, proxyPersonId, revokedAt IS NULL) and then
-  // validates only THAT row's scope/expiry. When the same person holds two
-  // proxies for one lot — e.g. a lapsed/otherwise-scoped one plus a currently
-  // valid one for this meeting — findFirst can return the stale row and the
-  // vote is wrongly rejected with NO_STANDING even though a valid proxy
-  // exists. The lookup should filter on validity (meeting scope + expiry) or
-  // scan all matching rows.
-  // TODO: fix castVote's proxy lookup in packages/core/src/services/meetings.ts
-  // (and mirror whatever ordering guarantee is chosen in quorumStatus, which
-  // already scans all rows and is not affected), then unskip.
-  it.skip("holding a stale proxy alongside a valid one must not block the vote", async () => {
+  // castVote filters validity (meeting scope + expiry) in the proxy lookup
+  // itself, so a stale row for the same (lot, holder) can't shadow a valid one.
+  it("holding a stale proxy alongside a valid one must not block the vote", async () => {
     const meeting = await committeeMeeting("Two-proxy committee");
     const other = await committeeMeeting("Two-proxy other committee");
     // Stale row first: scoped to a different meeting.

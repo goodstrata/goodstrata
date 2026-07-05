@@ -109,23 +109,16 @@ describe("raiseObligation — input permutations", () => {
     );
   });
 
-  it("rejects an impossible calendar date, though not as a 422 (see TODO)", async () => {
-    // '2026-13-40' satisfies the \d{4}-\d{2}-\d{2} regex, so it reaches
-    // Postgres, whose date column throws — the request dies as an unhandled
-    // 500 rather than a fielded validation error. The date PICKER can't send
-    // this, but the API can be forced. Regression-pin that it at least never
-    // persists.
+  it("rejects an impossible calendar date and never persists it", async () => {
+    // '2026-13-40' satisfies the \d{4}-\d{2}-\d{2} regex; calendar validity
+    // is enforced in raiseObligation, so nothing reaches Postgres. The date
+    // PICKER can't send this, but the API can be forced.
     await expect(raise({ dueOn: "2026-13-40", subjectRef: "manual:impossible" })).rejects.toThrow();
     const all = await compliance.listObligations(ctx(), { schemeId, window: "all" });
     expect(all.some((o) => o.subjectRef === "manual:impossible")).toBe(false);
   });
 
-  // TODO(bug): dueOn validation accepts impossible dates like 2026-13-40
-  // (regex checks shape, not calendar validity), so a forced API call gets a
-  // 500 from Postgres instead of a 422 pointing at dueOn. Fix by refining
-  // raiseObligationInput.dueOn (and the route's raiseBody) to require a real
-  // calendar date, then unskip.
-  it.skip("maps an impossible calendar date to a fielded 422", async () => {
+  it("maps an impossible calendar date to a fielded 422", async () => {
     const attempt = raise({ dueOn: "2026-13-40", subjectRef: "manual:impossible-422" });
     await expect(attempt).rejects.toBeInstanceOf(DomainError);
     await expect(attempt).rejects.toMatchObject({ status: 422 });

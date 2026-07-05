@@ -1,5 +1,10 @@
 import { complianceService } from "@goodstrata/core";
-import { COMPLIANCE_KINDS, COMPLIANCE_STATUSES, userActor } from "@goodstrata/shared";
+import {
+  COMPLIANCE_KINDS,
+  COMPLIANCE_STATUSES,
+  isRealDateOnly,
+  userActor,
+} from "@goodstrata/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps } from "../deps.js";
@@ -36,8 +41,11 @@ const SCHEME_RAISABLE_KINDS = [
 const raiseBody = z.object({
   kind: z.enum(SCHEME_RAISABLE_KINDS),
   title: z.string().trim().min(1).max(200),
-  /** ISO date-only (YYYY-MM-DD). */
-  dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "dueOn must be an ISO date (YYYY-MM-DD)"),
+  /** ISO date-only (YYYY-MM-DD); must be a real calendar date, not just the right shape. */
+  dueOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "dueOn must be an ISO date (YYYY-MM-DD)")
+    .refine(isRealDateOnly, "dueOn must be a real calendar date"),
   responsibleRole: z.enum(["chair", "secretary", "treasurer", "manager_admin"]).optional(),
 });
 

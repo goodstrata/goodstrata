@@ -440,10 +440,7 @@ describe("compliance calendar over HTTP", () => {
     expect(res.status).toBe(422);
   });
 
-  // TODO(bug): the dueOn regex accepts impossible dates (2026-13-40); Postgres
-  // then rejects the insert and the client sees a 500 INTERNAL instead of a
-  // fielded 422. Unskip once dueOn validates calendar validity.
-  it.skip("maps an impossible dueOn to a 422", async () => {
+  it("maps an impossible dueOn to a 422", async () => {
     const res = await req(
       CHAIR,
       "POST",

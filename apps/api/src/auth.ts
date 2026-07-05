@@ -1,4 +1,5 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { expo } from "@better-auth/expo";
 import { renderEmail } from "@goodstrata/core";
 import {
   accounts,
@@ -12,7 +13,6 @@ import {
   verifications,
 } from "@goodstrata/db";
 import type { EmailProvider } from "@goodstrata/integrations";
-import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { jwt, magicLink, mcp } from "better-auth/plugins";
 
@@ -184,7 +184,11 @@ export function createAuth(opts: {
       },
     },
     rateLimit: {
-      enabled: true,
+      // Per-IP limiting trips the e2e suite when it runs as one batch
+      // (hundreds of auth calls from one address in seconds). Disable ONLY
+      // under the test runner — vitest sets NODE_ENV="test"; any other value
+      // (production, development, unset) keeps the limiter on unchanged.
+      enabled: process.env.NODE_ENV !== "test",
       window: 60,
       max: 120,
       // Single-instance container; in-memory is correct and zero-setup. Move
