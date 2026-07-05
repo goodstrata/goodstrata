@@ -358,10 +358,23 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     resultEl.innerHTML = SKELETON;
     resultEl.classList.remove("hidden");
     setStatus("Reading your document…"); // the dropzone carries the spinner
+    // Stage the wait: the read routinely takes 10–30s, and a line that never
+    // changes reads as "hung". Escalate through the same aria-live region so
+    // screen readers get the same reassurance. Cleared in `finally`, which
+    // runs synchronously after the success/error paths — a staged line can
+    // never land on top of a result or an error message.
+    const stageTimers = [
+      setTimeout(() => setStatus("Found it — reading the numbers…"), 4000),
+      setTimeout(() => setStatus("Adding up the fees — nearly there…"), 12000),
+    ];
+    // Never shimmer forever: if the API hangs or a flaky mobile upload stalls,
+    // abort at 60s and exit through the normal error/retry path.
+    const aborter = new AbortController();
+    const abortTimer = setTimeout(() => aborter.abort(), 60000);
     try {
       const fd = new FormData();
       fd.set("file", file);
-      const res = await fetch(API, { method: "POST", body: fd });
+      const res = await fetch(API, { method: "POST", body: fd, signal: aborter.signal });
       const data = await res.json();
       if (!res.ok) {
         const msg = data?.error?.message || "We couldn't read that document. Try a clearer PDF or photo.";
@@ -372,8 +385,15 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       render(data);
     } catch (err) {
       restoreIdle();
-      setStatus("Something went wrong reaching the reader. Please try again.", true);
+      setStatus(
+        err?.name === "AbortError"
+          ? "This is taking longer than it should — please try again."
+          : "Something went wrong reaching the reader. Please try again.",
+        true,
+      );
     } finally {
+      clearTimeout(abortTimer);
+      stageTimers.forEach(clearTimeout);
       clearBusy();
     }
   }

@@ -33,6 +33,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <link rel="icon" href="/icon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icon.png" />
   <link rel="preload" href="/fonts/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- The featured clip's poster is this page's LCP image; the other eight
+       posters ship in data-poster and load near the viewport (script below). -->
+  <link rel="preload" href="/clips/c1-poster.jpg" as="image" />
   <link rel="stylesheet" href="/style.css" />
   <style>
     /* Media library — native controls so people can scrub, fullscreen, share. */
@@ -142,7 +145,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
     <div class="media-grid">
       <div class="media-card wide">
-        <video controls playsinline preload="none" poster="/clips/c2-money-is-code-poster.jpg" aria-labelledby="title-money-is-code">
+        <video controls playsinline preload="none" data-poster="/clips/c2-money-is-code-poster.jpg" aria-labelledby="title-money-is-code">
           <source src="/clips/c2-money-is-code.webm" type="video/webm" />
           <source src="/clips/c2-money-is-code.mp4" type="video/mp4" />
         </video>
@@ -154,7 +157,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </div>
       </div>
       <div class="media-card wide">
-        <video controls playsinline preload="none" poster="/clips/c3-one-laptop-poster.jpg" aria-labelledby="title-one-laptop">
+        <video controls playsinline preload="none" data-poster="/clips/c3-one-laptop-poster.jpg" aria-labelledby="title-one-laptop">
           <source src="/clips/c3-one-laptop.webm" type="video/webm" />
           <source src="/clips/c3-one-laptop.mp4" type="video/mp4" />
         </video>
@@ -166,7 +169,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </div>
       </div>
       <div class="media-card wide">
-        <video controls playsinline preload="none" poster="/clips/c4-schedule-b-poster.jpg" aria-labelledby="title-schedule-b">
+        <video controls playsinline preload="none" data-poster="/clips/c4-schedule-b-poster.jpg" aria-labelledby="title-schedule-b">
           <source src="/clips/c4-schedule-b.webm" type="video/webm" />
           <source src="/clips/c4-schedule-b.mp4" type="video/mp4" />
         </video>
@@ -178,7 +181,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </div>
       </div>
       <div class="media-card wide">
-        <video controls playsinline preload="none" poster="/clips/c5-handbook-poster.jpg" aria-labelledby="title-handbook">
+        <video controls playsinline preload="none" data-poster="/clips/c5-handbook-poster.jpg" aria-labelledby="title-handbook">
           <source src="/clips/c5-handbook.webm" type="video/webm" />
           <source src="/clips/c5-handbook.mp4" type="video/mp4" />
         </video>
@@ -202,28 +205,28 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     </p>
     <div class="ads-grid">
       <div class="media-card tall">
-        <video controls playsinline preload="none" poster="/clips/ad1-screwed-poster.jpg" aria-labelledby="title-ad-screwed">
+        <video controls playsinline preload="none" data-poster="/clips/ad1-screwed-poster.jpg" aria-labelledby="title-ad-screwed">
           <source src="/clips/ad1-screwed.mp4" type="video/mp4" />
         </video>
         <h3 id="title-ad-screwed">Do something about it</h3>
         <div class="row"><a href="/clips/ad1-screwed.mp4" download>Download</a></div>
       </div>
       <div class="media-card tall">
-        <video controls playsinline preload="none" poster="/clips/ad2-commission-poster.jpg" aria-labelledby="title-ad-commission">
+        <video controls playsinline preload="none" data-poster="/clips/ad2-commission-poster.jpg" aria-labelledby="title-ad-commission">
           <source src="/clips/ad2-commission.mp4" type="video/mp4" />
         </video>
         <h3 id="title-ad-commission">The commission</h3>
         <div class="row"><a href="/clips/ad2-commission.mp4" download>Download</a></div>
       </div>
       <div class="media-card tall">
-        <video controls playsinline preload="none" poster="/clips/ad3-pov-poster.jpg" aria-labelledby="title-ad-pov">
+        <video controls playsinline preload="none" data-poster="/clips/ad3-pov-poster.jpg" aria-labelledby="title-ad-pov">
           <source src="/clips/ad3-pov.mp4" type="video/mp4" />
         </video>
         <h3 id="title-ad-pov">POV: your AGM papers</h3>
         <div class="row"><a href="/clips/ad3-pov.mp4" download>Download</a></div>
       </div>
       <div class="media-card tall">
-        <video controls playsinline preload="none" poster="/clips/ad4-zero-poster.jpg" aria-labelledby="title-ad-zero">
+        <video controls playsinline preload="none" data-poster="/clips/ad4-zero-poster.jpg" aria-labelledby="title-ad-zero">
           <source src="/clips/ad4-zero.mp4" type="video/mp4" />
         </video>
         <h3 id="title-ad-zero">$8,400 → $0</h3>
@@ -275,6 +278,37 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   </div>
 </footer>
 
+<script>
+  // Below-fold posters ship in `data-poster` (no `poster` attribute) so
+  // ~500KB of grid/ad JPEGs stop competing with the featured clip's poster —
+  // this page's LCP — at load. Assign each poster once its card is within
+  // ~600px of the viewport, mirroring clips.js's warm-up on the homepage.
+  // The cards' var(--card) background + aspect-ratio reserve the box, so a
+  // late poster fades into place with zero layout shift.
+  (function () {
+    "use strict";
+    var vids = document.querySelectorAll("video[data-poster]");
+    if (!vids.length) return;
+    function setPoster(v) {
+      if (!v.poster && v.dataset.poster) v.poster = v.dataset.poster;
+    }
+    if (!("IntersectionObserver" in window)) {
+      Array.prototype.forEach.call(vids, setPoster); // old browser: load all
+      return;
+    }
+    var io = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          setPoster(entry.target);
+          io.unobserve(entry.target);
+        });
+      },
+      { rootMargin: "600px 0px" },
+    );
+    Array.prototype.forEach.call(vids, function (v) { io.observe(v); });
+  })();
+</script>
 <script src="/nav.js" defer></script>
 </body>
 </html>

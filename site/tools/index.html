@@ -81,6 +81,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       font-family: var(--font-sans); font-size: 13px; font-weight: 600;
       padding: 8px 12px; border-radius: 8px; cursor: pointer;
       background: var(--primary); color: var(--on-primary); border: 0;
+      /* Reserve room for the widest label ("Copied ✓" / "Copy failed") so the
+         confirmation swap never nudges the row sideways. */
+      min-width: 7.5em; text-align: center;
     }
     .asks { margin-top: 14px; display: grid; gap: 8px; }
     .asks .ask {
@@ -224,12 +227,31 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     var btn = document.getElementById("copyMcp");
     if (!btn) return;
     btn.addEventListener("click", function () {
-      var url = document.getElementById("mcpUrl").textContent.trim();
-      navigator.clipboard.writeText(url).then(function () {
-        var old = btn.textContent;
-        btn.textContent = "Copied ✓";
-        setTimeout(function () { btn.textContent = old; }, 1600);
-      });
+      var code = document.getElementById("mcpUrl");
+      var url = code.textContent.trim();
+      function flash(label) {
+        btn.textContent = label;
+        setTimeout(function () { btn.textContent = "Copy"; }, 1600);
+      }
+      // Clipboard can be unavailable (insecure context) or refuse (permission):
+      // never let the click silently no-op — select the URL so a manual
+      // ⌘/Ctrl+C still works, and say what happened.
+      var write = navigator.clipboard && navigator.clipboard.writeText
+        ? navigator.clipboard.writeText(url)
+        : Promise.reject();
+      write.then(
+        function () { flash("Copied ✓"); },
+        function () {
+          try {
+            var range = document.createRange();
+            range.selectNodeContents(code);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+          } catch (e) {}
+          flash("Copy failed");
+        }
+      );
     });
   })();
 </script>
