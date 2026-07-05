@@ -81,7 +81,7 @@ export interface TrustStatement {
 }
 
 /** True when `dateOnly(ts)` falls on/after `from` and on/before `to` (each optional). */
-function withinBounds(ts: Date, from?: string, to?: string): boolean {
+export function withinBounds(ts: Date, from?: string, to?: string): boolean {
   const day = ts.toISOString().slice(0, 10);
   if (from && day < from) return false;
   if (to && day > to) return false;
@@ -89,7 +89,7 @@ function withinBounds(ts: Date, from?: string, to?: string): boolean {
 }
 
 /** True when `dateOnly(ts) <= to` (or `to` is open). */
-function onOrBefore(ts: Date, to?: string): boolean {
+export function onOrBefore(ts: Date, to?: string): boolean {
   return !to || ts.toISOString().slice(0, 10) <= to;
 }
 
@@ -207,12 +207,12 @@ export interface AuditExport {
 }
 
 /** Escape a single CSV cell (RFC-4180): quote when it contains , " or newline. */
-function csvCell(value: string | number): string {
+export function csvCell(value: string | number): string {
   const s = String(value);
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function csvRow(cells: (string | number)[]): string {
+export function csvRow(cells: (string | number)[]): string {
   return cells.map(csvCell).join(",");
 }
 

@@ -83,6 +83,46 @@ describe("calculateLevyRun", () => {
       ),
     ).toThrow();
   });
+
+  it("gives a zero-liability lot exactly nothing, without breaking sum-to-budget", () => {
+    // Common-property / non-contributing lot carries weight 0.
+    const lots = [
+      { lotId: "cp", liability: 0 },
+      { lotId: "a", liability: 10 },
+      { lotId: "b", liability: 10 },
+    ];
+    const run = calculateLevyRun([{ fundKind: "admin", annualCents: 1_000_001 }], lots, 4);
+
+    const cpTotal = run.filter((r) => r.lotId === "cp").reduce((a, r) => a + r.totalCents, 0);
+    expect(cpTotal).toBe(0);
+    // Every cp line is 0 (never NaN/undefined).
+    for (const r of run.filter((r) => r.lotId === "cp")) {
+      for (const l of r.lines) expect(l.amountCents).toBe(0);
+    }
+    // The whole budget still lands, distributed across the weighted lots.
+    expect(run.reduce((a, r) => a + r.totalCents, 0)).toBe(1_000_001);
+  });
+
+  it("produces all-zero lines for a fund not yet levied this period (annualCents 0)", () => {
+    const funds = [
+      { fundKind: "admin" as const, annualCents: 4_800_000 },
+      { fundKind: "maintenance" as const, annualCents: 0 },
+    ];
+    const lots = [
+      { lotId: "a", liability: 10 },
+      { lotId: "b", liability: 10 },
+    ];
+    const run = calculateLevyRun(funds, lots, 4);
+
+    // Every maintenance line is exactly 0.
+    const maintenanceLines = run.flatMap((r) => r.lines).filter((l) => l.fundKind === "maintenance");
+    expect(maintenanceLines.length).toBeGreaterThan(0);
+    for (const l of maintenanceLines) expect(l.amountCents).toBe(0);
+
+    // Grand total equals the sum of both budgets (i.e. just the admin fund).
+    const totalBudget = funds.reduce((a, f) => a + f.annualCents, 0);
+    expect(run.reduce((a, r) => a + r.totalCents, 0)).toBe(totalBudget);
+  });
 });
 
 describe("interestAccrued", () => {
@@ -109,6 +149,18 @@ describe("interestAccrued", () => {
     expect(interestAccrued(0, 1000, 30)).toBe(0);
     expect(interestAccrued(-500, 1000, 30)).toBe(0);
     expect(interestAccrued(100_000, 0, 30)).toBe(0);
+  });
+
+  it("rounds a half-cent tie UP (locks the round-half-up convention)", () => {
+    // 5000 × 365 × 1 / (10_000 × 365) = 1,825,000 / 3,650,000 = exactly 0.5.
+    // Math.round → 1. Math.floor / Math.trunc → 0; banker's rounding → 0.
+    // This case is the only thing that distinguishes the current rule.
+    expect(interestAccrued(5000, 365, 1)).toBe(1);
+  });
+
+  it("clamps a negative overdueDays to zero (never accrues on a not-yet-due levy)", () => {
+    expect(interestAccrued(100_000, 1000, -5)).toBe(0);
+    expect(interestAccrued(100_000, 1000, -5, 7)).toBe(0);
   });
 });
 
@@ -177,6 +229,27 @@ describe("matchPayment", () => {
     expect(
       matchPayment({ payid: "gs-0100", amountCents: 75_000 }, notices, { settledPayids: [] }),
     ).toMatchObject({ kind: "matched", via: "amount" });
+  });
+
+  it("parks a reference that matches MORE THAN ONE open notice (never guesses)", () => {
+    // A duplicate PayID across two open notices must never fall through to the
+    // amount heuristic and get allocated onto one lot's levy.
+    const dupNotices = [
+      { levyNoticeId: "n1", payid: "gs-dup", outstandingCents: 40_000 },
+      { levyNoticeId: "n2", payid: "gs-dup", outstandingCents: 60_000 },
+    ];
+    expect(matchPayment({ payid: "gs-dup", amountCents: 60_000 }, dupNotices)).toEqual({
+      kind: "unmatched",
+      reason: "reference matches multiple notices",
+    });
+  });
+
+  it("parks an amount that matches MORE THAN ONE open notice", () => {
+    // n1 and n2 both outstanding 50,000 — ambiguous, must go to a human.
+    expect(matchPayment({ payid: null, amountCents: 50_000 }, notices)).toEqual({
+      kind: "unmatched",
+      reason: "amount matches multiple notices",
+    });
   });
 
   it("rejects non-positive and non-integer amounts outright", () => {
