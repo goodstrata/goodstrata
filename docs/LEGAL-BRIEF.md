@@ -10,9 +10,13 @@ This document is a set of questions for counsel, not legal advice.
 
 Verified against the codebase 2026-07-05:
 
-- ~~Blocker 2 — ordinary resolutions tallied by entitlement~~ **FIXED**: `tallyMotion` now
-  decides ordinary resolutions one-vote-per-lot (headcount), entitlement only on a
-  demanded poll (s 91 / s 92(3)–(5)); s 94 arrears exclusion implemented.
+- ~~Blocker 2 — ordinary resolutions tallied by entitlement~~ **FIXED in substance**:
+  `tallyMotion` now decides ordinary resolutions one-vote-per-lot (headcount),
+  entitlement only on a demanded poll. NOTE (statute-map.md, 5 Jul 2026): the old
+  ss 91–94 were repealed by No. 4/2021 — current law is ss 87–89H (poll: s 89(3)–(5);
+  arrears bar: s 89B). The code's comments cite the repealed numbers, and statute-map.md
+  §7 documents remaining functional gaps against the current provisions (post-vote poll
+  demands, quorum basis under s 77, interim resolutions ss 78/97, proxy caps ss 89C–89D).
 - ~~Blocker 3 — grievance machinery absent~~ **SUBSTANTIALLY BUILT**: approved-form
   complaint intake with explicit-complainant support, 28-day meet-by clock, breach
   notices, complaint events; compliance calendar service + daily sweep cron now live.
