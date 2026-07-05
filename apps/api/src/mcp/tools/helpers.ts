@@ -8,23 +8,6 @@
 import { DomainError, decisionsService } from "@goodstrata/core";
 import type { DeciderRole, MembershipRole } from "@goodstrata/shared";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { McpAuth, McpScope } from "../auth.js";
-
-/**
- * Assert the OAuth access token carries `scope`, else throw FORBIDDEN naming the
- * missing scope. The write tools call `requireScope(ctx.auth, "mcp:write")` as
- * their first line so a read-only token can never mutate; the govern-scoped
- * money-moving tools (see writes.ts TODO) will layer `"mcp:govern"` on top.
- */
-export function requireScope(auth: McpAuth, scope: McpScope): void {
-  if (!auth.scopes.includes(scope)) {
-    throw new DomainError(
-      "FORBIDDEN",
-      `This action requires the '${scope}' scope, which this access token was not granted`,
-      403,
-    );
-  }
-}
 
 /**
  * Server-side ceiling on any list a tool returns. Prevents a large scheme from

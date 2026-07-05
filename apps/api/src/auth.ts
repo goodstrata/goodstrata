@@ -42,8 +42,6 @@ export function createAuth(opts: {
    * Console (better-auth's default callback path under our baseURL).
    */
   google?: { clientId: string; clientSecret: string };
-  /** Rate limiting is enabled by default in production; force it on here. */
-  production?: boolean;
 }) {
   const mcpResource = `${(opts.mcpUrl ?? opts.appUrl).replace(/\/$/, "")}/mcp`;
   const loginPage = `${opts.appUrl.replace(/\/$/, "")}/login`;

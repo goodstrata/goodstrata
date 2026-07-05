@@ -17,12 +17,12 @@ import { userActor } from "@goodstrata/shared";
 import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppDeps } from "../deps.js";
+import {
+  OPEN_MAINTENANCE_STATUSES,
+  OPEN_WORK_ORDER_STATUSES,
+  isUpcoming,
+} from "../mcp/tools/helpers.js";
 import { type AppEnv, requireSchemeMember } from "../middleware.js";
-
-/** Maintenance requests still needing attention (not terminal). */
-const OPEN_MAINTENANCE_STATUSES = ["open", "triaged", "quoting", "approved", "in_progress"];
-/** Work orders not yet finished. */
-const OPEN_WORK_ORDER_STATUSES = ["draft", "dispatched", "accepted", "scheduled", "in_progress"];
 
 /** Complaints still on the grievance clock (not resolved/withdrawn). */
 const OPEN_COMPLAINT_STATUSES = [
@@ -35,15 +35,6 @@ const OPEN_COMPLAINT_STATUSES = [
 
 /** Roles allowed to see grievance figures — mirrors the grievances route guard. */
 const GRIEVANCE_VIEWER_ROLES = ["chair", "secretary", "treasurer", "manager_admin"];
-
-/** A meeting is "upcoming" if scheduled at/after now and not wrapped up. */
-function isUpcoming(m: { scheduledAt: Date; status: string }, now: Date): boolean {
-  return (
-    m.scheduledAt.getTime() >= now.getTime() &&
-    m.status !== "closed" &&
-    m.status !== "minutes_distributed"
-  );
-}
 
 /**
  * Composed landing summary for an active scheme (P-overview). One read-only

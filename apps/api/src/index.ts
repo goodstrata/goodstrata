@@ -1,4 +1,5 @@
 import { createDb, runMigrations } from "@goodstrata/db";
+import { systemClock } from "@goodstrata/shared";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createApp } from "./app.js";
@@ -33,7 +34,6 @@ async function main() {
         ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET }
         : undefined,
     requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION === "1",
-    production: env.NODE_ENV === "production",
   });
 
   const deps: AppDeps = {
@@ -41,7 +41,7 @@ async function main() {
     db,
     auth,
     integrations,
-    clock: { now: () => new Date() },
+    clock: systemClock,
     resolveModel: await buildModelResolver(env),
     serviceContext: buildServiceContextFactory(db, integrations),
   };

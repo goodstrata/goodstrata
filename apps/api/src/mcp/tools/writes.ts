@@ -37,7 +37,7 @@ import { INVITABLE_ROLES, userActor } from "@goodstrata/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { McpToolContext } from "../server.js";
-import { guard, jsonResult, requireScope } from "./helpers.js";
+import { guard, jsonResult } from "./helpers.js";
 
 /** Officer tier that may act on scheme finances / member admin (manager_admin bypasses in ctx.actor). */
 const OFFICER_ROLES = ["chair", "secretary", "treasurer"] as const;
@@ -57,7 +57,7 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
     },
     (input) =>
       guard(async () => {
-        requireScope(ctx.auth, "mcp:write");
+        ctx.requireScope("mcp:write");
         const svc = ctx.deps.serviceContext(userActor(ctx.auth.userId));
         const scheme = await schemesService.createScheme(svc, input);
         return jsonResult(
@@ -87,7 +87,7 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
     },
     ({ schemeId, ...input }) =>
       guard(async () => {
-        requireScope(ctx.auth, "mcp:write");
+        ctx.requireScope("mcp:write");
         const { ctx: svc } = await ctx.actor(schemeId);
         const request = await maintenanceService.createMaintenanceRequest(svc, schemeId, input);
         return jsonResult(
@@ -117,7 +117,7 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
     },
     ({ schemeId, ...input }) =>
       guard(async () => {
-        requireScope(ctx.auth, "mcp:write");
+        ctx.requireScope("mcp:write");
         const { ctx: svc } = await ctx.actor(schemeId);
         const post = await communityService.createPost(svc, schemeId, input);
         return jsonResult(`Posted to the community feed. postId: ${post.id}.`, { post });
@@ -145,7 +145,7 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
     },
     ({ schemeId, postId, ...input }) =>
       guard(async () => {
-        requireScope(ctx.auth, "mcp:write");
+        ctx.requireScope("mcp:write");
         const { ctx: svc } = await ctx.actor(schemeId);
         const { comment } = await communityService.addComment(svc, schemeId, postId, input);
         return jsonResult(`Added comment to post ${postId}. commentId: ${comment.id}.`, {
@@ -183,7 +183,7 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
     },
     ({ schemeId, email, givenName, familyName, companyName, phone, role }) =>
       guard(async () => {
-        requireScope(ctx.auth, "mcp:write");
+        ctx.requireScope("mcp:write");
         const { ctx: svc } = await ctx.actor(schemeId, [...OFFICER_ROLES]);
         const person = await peopleService.createPerson(svc, schemeId, {
           givenName,
@@ -229,7 +229,7 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
     },
     ({ schemeId, ...input }) =>
       guard(async () => {
-        requireScope(ctx.auth, "mcp:write");
+        ctx.requireScope("mcp:write");
         const { ctx: svc } = await ctx.actor(schemeId, [...OFFICER_ROLES]);
         const budget = await budgetsService.createBudget(svc, schemeId, input);
         return jsonResult(

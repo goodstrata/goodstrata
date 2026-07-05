@@ -40,7 +40,7 @@ export function registerFinancialPositionTool(server: McpServer, ctx: McpToolCon
           .map((b) => {
             const byFund = { admin: 0, maintenance: 0 };
             for (const line of b.lines) {
-              byFund[line.fundKind] = (byFund[line.fundKind] ?? 0) + line.amountCents;
+              byFund[line.fundKind] += line.amountCents;
             }
             return {
               budgetId: b.id,
