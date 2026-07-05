@@ -790,7 +790,7 @@ export async function recordAttendance(
   return quorumStatus(ctx, schemeId, meetingId);
 }
 
-/** Entitlement represented by attendees + valid proxies vs the roll. */
+/** Lots + entitlement represented by attendees and valid proxies vs the roll (s 77). */
 export async function quorumStatus(ctx: ServiceContext, schemeId: string, meetingId: string) {
   const allLots = await ctx.db.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
   const totalEntitlement = allLots.reduce((a, l) => a + l.entitlement, 0);
@@ -827,10 +827,22 @@ export async function quorumStatus(ctx: ServiceContext, schemeId: string, meetin
     .filter((l) => representedLots.has(l.id))
     .reduce((a, l) => a + l.entitlement, 0);
 
-  return {
+  // s 77: primary basis is the number of lots represented; entitlement is the
+  // fallback limb. The engine applies the two-limb test.
+  const quorum = quorumMet({
+    representedLotCount: representedLots.size,
+    totalLotCount: allLots.length,
     representedEntitlement,
     totalEntitlement,
-    quorate: quorumMet(representedEntitlement, totalEntitlement),
+  });
+
+  return {
+    representedLotCount: representedLots.size,
+    totalLotCount: allLots.length,
+    representedEntitlement,
+    totalEntitlement,
+    quorate: quorum.met,
+    quorumBasis: quorum.basis,
   };
 }
 
