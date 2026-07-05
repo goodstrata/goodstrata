@@ -167,7 +167,7 @@ export async function runAgent(
     const message = err instanceof Error ? err.message : String(err);
     await db
       .update(agentRuns)
-      .set({ status: "failed", steps, error: message, finishedAt: new Date() })
+      .set({ status: "failed", steps, error: message, finishedAt: runCtx.services.clock.now() })
       .where(eq(agentRuns.id, runId));
 
     await publishEvent(db, {

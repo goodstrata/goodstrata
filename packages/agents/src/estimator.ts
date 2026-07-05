@@ -147,6 +147,9 @@ export class EstimatorError extends Error {
 const SUPPORTED_IMAGE = /^image\//i;
 const PDF_MIME = "application/pdf";
 
+/** Upper bound on upload size for this public path (defensive; well above any real page/PDF). */
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 const SYSTEM_PROMPT = [
   "You are a plain-spoken Australian strata finance analyst helping a lot owner",
   "understand what their owners corporation pays its STRATA MANAGER (the managing",
@@ -189,6 +192,18 @@ export async function estimateStrataFees(
     throw new EstimatorError(
       "UNSUPPORTED_MEDIA",
       `Unsupported file type '${input.mime}'. Upload a PDF or an image.`,
+    );
+  }
+
+  // Guard the bytes before burning a paid vision call: an empty upload fails
+  // opaquely deep in the SDK, and an oversized one is an easy abuse vector.
+  if (input.bytes.byteLength === 0) {
+    throw new EstimatorError("UNSUPPORTED_MEDIA", "The uploaded file is empty.");
+  }
+  if (input.bytes.byteLength > MAX_UPLOAD_BYTES) {
+    throw new EstimatorError(
+      "UNSUPPORTED_MEDIA",
+      `File is too large (${input.bytes.byteLength} bytes). Maximum is ${MAX_UPLOAD_BYTES} bytes.`,
     );
   }
 

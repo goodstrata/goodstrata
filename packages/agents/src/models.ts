@@ -28,11 +28,19 @@ export type ModelResolver = (
  */
 export function createModelResolver(env: AiEnv, mockModel?: () => LanguageModel): ModelResolver {
   return (agentName, modelKeyOverride) => {
-    const envOverride = env[`AI_MODEL_${agentName.toUpperCase()}`];
+    // Treat a blank env override (AI_MODEL_FINANCE="") as unset rather than a
+    // real override that would produce a misleading "unknown provider" error.
+    const envOverride = env[`AI_MODEL_${agentName.toUpperCase()}`]?.trim() || undefined;
     const key = envOverride ?? modelKeyOverride ?? env.AI_DEFAULT_MODEL ?? defaultKeyFor(env);
 
     const [provider, ...rest] = key.split(":");
     const modelName = rest.join(":");
+
+    if (!provider || !modelName) {
+      throw new Error(
+        `Invalid AI model key '${key}' for agent '${agentName}': expected 'provider:model'.`,
+      );
+    }
 
     switch (provider) {
       case "anthropic": {
