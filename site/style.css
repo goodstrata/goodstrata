@@ -771,6 +771,34 @@ article ul.trust li b {
   backdrop-filter: saturate(1.4) blur(12px);
   -webkit-backdrop-filter: saturate(1.4) blur(12px);
 }
+/* Soft fade just below the bar so content dissolves as it scrolls under the
+   header instead of meeting a hard translucent edge — most noticeable on mobile,
+   where dense sections pass close beneath. Keyed to .scrolled so it only shows
+   once there's a bar to fade from; matches the bar's paper tint in both themes. */
+.wrap:has(> header.site)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 22px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--paper) 88%, transparent),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.wrap:has(> header.site).scrolled::after {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wrap:has(> header.site)::after {
+    transition: none;
+  }
+}
 header.site {
   gap: 16px;
 }
