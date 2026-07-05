@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, normalize, sep } from "node:path";
+import { z } from "zod";
 
 export interface StorageProvider {
   readonly name: string;
@@ -9,8 +10,25 @@ export interface StorageProvider {
   delete(key: string): Promise<void>;
 }
 
+/**
+ * The scheme prefix is the per-OC object-segregation boundary — it is
+ * interpolated raw into every key (the S3 and memory drivers use the key
+ * verbatim, with no path guard). A schemeId containing `/` or `..` would
+ * traverse prefixes or collide across schemes, so it must be a plain id.
+ */
+const schemeIdSchema = z
+  .string()
+  .regex(/^[a-zA-Z0-9._-]+$/, "must match [a-zA-Z0-9._-]")
+  .refine((s) => s !== "." && s !== "..", "must not be a path segment");
+
 /** Generate a collision-free storage key under a scheme prefix. */
 export function storageKey(schemeId: string, filename: string): string {
+  const parsed = schemeIdSchema.safeParse(schemeId);
+  if (!parsed.success) {
+    throw new Error(
+      `storage: invalid schemeId "${schemeId}" — ${parsed.error.issues[0]?.message ?? "malformed"}`,
+    );
+  }
   const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
   return `${schemeId}/${randomUUID()}-${safe}`;
 }

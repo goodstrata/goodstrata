@@ -1,5 +1,6 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import nodemailer from "nodemailer";
+import { z } from "zod";
 
 export interface OutboundEmail {
   to: string;
@@ -8,6 +9,23 @@ export interface OutboundEmail {
   text: string;
   html?: string;
   attachments?: { filename: string; content: Uint8Array; contentType: string }[];
+}
+
+const emailAddressSchema = z.string().email();
+
+/**
+ * Guard the recipient/header boundary before a message reaches SES or SMTP:
+ * a malformed `to` yields an opaque provider 400, and a CR/LF smuggled into
+ * `to`/`subject` is an SMTP header-injection vector. Reject both up front with
+ * a message naming the bad field instead of leaking to the provider.
+ */
+function assertSendableEmail(email: OutboundEmail): void {
+  if (!emailAddressSchema.safeParse(email.to).success) {
+    throw new Error(`email: invalid "to" address: ${JSON.stringify(email.to)}`);
+  }
+  if (/[\r\n]/.test(email.subject)) {
+    throw new Error("email: subject must not contain line breaks (header injection)");
+  }
 }
 
 export interface EmailProvider {
@@ -59,6 +77,7 @@ export function sesEmailProvider(cfg: SesEmailConfig): EmailProvider {
   return {
     name: "ses",
     async send(email) {
+      assertSendableEmail(email);
       const out = await client.send(
         new SendEmailCommand({
           FromEmailAddress: cfg.from,
@@ -128,6 +147,7 @@ export function smtpEmailProvider(cfg: SmtpEmailConfig): EmailProvider {
   return {
     name: "smtp",
     async send(email) {
+      assertSendableEmail(email);
       const info = await transport.sendMail({
         from: cfg.from,
         to: email.to,

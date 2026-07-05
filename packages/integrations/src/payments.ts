@@ -6,6 +6,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { z } from "zod";
 
 /**
  * Payments abstraction. The real driver is Monoova (NPP/PayID); the mock
@@ -79,6 +80,38 @@ export interface PaymentsProvider {
 }
 
 /**
+ * The money-critical shape of a mock webhook body. `providerRef` is the
+ * idempotency key and `amountCents` feeds ledger reconciliation, so both are
+ * required and typed — a typo'd/missing field is rejected, never coerced.
+ */
+const mockWebhookBodySchema = z.object({
+  providerRef: z.string().min(1),
+  payid: z.string().nullish(),
+  amountCents: z.number().int(),
+  currency: z.string().nullish(),
+  accountNumber: z.string().nullish(),
+  paidAt: z.string().min(1),
+  payerName: z.string().nullish(),
+});
+
+function parseMockWebhookBody(rawBody: string): z.infer<typeof mockWebhookBodySchema> {
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    throw new Error("mock payments webhook: body is not valid JSON");
+  }
+  const result = mockWebhookBodySchema.safeParse(json);
+  if (!result.success) {
+    const detail = result.error.issues
+      .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+      .join("; ");
+    throw new Error(`mock payments webhook: malformed payload — ${detail}`);
+  }
+  return result.data;
+}
+
+/**
  * Mock provider: references are deterministic, webhooks are HMAC-signed with
  * a shared dev secret so the verification code path is identical to prod.
  */
@@ -114,7 +147,11 @@ export function mockPaymentsProvider(secret = "mock-payments-secret"): PaymentsP
       return a.length === b.length && timingSafeEqual(a, b);
     },
     parseWebhook(rawBody) {
-      const body = JSON.parse(rawBody) as InboundPayment;
+      // Signature verification proves the SENDER; it says nothing about the
+      // SHAPE. Validate the money-critical fields before any of them reach
+      // reconciliation — a missing amountCents / providerRef (the idempotency
+      // key) must fail loud here, not silently book undefined/NaN.
+      const body = parseMockWebhookBody(rawBody);
       return {
         providerRef: body.providerRef,
         payid: body.payid ?? null,

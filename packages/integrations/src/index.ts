@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export * from "./email.js";
 export * from "./payments.js";
 export * from "./sms.js";
@@ -84,6 +86,29 @@ function required(env: IntegrationsEnv, key: keyof IntegrationsEnv, provider: st
   return value;
 }
 
+// SMTP_PORT / SMTP_SECURE are external config parsed at boot: reject a NaN
+// port ("587x") or a mis-typed flag ("flase") here with a precise message,
+// rather than letting nodemailer fail cryptically on the first send.
+const smtpPortSchema = z.coerce.number().int().min(1).max(65535);
+
+function smtpPort(raw: string | undefined): number {
+  if (!raw) return 465; // 465 = implicit TLS; 587 = STARTTLS (set SMTP_SECURE=false).
+  const parsed = smtpPortSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`integrations: smtp SMTP_PORT must be an integer 1–65535, got "${raw}"`);
+  }
+  return parsed.data;
+}
+
+function smtpSecure(raw: string | undefined): boolean {
+  if (raw === undefined || raw === "") return true;
+  const normalized = raw.toLowerCase();
+  if (normalized !== "true" && normalized !== "false") {
+    throw new Error(`integrations: smtp SMTP_SECURE must be "true" or "false", got "${raw}"`);
+  }
+  return normalized === "true";
+}
+
 /**
  * Build the integration set from env. Every default is a zero-dependency
  * offline driver — a bare `docker compose up` works with no accounts.
@@ -106,9 +131,8 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
       case "smtp":
         return smtpEmailProvider({
           host: required(env, "SMTP_HOST", "smtp"),
-          // 465 = implicit TLS (secure); 587 = STARTTLS (set SMTP_SECURE=false).
-          port: env.SMTP_PORT ? Number(env.SMTP_PORT) : 465,
-          secure: (env.SMTP_SECURE ?? "true") !== "false",
+          port: smtpPort(env.SMTP_PORT),
+          secure: smtpSecure(env.SMTP_SECURE),
           user: required(env, "SMTP_USER", "smtp"),
           pass: required(env, "SMTP_PASS", "smtp"),
           from: required(env, "AWS_SES_FROM_EMAIL", "smtp"),
