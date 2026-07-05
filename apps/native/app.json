@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "GoodStrata",
+    "slug": "goodstrata",
+    "version": "0.1.0",
+    "scheme": "goodstrata",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "au.com.goodstrata.app",
+      "supportsTablet": true,
+      "config": { "usesNonExemptEncryption": false }
+    },
+    "android": {
+      "package": "au.com.goodstrata.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#095b41"
+      }
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#095b41"
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-local-authentication", "expo-notifications"]
+  }
+}
