@@ -1,0 +1,7 @@
+node_modules/
+ios/App/build/
+ios/App/DerivedData/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
