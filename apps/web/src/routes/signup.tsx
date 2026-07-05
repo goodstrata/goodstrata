@@ -35,7 +35,11 @@ function SignupPage() {
         </li>
         <li className="flex items-center gap-1.5">
           <MapPin className="size-3.5 text-primary" aria-hidden="true" />
-          Your data stays in Australia
+          {/* Residency claim parked pending region verification (docs/legal/):
+              "stays" also implies processing, which runs on Cloudflare's
+              network. Restore a precise "stored in Australia" once the
+              database region is confirmed ap-southeast-2. */}
+          Built for Victorian strata law
         </li>
       </ul>
     </AuthShell>
