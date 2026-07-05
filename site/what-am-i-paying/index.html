@@ -10,8 +10,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 <!-- End Google Tag Manager -->
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>What are you paying your strata manager? — GoodStrata</title>
-  <meta name="description" content="Drop in your strata AGM, budget or financial statement and see — in plain dollars — what you're paying your strata manager each year. Free, and we don't store your document." />
+  <title>GoodStrata: what are you paying your strata manager?</title>
+  <meta name="description" content="Drop in your strata AGM, budget or financial statement and see (in plain dollars) what you're paying your strata manager each year. Free, and we don't store your document." />
   <meta property="og:title" content="What are you really paying your strata manager?" />
   <meta property="og:description" content="Drop in your AGM or budget. See the management fees in plain dollars. GoodStrata does the same job for $0." />
   <link rel="canonical" href="https://goodstrata.com.au/what-am-i-paying/" />
@@ -148,8 +148,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <div class="wrap">
     <h1>What are you <em>really</em> paying your strata manager?</h1>
     <p class="sub">
-      Drop in your owners corporation's AGM papers, budget, or annual financial statement — a PDF or
-      even a phone photo — and we'll read the numbers and show you, in plain dollars, what your
+      Drop in your owners corporation's AGM papers, budget, or annual financial statement (a PDF or
+      even a phone photo) and we'll read the numbers and show you, in plain dollars, what your
       strata manager charges each year. Then you can decide whether that's worth it.
     </p>
 
@@ -157,10 +157,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
          aria-label="Upload your strata AGM, budget or financial statement">
       <span class="dz-mark" aria-hidden="true"><span></span><span></span><span></span></span>
       <h3 class="dz-idle-head">Drop your AGM, budget or financial statement here</h3>
-      <p class="dz-idle">PDF or an image — or <span class="pick">choose a file</span></p>
+      <p class="dz-idle">PDF or an image, or <span class="pick">choose a file</span></p>
       <!-- Shown (and the idle copy hidden) while a document is being read:
            echoes the chosen filename so the drop visibly "took" instantly. -->
-      <p class="dz-busy" id="dzBusy" hidden><span class="spin" aria-hidden="true"></span><b id="dzFile"></b> — reading…</p>
+      <p class="dz-busy" id="dzBusy" hidden><span class="spin" aria-hidden="true"></span><b id="dzFile"></b>: reading…</p>
       <input id="fileInput" type="file" accept="application/pdf,image/*" class="hidden" />
     </div>
     <p class="privacy-line">
@@ -175,7 +175,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       <div class="sample" role="group" aria-label="Example: what a typical Australian building pays a strata manager">
         <span class="sample-badge">Example · a typical Australian building</span>
         <div class="receipt-slider">
-          <label for="lotSlider">Your building — <b><span id="lotCount">12</span> lots</b></label>
+          <label for="lotSlider">Your building: <b><span id="lotCount">12</span> lots</b></label>
           <input type="range" id="lotSlider" min="2" max="60" value="12" step="1" aria-valuetext="12 lots" />
           <!-- single, quiet announcer: updates once when the drag settles (on
                'change'), so a screen reader hears one clean total, not a flood
@@ -196,8 +196,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           <span class="receipt-label">With GoodStrata</span>
           <span class="receipt-big zero">$0<span class="yr"> /yr</span></span>
         </div>
-        <div class="flag">Heads up: a typical AGM also lists an <b>insurance commission</b> — money the manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>
-        <p class="sample-note">Based on about <b>$700</b> per lot, per year — the Australian average. Drop in your own document above for your building's real number — GoodStrata does this same job for $0.</p>
+        <div class="flag">Heads up: a typical AGM also lists an <b>insurance commission</b>: money the manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>
+        <p class="sample-note">Based on about <b>$700</b> per lot, per year (the Australian average). Drop in your own document above for your building's real number. GoodStrata does this same job for $0.</p>
       </div>
     </div>
   </div>
@@ -212,7 +212,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
     function update() {
       var lots = +s.value;
-      // At the top of the range the estimate is a FLOOR for bigger towers —
+      // At the top of the range the estimate is a FLOOR for bigger towers:
       // signal it with a trailing "+" so a capped figure never reads as the
       // building's exact number.
       var plus = lots >= MAX ? "+" : "";
@@ -228,7 +228,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       var atMax = lots >= MAX;
       var el = document.getElementById("lotAnnounce");
       if (el) el.textContent =
-        (atMax ? "Over " + MAX : lots) + " lots — a strata manager charges about " +
+        (atMax ? "Over " + MAX : lots) + " lots: a strata manager charges about " +
         money(lots * 700) + (atMax ? " or more" : "") + " a year.";
     }
     s.addEventListener("input", update);
@@ -243,7 +243,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <div class="wrap footer-inner">
     <div class="footer-brand">
       <span class="footer-mark" aria-hidden="true"><picture><source media="(prefers-color-scheme: dark)" srcset="/logo-on-dark.svg" /><img src="/logo-on-light.svg" alt="" width="1243" height="260" /></picture></span>
-      <p class="footer-tag">Free, open-source strata management that shows its working — every levy, every dollar, on the record.</p>
+      <p class="footer-tag">Free, open-source strata management that shows its working: every levy, every dollar, on the record.</p>
     </div>
     <nav class="footer-cols" aria-label="Footer">
       <div class="footer-col">
@@ -352,7 +352,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
   async function upload(file) {
     if (busy) return;
-    if (file.size > 12 * 1024 * 1024) { setStatus("That file is over 12 MB — try a smaller export or a single page.", true); return; }
+    if (file.size > 12 * 1024 * 1024) { setStatus("That file is over 12 MB. Try a smaller export or a single page.", true); return; }
     setBusy(file);
     if (sampleEl) sampleEl.classList.add("hidden");
     resultEl.innerHTML = SKELETON;
@@ -361,11 +361,11 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     // Stage the wait: the read routinely takes 10–30s, and a line that never
     // changes reads as "hung". Escalate through the same aria-live region so
     // screen readers get the same reassurance. Cleared in `finally`, which
-    // runs synchronously after the success/error paths — a staged line can
+    // runs synchronously after the success/error paths: a staged line can
     // never land on top of a result or an error message.
     const stageTimers = [
-      setTimeout(() => setStatus("Found it — reading the numbers…"), 4000),
-      setTimeout(() => setStatus("Adding up the fees — nearly there…"), 12000),
+      setTimeout(() => setStatus("Found it. Reading the numbers…"), 4000),
+      setTimeout(() => setStatus("Adding up the fees, nearly there…"), 12000),
     ];
     // Never shimmer forever: if the API hangs or a flaky mobile upload stalls,
     // abort at 60s and exit through the normal error/retry path.
@@ -387,7 +387,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       restoreIdle();
       setStatus(
         err?.name === "AbortError"
-          ? "This is taking longer than it should — please try again."
+          ? "This is taking longer than it should. Please try again."
           : "Something went wrong reaching the reader. Please try again.",
         true,
       );
@@ -416,24 +416,24 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     const perLot = d.perLotAnnualCents != null
       ? `<p class="meta">That's about <b>${money(d.perLotAnnualCents)}</b> per lot, per year${d.lotCount ? ` across ${d.lotCount} lots` : ""}.</p>` : "";
     const commission = d.insuranceCommissionNoted
-      ? `<div class="flag">Heads up: this document mentions an <b>insurance commission</b> — money your manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>` : "";
+      ? `<div class="flag">Heads up: this document mentions an <b>insurance commission</b>: money your manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>` : "";
     const conf = d.confidence === "low"
-      ? `<p class="meta">Low confidence — the document was hard to read, so treat this as a rough guide.</p>` : "";
+      ? `<p class="meta">Low confidence: the document was hard to read, so treat this as a rough guide.</p>` : "";
     resultEl.innerHTML = `
       <p class="kicker">What you're paying your manager</p>
-      <div class="headline-num">${total != null ? money(total) : "—"}<span style="font-size:.4em"> / year</span></div>
-      <div class="headline-sub">${total != null ? "in strata management fees, on your own numbers." : "We found manager charges but couldn't total them — see the lines below."}</div>
+      <div class="headline-num">${total != null ? money(total) : "n/a"}<span style="font-size:.4em"> / year</span></div>
+      <div class="headline-sub">${total != null ? "in strata management fees, on your own numbers." : "We found manager charges but couldn't total them. See the lines below."}</div>
       ${rows ? `<div class="rows">${rows}</div>` : ""}
       ${perLot}
       ${commission}
       ${conf}
       ${d.notes ? `<p class="meta">${escapeHtml(d.notes)}</p>` : ""}
-      <p class="meta">AI-generated estimate, read from your document by a model — verify the figures against the document itself before relying on them.</p>
+      <p class="meta">AI-generated estimate, read from your document by a model. Verify the figures against the document itself before relying on them.</p>
       <div class="est-cta">
-        <h3>GoodStrata does all of this for $0 — and every dollar is on the record.</h3>
-        <p>Free for your owners corporation. Our only revenue will be a transparent margin on payments that move — no management fee, no insurance commission, no contractor kickbacks.</p>
+        <h3>GoodStrata does all of this for $0, and every dollar is on the record.</h3>
+        <p>Free for your owners corporation. Our only revenue will be a transparent margin on payments that move: no management fee, no insurance commission, no contractor kickbacks.</p>
         <div class="cta-row">
-          <a class="btn primary" href="https://my.goodstrata.com.au/signup">Get started — free</a>
+          <a class="btn primary" href="https://my.goodstrata.com.au/signup">Get started, free</a>
           <a class="btn ghost" href="https://demo.goodstrata.com.au">Try the live demo</a>
         </div>
       </div>`;
@@ -444,8 +444,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     // move focus to the result so it's next in the reading order.
     statusEl.className = "status visually-hidden";
     statusEl.textContent = total != null
-      ? "Done — you're paying " + money(total) + " a year in strata management fees. The breakdown follows."
-      : "Done — we found manager charges but couldn't total them. The line items follow.";
+      ? "Done. You're paying " + money(total) + " a year in strata management fees. The breakdown follows."
+      : "Done. We found manager charges but couldn't total them. The line items follow.";
     resultEl.focus({ preventScroll: true });
     resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
