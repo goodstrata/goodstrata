@@ -3,7 +3,11 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 
 export interface AiEnv {
-  AI_PROVIDER?: string; // anthropic | local | mock
+  // anthropic | local | mock. Does NOT select the provider — routing comes
+  // from the resolved key's 'provider:' prefix. Only consulted by
+  // defaultKeyFor() to pick a fallback default key when neither a per-agent
+  // override, an agent modelKey, nor AI_DEFAULT_MODEL is set.
+  AI_PROVIDER?: string;
   AI_DEFAULT_MODEL?: string; // e.g. "anthropic:claude-sonnet-4-5" | "local:qwen3:14b"
   ANTHROPIC_API_KEY?: string;
   OLLAMA_BASE_URL?: string;
@@ -45,7 +49,10 @@ export function createModelResolver(env: AiEnv, mockModel?: () => LanguageModel)
     switch (provider) {
       case "anthropic": {
         if (!env.ANTHROPIC_API_KEY) {
-          throw new Error("AI_PROVIDER anthropic requires ANTHROPIC_API_KEY");
+          // Reference the resolved key, not AI_PROVIDER — this branch can be
+          // reached via a per-agent key (AI_MODEL_<AGENT>=anthropic:...) even
+          // when AI_PROVIDER is something else.
+          throw new Error(`Model key '${key}' requires ANTHROPIC_API_KEY`);
         }
         const anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY });
         return { model: anthropic(modelName), modelId: key };

@@ -8,9 +8,15 @@ import { type AiEnv, createModelResolver, type ModelResolver } from "./models.js
  * corporation pays its STRATA MANAGER — management/agency fees, admin and
  * disbursements — not the whole budget and not building running costs.
  *
- * Runs against a VISION-capable model via the OpenAI-compatible (OpenRouter)
- * endpoint. Text-only agent models can't read documents, so this deliberately
+ * Runs against a VISION-capable model via the OpenAI-compatible ('local')
+ * provider. Text-only agent models can't read documents, so this deliberately
  * resolves its own model key rather than the default agent model.
+ *
+ * NOTE: the default model key below is tuned for prod, where
+ * OPENAI_COMPAT_BASE_URL points at OpenRouter. On a bare local setup the
+ * 'local' provider falls back to Ollama (http://localhost:11434), where the
+ * OpenRouter-style model id does not exist — set AI_VISION_MODEL to a locally
+ * pulled vision model instead.
  *
  * Privacy: the file bytes are held only for the duration of the call and are
  * never written to disk or the event log. Nothing here persists.
@@ -18,8 +24,10 @@ import { type AiEnv, createModelResolver, type ModelResolver } from "./models.js
 
 /**
  * Default vision model. A current, inexpensive multimodal model on OpenRouter
- * that handles both photographed pages and native PDFs. Override the whole key
- * (or just the model id) with AI_VISION_MODEL.
+ * that handles both photographed pages and native PDFs. Only resolvable when
+ * OPENAI_COMPAT_BASE_URL points at OpenRouter (the prod setup) — see the
+ * module header. Override the whole key (or just the model id) with
+ * AI_VISION_MODEL.
  */
 export const DEFAULT_VISION_MODEL_KEY = "local:google/gemini-2.5-flash";
 

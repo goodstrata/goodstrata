@@ -13,11 +13,21 @@ export interface AgentRunCtx {
   schemeId: string | null;
   triggerEvent: EventRecord;
   services: ServiceContext;
-  /** Incremented by ctx-aware publishing; the tool factory enforces it. */
+  /**
+   * Informational per-run counter, incremented by `agentPublish`. Nothing
+   * reads or enforces it today — kept for future telemetry/assertions. The
+   * "mutating tools must record what they did" rule (see tool-factory.ts) is
+   * a convention, not a runtime check.
+   */
   eventsPublished: number;
   /** Set when a decision gate was opened; the run ends `awaiting_decision`. */
   awaitingDecision: boolean;
-  /** Monotonic tool-call counter for idempotency keys. */
+  /**
+   * Per-run publish counter — incremented by `agentPublish` only, NOT per
+   * tool call (defineAgentTool never touches it). Combined with runId to
+   * build the dedupe key so pg-boss retries can't double-publish. Changing
+   * when it increments shifts dedupe keys between retry attempts.
+   */
   toolCallSeq: number;
 }
 
@@ -36,7 +46,11 @@ export interface AgentDefinition {
   buildContext(event: EventRecord, services: ServiceContext): Promise<string | null>;
   /** Tools are constructed per-run so they can close over the run context. */
   tools(ctx: AgentRunCtx): ToolSet;
-  /** Registry key override, e.g. "anthropic:claude-sonnet-4-5". */
+  /**
+   * Model key override ('provider:model', e.g. "anthropic:claude-sonnet-4-5"),
+   * resolved by models.ts. Beats AI_DEFAULT_MODEL but is itself beaten by an
+   * AI_MODEL_<AGENT> env override.
+   */
   modelKey?: string;
   maxSteps?: number;
 }
