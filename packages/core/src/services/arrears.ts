@@ -122,7 +122,7 @@ export async function scanArrears(ctx: ServiceContext, schemeId: string) {
     const effectiveLast = lastDue === lot.earliestDueOn ? lastStage : 0;
     if (lot.stage <= effectiveLast) continue;
 
-    await ctx.db.transaction(async (tx) => {
+    const published = await ctx.db.transaction(async (tx) => {
       await tx
         .update(levyNotices)
         .set({ status: "overdue" })
@@ -135,7 +135,7 @@ export async function scanArrears(ctx: ServiceContext, schemeId: string) {
           ),
         );
 
-      await publishEvent(tx, {
+      return await publishEvent(tx, {
         schemeId,
         stream: `lot:${lot.lotId}`,
         type: "arrears.stage.reached",
@@ -149,10 +149,15 @@ export async function scanArrears(ctx: ServiceContext, schemeId: string) {
           earliestDueOn: lot.earliestDueOn,
         },
         actor: ctx.actor,
+        // The eventLog read above is only advisory — two overlapping sweeps
+        // (cron overlap, manual trigger) can both see the same lastStage. The
+        // unique dedupeKey makes "once per lot per stage per episode" a DB
+        // guarantee: the second publish is a no-op.
+        dedupeKey: `arrears:${lot.lotId}:${lot.earliestDueOn}:stage${lot.stage}`,
         ...causationFields(ctx),
       });
     });
-    emitted.push({ lotId: lot.lotId, stage: lot.stage });
+    if (!published.deduped) emitted.push({ lotId: lot.lotId, stage: lot.stage });
   }
 
   return { scanned: arrears.length, emitted };

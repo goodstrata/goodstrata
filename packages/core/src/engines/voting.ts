@@ -91,6 +91,13 @@ export function tallyMotion(
       carried = forWeight === totalEntitlement;
       basis = "entitlement";
       break;
+    default: {
+      // resolutionType arrives from a DB column via an `as`-cast, so a
+      // corrupt/legacy value can reach runtime. Fail loudly rather than
+      // recording a wrong statutory outcome.
+      const exhaustive: never = resolutionType;
+      throw new Error(`voting: unknown resolution type ${String(exhaustive)}`);
+    }
   }
 
   return {

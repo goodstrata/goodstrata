@@ -128,10 +128,18 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
   const reachable = owners.filter((o) => o.email);
 
   await ctx.db.transaction(async (tx) => {
-    await tx
+    // Compare-and-set: the draft check above ran outside this transaction, so
+    // two concurrent sends could both pass it. Only the invocation that wins
+    // the draft→notice_sent flip proceeds to email the owners; the loser rolls
+    // back instead of duplicating the statutory notice blast.
+    const updated = await tx
       .update(meetings)
       .set({ status: "notice_sent", noticeSentAt: ctx.clock.now() })
-      .where(eq(meetings.id, meetingId));
+      .where(and(eq(meetings.id, meetingId), eq(meetings.status, "draft")))
+      .returning({ id: meetings.id });
+    if (updated.length === 0) {
+      throw new DomainError("NOTICE_SENT", "Notice has already been sent", 409);
+    }
     await publishEvent(tx, {
       schemeId,
       stream: `meeting:${meetingId}`,
@@ -623,30 +631,40 @@ export async function castVote(
 
 /** Close voting: tally with the engine and record the statutory result. */
 export async function closeMotion(ctx: ServiceContext, schemeId: string, motionId: string) {
-  const motion = await ctx.db.query.motions.findFirst({
-    where: and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)),
-  });
-  if (!motion) throw notFound("Motion");
-  if (motion.status !== "open") throw new DomainError("BAD_STATUS", "Motion is not open", 409);
+  return await ctx.db.transaction(async (tx) => {
+    // Lock the motion row FIRST, then tally from reads taken under that lock:
+    // - a concurrent close blocks here, then sees carried/lost → BAD_STATUS
+    //   (one motion.resolved event, not two);
+    // - a poll demanded before we got the lock is seen by the tally rather
+    //   than lost to a stale pre-transaction read (s 92(3));
+    // - votes are snapshotted after the lock, so the recorded result reflects
+    //   everything committed when closing began.
+    const motionRows = await tx
+      .select()
+      .from(motions)
+      .where(and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)))
+      .for("update");
+    const motion = motionRows[0];
+    if (!motion) throw notFound("Motion");
+    if (motion.status !== "open") throw new DomainError("BAD_STATUS", "Motion is not open", 409);
 
-  const cast = await ctx.db.query.votes.findMany({ where: eq(votes.motionId, motionId) });
-  const allLots = await ctx.db.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
-  const totalEntitlement = allLots.reduce((a, l) => a + l.entitlement, 0);
+    const cast = await tx.query.votes.findMany({ where: eq(votes.motionId, motionId) });
+    const allLots = await tx.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
+    const totalEntitlement = allLots.reduce((a, l) => a + l.entitlement, 0);
 
-  const tally = tallyMotion(
-    cast.map(
-      (v): CastVote => ({
-        lotId: v.lotId,
-        choice: v.choice as VoteChoice,
-        entitlementWeight: v.entitlementWeight,
-      }),
-    ),
-    totalEntitlement,
-    motion.resolutionType,
-    motion.pollDemanded,
-  );
+    const tally = tallyMotion(
+      cast.map(
+        (v): CastVote => ({
+          lotId: v.lotId,
+          choice: v.choice as VoteChoice,
+          entitlementWeight: v.entitlementWeight,
+        }),
+      ),
+      totalEntitlement,
+      motion.resolutionType,
+      motion.pollDemanded,
+    );
 
-  await ctx.db.transaction(async (tx) => {
     await tx
       .update(motions)
       .set({
@@ -674,9 +692,9 @@ export async function closeMotion(ctx: ServiceContext, schemeId: string, motionI
       actor: ctx.actor,
       ...causationFields(ctx),
     });
-  });
 
-  return tally;
+    return tally;
+  });
 }
 
 // ---------------------------------------------------------------------------

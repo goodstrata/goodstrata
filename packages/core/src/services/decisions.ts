@@ -96,6 +96,16 @@ export function rolesAllowedToDecide(deciderRole: DeciderRole): readonly Members
       return [...COMMITTEE_ROLES, "manager_admin"];
     case "all_owners":
       return ["owner", ...COMMITTEE_ROLES, "manager_admin"];
+    default: {
+      // deciderRole comes from a DB column, so an unexpected value can reach
+      // runtime. Fail with a domain error, not an opaque downstream TypeError.
+      const exhaustive: never = deciderRole;
+      throw new DomainError(
+        "UNKNOWN_DECIDER_ROLE",
+        `Unknown decider role: ${String(exhaustive)}`,
+        422,
+      );
+    }
   }
 }
 

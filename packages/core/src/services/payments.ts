@@ -171,7 +171,22 @@ async function applyPaymentToNotice(
     }
   }
 
-  await tx.update(payments).set({ status: "matched" }).where(eq(payments.id, payment.id));
+  // Compare-and-set: only a not-yet-applied payment may flip to matched. Two
+  // concurrent applications of the same payment (double-click, two treasurers,
+  // a retried request) serialize on the row lock — the loser sees 0 rows and
+  // rolls back its allocation/ledger/fund writes instead of double-crediting.
+  const flipped = await tx
+    .update(payments)
+    .set({ status: "matched" })
+    .where(and(eq(payments.id, payment.id), inArray(payments.status, ["received", "unmatched"])))
+    .returning({ id: payments.id });
+  if (flipped.length === 0) {
+    throw new DomainError(
+      "PAYMENT_ALREADY_MATCHED",
+      "Payment has already been matched — refusing to apply it twice",
+      409,
+    );
+  }
   await publishEvent(tx, {
     schemeId,
     stream: `payment:${payment.id}`,
