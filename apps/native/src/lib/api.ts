@@ -2,11 +2,21 @@ import { authClient } from "./auth";
 
 const BASE = "https://my.goodstrata.com.au";
 
+/** Session cookie header, only when one actually exists — a null/undefined
+ * header value makes RN's fetch throw before the request even leaves. */
+function cookieHeader(): Record<string, string> {
+  try {
+    const cookies = authClient.getCookie();
+    return cookies ? { Cookie: cookies } : {};
+  } catch {
+    return {};
+  }
+}
+
 /** Fetch wrapper that carries the better-auth session cookie from SecureStore. */
 export async function api<T>(path: string): Promise<T> {
-  const cookies = authClient.getCookie();
   const res = await fetch(`${BASE}${path}`, {
-    headers: { Cookie: cookies, Accept: "application/json" },
+    headers: { ...cookieHeader(), Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`${res.status} ${path}`);
   return res.json() as Promise<T>;
@@ -18,11 +28,10 @@ export async function api<T>(path: string): Promise<T> {
  * error message when it sends one, the status line otherwise.
  */
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const cookies = authClient.getCookie();
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: {
-      Cookie: cookies,
+      ...cookieHeader(),
       Accept: "application/json",
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },

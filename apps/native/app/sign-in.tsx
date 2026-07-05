@@ -1,5 +1,10 @@
 import * as Haptics from "expo-haptics";
+import * as WebBrowser from "expo-web-browser";
 import { useRef, useState } from "react";
+
+// Required for the OAuth browser session to hand control back to the app
+// cleanly on iOS — without it the redirect can leave the session dangling.
+WebBrowser.maybeCompleteAuthSession();
 import {
   KeyboardAvoidingView,
   Platform,
