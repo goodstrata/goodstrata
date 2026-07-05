@@ -179,8 +179,8 @@ export const levyNoticeLines = pgTable(
 );
 
 /**
- * Per-lot money ledger — arrears, s 94 eligibility, and lot statements all read
- * from here. Signed cents: charges positive, payments negative.
+ * Per-lot money ledger — arrears, s 89B voting eligibility, and lot statements
+ * all read from here. Signed cents: charges positive, payments negative.
  */
 export const lotLedgerEntries = pgTable(
   "lot_ledger_entries",
