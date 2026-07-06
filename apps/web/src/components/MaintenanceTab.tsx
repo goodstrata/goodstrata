@@ -8,6 +8,7 @@ import {
   ownerStatusTone,
   ReportIssueDialog,
 } from "@/components/maintenance/ReportIssueDialog";
+import { Markdown } from "@/components/Markdown";
 import { RequestQuotesButton, RfqSection } from "@/components/RfqSection";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -517,8 +518,15 @@ function WorkOrderList({
             <Card key={wo.id} className="py-3">
               <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4 text-sm">
                 <div className="min-w-0">
-                  <p>{wo.scope}</p>
-                  <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                  <details className="group">
+                    <summary className="cursor-pointer text-sm font-medium select-none">
+                      Scope of works
+                    </summary>
+                    <div className="mt-2 rounded-md bg-muted/50 p-3">
+                      <Markdown className="prose-sm">{wo.scope}</Markdown>
+                    </div>
+                  </details>
+                  <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                     <Money cents={wo.approvedAmountCents} />
                     {wo.contractorName && (
                       <span className="inline-flex items-center gap-1">
