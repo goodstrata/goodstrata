@@ -1,36 +1,30 @@
 import type * as React from "react";
 
 /**
- * Shared frame for the auth surfaces (/login, /signup): the ghost strata mark
- * (the one place besides empty states it's allowed — DESIGN.md §2) over an
- * optional heading, then the page's card(s). Keeps the two routes visually
- * identical so moving between sign in and sign up feels like one screen.
+ * Shared frame for the auth surfaces (/login, /signup). On desktop it's a two
+ * column split: the value side (heading + optional aside) on the left, the form
+ * card on the right, both vertically centred. On mobile it stacks to a single
+ * centred column. No logo here — the app header already carries the mark on
+ * every route, so repeating it just crowded the page.
  */
 export function AuthShell({
   heading,
+  aside,
   children,
 }: {
   heading?: React.ReactNode;
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 py-2 md:py-10">
-      <div className="flex flex-col items-center gap-4 text-center">
-        <img
-          src="/logo-on-light.svg"
-          alt=""
-          aria-hidden="true"
-          className="h-8 w-auto dark:hidden"
-        />
-        <img
-          src="/logo-on-dark.svg"
-          alt=""
-          aria-hidden="true"
-          className="hidden h-8 w-auto dark:block"
-        />
+    <div className="mx-auto grid w-full max-w-5xl items-center gap-10 py-2 md:py-12 lg:min-h-[68vh] lg:grid-cols-2 lg:gap-20">
+      <div className="flex flex-col gap-6 text-center lg:text-left">
         {heading}
+        {aside}
       </div>
-      {children}
+      <div className="mx-auto flex w-full max-w-sm flex-col gap-6 lg:mx-0 lg:justify-self-end">
+        {children}
+      </div>
     </div>
   );
 }
