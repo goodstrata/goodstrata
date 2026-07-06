@@ -237,6 +237,19 @@ function MatrixRow({
 
 const E164 = /^\+[1-9]\d{7,14}$/;
 
+/**
+ * Normalise common Australian input to E.164 (what Twilio needs): a leading 0
+ * becomes +61 (0432 541 123 → +61432541123), a bare 61 gets a +, and
+ * spaces/dashes/parens are stripped. Anything already starting with + is kept.
+ */
+function normalizeAuPhone(raw: string): string {
+  const digits = raw.replace(/[\s().\-]/g, "");
+  if (digits.startsWith("+")) return digits;
+  if (digits.startsWith("0")) return `+61${digits.slice(1)}`;
+  if (digits.startsWith("61")) return `+${digits}`;
+  return digits;
+}
+
 function NoPhoneAlert() {
   const queryClient = useQueryClient();
   const { refetch: refetchSession } = useSession();
@@ -264,9 +277,9 @@ function NoPhoneAlert() {
   });
 
   function submit() {
-    const next = value.trim();
+    const next = normalizeAuPhone(value);
     if (!E164.test(next)) {
-      setError("Enter a mobile number in international format, e.g. +61412345678.");
+      setError("Enter a valid mobile number, e.g. 0412 345 678.");
       return;
     }
     setError(null);
@@ -298,7 +311,7 @@ function NoPhoneAlert() {
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
-                placeholder="+61412345678"
+                placeholder="0412 345 678"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
               />
