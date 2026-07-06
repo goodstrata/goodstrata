@@ -228,15 +228,22 @@ header.site .logo {
   width: 0;
   height: 0;
   transform: translate(-50%, -50%);
-  perspective: 220px;
+  perspective: 260px;
   pointer-events: none;
+  /* Hidden until the logo is hovered/focused, then it fades in. */
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.logo:hover .logo-orbit,
+.logo:focus-visible .logo-orbit {
+  opacity: 1;
 }
 .logo-cube {
   position: absolute;
-  left: -13px;
-  top: -13px;
-  width: 26px;
-  height: 26px;
+  left: -18px;
+  top: -18px;
+  width: 36px;
+  height: 36px;
   transform-style: preserve-3d;
   animation: cubeSpin 9s linear infinite;
 }
@@ -264,22 +271,22 @@ header.site .logo {
   }
 }
 .cf-front {
-  transform: translateZ(13px);
+  transform: translateZ(18px);
 }
 .cf-back {
-  transform: rotateY(180deg) translateZ(13px);
+  transform: rotateY(180deg) translateZ(18px);
 }
 .cf-right {
-  transform: rotateY(90deg) translateZ(13px);
+  transform: rotateY(90deg) translateZ(18px);
 }
 .cf-left {
-  transform: rotateY(-90deg) translateZ(13px);
+  transform: rotateY(-90deg) translateZ(18px);
 }
 .cf-top {
-  transform: rotateX(90deg) translateZ(13px);
+  transform: rotateX(90deg) translateZ(18px);
 }
 .cf-bottom {
-  transform: rotateX(-90deg) translateZ(13px);
+  transform: rotateX(-90deg) translateZ(18px);
 }
 @keyframes cubeSpin {
   from {
@@ -1328,6 +1335,13 @@ ul.proof-list li strong {
 }
 .band-card .rule span:nth-child(2) {
   margin-left: 3px;
+}
+.band-card .band-icon {
+  display: block;
+  width: 44px;
+  height: 44px;
+  color: var(--primary);
+  margin-bottom: 14px;
 }
 .band-card h3 {
   font-size: 17px;
