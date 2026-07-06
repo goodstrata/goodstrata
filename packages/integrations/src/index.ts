@@ -47,6 +47,12 @@ export interface Integrations {
   video: VideoProvider;
   /** All enabled trade-market channels; look one up with `tradeMarketByName`. */
   tradeMarkets: TradeMarketProvider[];
+  /**
+   * Absolute public base URL (APP_URL) for building links in outbound comms —
+   * e.g. the contractor self-service `/quote/{token}` and `/work-order/{token}`
+   * pages. Optional so hand-built test doubles can omit it.
+   */
+  appUrl?: string;
 }
 
 export interface IntegrationsEnv {
@@ -57,6 +63,8 @@ export interface IntegrationsEnv {
   VIDEO_PROVIDER?: string;
   /** CSV of enabled trade-market providers, e.g. "scheme_book,email_rfq". */
   TRADE_MARKET_PROVIDERS?: string;
+  /** Public base URL for links in outbound email (contractor portal, etc.). */
+  APP_URL?: string;
   DATA_DIR?: string;
   MOCK_PAYMENTS_SECRET?: string;
   // S3 / Cloudflare R2 (STORAGE_PROVIDER=r2|s3)
@@ -214,7 +222,11 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
     }
   })();
 
-  // Built AFTER email: the email-backed trade-market drivers take it as a dep.
+  // Public base for contractor-portal links embedded in the RFQ email button.
+  const appUrl = env.APP_URL ?? "https://my.goodstrata.com.au";
+
+  // Built AFTER email: the email-backed trade-market drivers take it as a dep,
+  // plus appUrl so the RFQ email can link the per-recipient /quote/{token} page.
   const tradeMarkets = (env.TRADE_MARKET_PROVIDERS ?? "scheme_book")
     .split(",")
     .map((name) => name.trim())
@@ -222,9 +234,9 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
     .map((name): TradeMarketProvider => {
       switch (name) {
         case "scheme_book":
-          return schemeBookTradeMarketProvider(email);
+          return schemeBookTradeMarketProvider(email, appUrl);
         case "email_rfq":
-          return emailRfqTradeMarketProvider(email);
+          return emailRfqTradeMarketProvider(email, appUrl);
         case "console":
           return consoleTradeMarketProvider();
         default:
@@ -232,7 +244,7 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
       }
     });
 
-  return { email, sms, storage, payments, video, tradeMarkets };
+  return { email, sms, storage, payments, video, tradeMarkets, appUrl };
 }
 
 /** Look up an enabled trade-market provider by its name (e.g. from an rfq_channels row). */

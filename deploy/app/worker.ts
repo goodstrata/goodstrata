@@ -75,6 +75,10 @@ export class GoodstrataApp extends Container<Env> {
             AWS_SES_FROM_EMAIL: env.AWS_SES_FROM_EMAIL,
             // Real mail delivers — safe to require verified addresses.
             REQUIRE_EMAIL_VERIFICATION: "1",
+            // Invited-email RFQs now have a self-service /quote/{token} landing
+            // page, so the email_rfq provider is enabled alongside the scheme
+            // book (held back until the portal existed). Only lights up with SES.
+            TRADE_MARKET_PROVIDERS: "scheme_book,email_rfq",
           }
         : { EMAIL_PROVIDER: "console" };
 

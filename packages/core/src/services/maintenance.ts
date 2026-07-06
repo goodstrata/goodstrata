@@ -1,10 +1,18 @@
+import { randomBytes } from "node:crypto";
 import { contractors, lots, maintenanceRequests, schemes, workOrders } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import { addDays, formatCents } from "@goodstrata/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
-import { emailBrand, infoNote, keyValueTable, paragraph, renderEmail } from "../email/index.js";
+import {
+  emailBrand,
+  infoNote,
+  keyValueTable,
+  markdownBlock,
+  paragraph,
+  renderEmail,
+} from "../email/index.js";
 import { DomainError, notFound } from "../errors.js";
 import { sendEmail } from "./comms.js";
 import { registerDecisionAction, requestDecision } from "./decisions.js";
@@ -301,6 +309,8 @@ export async function proposeWorkOrder(
         approvedAmountCents: input.estimatedCents,
         accessNotes: input.accessNotes ?? null,
         status: "draft",
+        // Self-service accept/decline credential; the dispatch email embeds it.
+        acceptToken: randomBytes(24).toString("base64url"),
       })
       .returning();
     const wo = rows[0]!;
@@ -402,6 +412,11 @@ export async function dispatchWorkOrder(
   if (!wo) throw notFound("Work order");
   if (wo.status !== "draft") return { workOrderId }; // idempotent (executor retries)
 
+  // Absolute base for the accept link. Read off Integrations (built from
+  // APP_URL) so every dispatch path — proposeWorkOrder, the award decision
+  // executor — gets it without threading a param through each caller.
+  const appUrl = ctx.integrations.appUrl ?? "https://my.goodstrata.com.au";
+
   const contractor = await ctx.db.query.contractors.findFirst({
     where: eq(contractors.id, wo.contractorId),
   });
@@ -431,7 +446,6 @@ export async function dispatchWorkOrder(
       }
     }
     const detailRows = [
-      { label: "Scope of work", value: wo.scope },
       { label: "Location", value: location },
       {
         label: "Approved amount",
@@ -440,18 +454,26 @@ export async function dispatchWorkOrder(
     ];
     if (wo.accessNotes) detailRows.push({ label: "Access", value: wo.accessNotes });
 
-    // No portal CTA: the contractor is an external party without a login. The
-    // requested action is to reply to this email and invoice on completion.
+    // Self-service accept: the WO carries an unguessable accept token (minted at
+    // award). The contractor confirms the engagement on the public
+    // /work-order/{token} page — no login, no email reply parsing. A WO only
+    // exists post-award, so linking the token here does NOT weaken the award
+    // gate; the page confirms acceptance and never awards.
+    const acceptUrl = wo.acceptToken ? `${appUrl}/work-order/${wo.acceptToken}` : null;
     const { html, text } = renderEmail({
       preheader: `Work order for ${scheme.name}: ${wo.scope}.`,
       heading: `Work order — ${scheme.name}`,
       intro: `Hi ${contractor.contactName ?? contractor.businessName}, you've been engaged for works at ${scheme.name}, ${scheme.addressLine1}, ${scheme.suburb}.`,
       blocks: [
+        markdownBlock(wo.scope, "Scope of work"),
         keyValueTable(detailRows, "Work order details"),
         infoNote(
-          "Please confirm acceptance by replying to this email, and invoice the owners corporation on completion quoting this work order.",
+          acceptUrl
+            ? "Open the work order to accept or decline it, and invoice the owners corporation on completion quoting this work order."
+            : "Please confirm acceptance by replying to this email, and invoice the owners corporation on completion quoting this work order.",
         ),
       ],
+      ...(acceptUrl ? { cta: { label: "Accept work order →", url: acceptUrl } } : {}),
     });
     await sendEmail(ctx, {
       schemeId,

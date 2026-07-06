@@ -169,6 +169,9 @@ export const eventDefs = {
     amountCents: z.number().int(),
   }),
   "work_order.dispatched": z.object({ workOrderId: z.string(), contractorId: z.string() }),
+  // Contractor self-service accept/decline (public /work-order/{token} page).
+  "work_order.accepted": z.object({ workOrderId: z.string(), contractorId: z.string() }),
+  "work_order.declined": z.object({ workOrderId: z.string(), contractorId: z.string() }),
   "work_order.completed": z.object({ workOrderId: z.string() }),
 
   // meetings / governance

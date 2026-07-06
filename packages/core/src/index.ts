@@ -67,6 +67,7 @@ export {
   createRfqInput,
   dispatchRfqInput,
   recordQuoteInput,
+  submitQuoteByTokenInput,
 } from "./services/tradeRfq.js";
 export * as trustAccountsService from "./services/trustAccounts.js";
 export {

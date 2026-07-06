@@ -17,6 +17,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, pk, updatedAt } from "./_common.js";
@@ -114,9 +115,20 @@ export const rfqChannels = pgTable(
     contractorId: uuid().references(() => contractors.id),
     status: rfqChannelStatusEnum().notNull().default("pending"),
     sentAt: timestamp({ withTimezone: true }),
+    /**
+     * Unguessable per-(rfq, contractor/email) credential for the public
+     * /quote/{token} self-service page. Minted at dispatch for direct sends
+     * (scheme_book + email_rfq); null for broadcast channels (no self-service).
+     * The token is the sole authenticator: it resolves to exactly this channel,
+     * hence exactly one rfq + one contractor/email, and nothing else.
+     */
+    quoteToken: text(),
     createdAt: createdAt(),
   },
-  (t) => [index("rfq_channels_rfq_idx").on(t.rfqId)],
+  (t) => [
+    index("rfq_channels_rfq_idx").on(t.rfqId),
+    uniqueIndex("rfq_channels_quote_token_idx").on(t.quoteToken),
+  ],
 );
 
 export const quotes = pgTable(
@@ -184,10 +196,21 @@ export const workOrders = pgTable(
     scheduledFor: timestamp({ withTimezone: true }),
     completedAt: timestamp({ withTimezone: true }),
     completionPhotoDocumentIds: uuid().array().notNull().default([]),
+    /**
+     * Unguessable single-purpose credential for the public /work-order/{token}
+     * accept/decline page. Minted when the work order is created (post-award or
+     * direct dispatch); a WO exists only after the job is authorised, so the
+     * token's existence already implies this contractor was engaged. Resolves
+     * to exactly this work order and nothing else.
+     */
+    acceptToken: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("work_orders_scheme_status_idx").on(t.schemeId, t.status)],
+  (t) => [
+    index("work_orders_scheme_status_idx").on(t.schemeId, t.status),
+    uniqueIndex("work_orders_accept_token_idx").on(t.acceptToken),
+  ],
 );
 
 export const maintenancePlans = pgTable(

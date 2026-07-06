@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
 import {
   contractors,
   lots,
   maintenanceRequests,
+  memberships,
   people,
   quotes,
   rfqChannels,
@@ -17,12 +19,24 @@ import {
   tradeMarketByName,
 } from "@goodstrata/integrations";
 import { addDays, formatCents, isRealDateOnly } from "@goodstrata/shared";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
+import { renderMarkdown } from "../email/index.js";
 import { DomainError, notFound } from "../errors.js";
 import { registerDecisionAction, requestDecision } from "./decisions.js";
 import { dispatchWorkOrder } from "./maintenance.js";
+import { notifyUsers } from "./notifications.js";
+
+/**
+ * Mint an unguessable single-purpose token — 24 random bytes = 192 bits,
+ * ~32 url-safe chars. Same construction as the invite token
+ * (`invites.ts` `randomBytes(24).toString("base64url")`); stored on a
+ * unique-indexed column and resolved by strict equality (no enumeration).
+ */
+function mintToken(): string {
+  return randomBytes(24).toString("base64url");
+}
 
 // ---------------------------------------------------------------------------
 // Anonymization — enforced in code, twice over:
@@ -61,10 +75,7 @@ export function anonymizeRfqText(text: string, identifiers: RfqIdentifiers): str
     const trimmed = lotNumber?.trim();
     if (!trimmed) continue;
     out = out.replace(
-      new RegExp(
-        String.raw`\b(?:lot|unit|apartment|apt)\s*#?\s*${escapeRegExp(trimmed)}\b`,
-        "gi",
-      ),
+      new RegExp(String.raw`\b(?:lot|unit|apartment|apt)\s*#?\s*${escapeRegExp(trimmed)}\b`, "gi"),
       REDACTED,
     );
   }
@@ -102,9 +113,7 @@ async function loadAnonymizationContext(
       person?.companyName,
       person?.email,
       person?.phone,
-      person?.givenName && person?.familyName
-        ? `${person.givenName} ${person.familyName}`
-        : null,
+      person?.givenName && person?.familyName ? `${person.givenName} ${person.familyName}` : null,
     ],
     lotNumbers: [lot?.lotNumber, lot?.unitNumber],
   };
@@ -375,21 +384,32 @@ export async function dispatchRfq(
       const provider = requireProvider(ctx, "scheme_book");
       const group: ChannelGroup = {
         provider,
-        recipients: bookContractors.map((c) => ({
-          email: c.email!,
-          businessName: c.businessName,
-          contactName: c.contactName,
-        })),
+        recipients: [],
         channelIds: [],
         contractorIdByChannel: new Map(),
       };
       for (const contractor of bookContractors) {
+        // Mint the self-service quote token WITH the channel row so it maps 1:1
+        // to (rfq, contractor) and can be threaded onto the recipient's email.
+        const quoteToken = mintToken();
         const rows = await tx
           .insert(rfqChannels)
-          .values({ schemeId, rfqId, provider: provider.name, contractorId: contractor.id })
+          .values({
+            schemeId,
+            rfqId,
+            provider: provider.name,
+            contractorId: contractor.id,
+            quoteToken,
+          })
           .returning();
         group.channelIds.push(rows[0]!.id);
         group.contractorIdByChannel.set(rows[0]!.id, contractor.id);
+        group.recipients!.push({
+          email: contractor.email!,
+          businessName: contractor.businessName,
+          contactName: contractor.contactName,
+          quoteToken,
+        });
       }
       groups.push(group);
     }
@@ -398,17 +418,19 @@ export async function dispatchRfq(
       const provider = requireProvider(ctx, "email_rfq");
       const group: ChannelGroup = {
         provider,
-        recipients: input.invitedEmails.map((email) => ({ email })),
+        recipients: [],
         channelIds: [],
         contractorIdByChannel: new Map(),
       };
-      for (const _email of input.invitedEmails) {
+      for (const email of input.invitedEmails) {
+        const quoteToken = mintToken();
         const rows = await tx
           .insert(rfqChannels)
-          .values({ schemeId, rfqId, provider: provider.name })
+          .values({ schemeId, rfqId, provider: provider.name, quoteToken })
           .returning();
         group.channelIds.push(rows[0]!.id);
         group.contractorIdByChannel.set(rows[0]!.id, null);
+        group.recipients!.push({ email, quoteToken });
       }
       groups.push(group);
     }
@@ -874,6 +896,10 @@ async function awardQuote(
         approvedAmountCents: quote.amountCents, // verbatim — no new money math
         status: "draft",
         decisionId,
+        // Self-service accept/decline credential; the dispatch email (fired
+        // below) embeds it as the "Accept work order →" button. A WO only
+        // exists post-award, so the token's existence is itself the award gate.
+        acceptToken: mintToken(),
       })
       .returning();
     const wo = rows[0]!;
@@ -973,4 +999,263 @@ export async function getRfq(ctx: ServiceContext, schemeId: string, rfqId: strin
   // Quotes come from the comparison so the fee columns are ALWAYS selected.
   const comparison = await compareQuotes(ctx, schemeId, rfqId);
   return { rfq, channels, quotes: comparison.quotes };
+}
+
+// ---------------------------------------------------------------------------
+// Contractor self-service portal — pre-auth, TOKEN IS THE ONLY CREDENTIAL.
+//
+// A quote token resolves to exactly one rfq_channels row ⇒ one (rfq,
+// contractor/email); a work-order accept token resolves to exactly one
+// work_orders row. schemeId / rfqId / contractorId are ALWAYS derived from the
+// token here, never accepted from the caller. These functions run under a
+// `system` actor from the public routes and layer NO new capability on top of
+// the existing invariants: quotes still go through `recordQuote` (fee guard,
+// status guard, channel↔rfq check) and the accept page only moves a work order
+// within {dispatched → accepted | cancelled} — it never awards.
+// ---------------------------------------------------------------------------
+
+/** A quote token that resolves to no live channel is indistinguishable from an expired one — no oracle. */
+async function channelByQuoteToken(ctx: ServiceContext, token: string) {
+  if (!token || token.length < 16) throw notFound("Quote link");
+  const channel = await ctx.db.query.rfqChannels.findFirst({
+    where: eq(rfqChannels.quoteToken, token),
+  });
+  if (!channel) throw notFound("Quote link");
+  return channel;
+}
+
+/**
+ * Public read for /quote/{token}. Returns ONLY what an invited party already
+ * sees: title, scope (markdown + safe HTML), suburb, category, due date. Never
+ * an address (the `rfqs` row physically has no address column), never the
+ * scheme name, never any other channel/quote/amount. The recipient's own
+ * business name is echoed for scheme-book channels (where we hold a contractor).
+ */
+export async function getRfqByQuoteToken(ctx: ServiceContext, token: string) {
+  const channel = await channelByQuoteToken(ctx, token);
+  const rfq = await ctx.db.query.rfqs.findFirst({
+    where: and(eq(rfqs.id, channel.rfqId), eq(rfqs.schemeId, channel.schemeId)),
+  });
+  if (!rfq) throw notFound("Quote link");
+
+  let businessName: string | null = null;
+  if (channel.contractorId) {
+    const contractor = await ctx.db.query.contractors.findFirst({
+      where: eq(contractors.id, channel.contractorId),
+      columns: { businessName: true },
+    });
+    businessName = contractor?.businessName ?? null;
+  }
+
+  return {
+    title: rfq.title,
+    scopeMd: rfq.specMd,
+    scopeHtml: renderMarkdown(rfq.specMd),
+    suburb: rfq.suburb,
+    category: rfq.category,
+    quotesDueOn: rfq.quotesDueOn,
+    // Derived flags the page uses to pick its state / form shape.
+    rfqStatus: rfq.status,
+    /** true once this channel already responded — the page goes read-only. */
+    alreadyQuoted: channel.status === "responded",
+    /** true → scheme-book channel: business name is on file, form hides it. */
+    hasContractor: channel.contractorId !== null,
+    businessName,
+  };
+}
+
+/**
+ * Public quote form payload for /quote/{token}. Deliberately a SUBSET of
+ * `recordQuoteInput`: it CANNOT carry contractorId / schemeId / rfqId /
+ * channelId — those are all derived from the token server-side. The fee fields
+ * mirror `recordQuoteInput` exactly so the zero-hidden-margin rule the service
+ * enforces (and the DB CHECK) cannot be circumvented from the public form.
+ */
+export const submitQuoteByTokenInput = z.object({
+  /** Collected only for invited-email channels (no contractor on file yet). */
+  contact: z
+    .object({
+      businessName: z.string().min(2).max(200),
+      abn: z.string().max(50).optional(),
+      email: z.string().email().optional(),
+      phone: z.string().max(50).optional(),
+    })
+    .optional(),
+  amountCents: z.number().int().positive(),
+  validUntil: z.string().optional(),
+  notes: z.string().max(5000).optional(),
+  licenceConfirmed: z.boolean().default(false),
+  insuranceConfirmed: z.boolean().default(false),
+  platformFeeCents: z.number().int().min(0).default(0),
+  referralFeeCents: z.number().int().min(0).default(0),
+  feeRecipient: z.string().min(2).max(200).optional(),
+});
+export type SubmitQuoteByTokenInput = z.infer<typeof submitQuoteByTokenInput>;
+
+export async function submitQuoteByToken(
+  ctx: ServiceContext,
+  token: string,
+  input: SubmitQuoteByTokenInput,
+) {
+  const channel = await channelByQuoteToken(ctx, token);
+  // One quote per channel: the token stays valid for viewing, but a second
+  // submission is refused (idempotent from the contractor's point of view).
+  if (channel.status === "responded") {
+    throw new DomainError(
+      "ALREADY_QUOTED",
+      "A quote has already been recorded for this job on this link",
+      409,
+    );
+  }
+
+  // Resolve the quoting party FROM THE TOKEN. Scheme-book channels carry the
+  // contractor; invited-email channels require the contact block from the form
+  // (recordQuote mints a `pending` contractor from it).
+  const base = {
+    channelId: channel.id,
+    amountCents: input.amountCents,
+    validUntil: input.validUntil,
+    notes: input.notes,
+    licenceConfirmed: input.licenceConfirmed,
+    insuranceConfirmed: input.insuranceConfirmed,
+    platformFeeCents: input.platformFeeCents,
+    referralFeeCents: input.referralFeeCents,
+    feeRecipient: input.feeRecipient,
+  } satisfies Partial<RecordQuoteInput>;
+
+  const recordInput: RecordQuoteInput = channel.contractorId
+    ? { ...base, contractorId: channel.contractorId }
+    : (() => {
+        if (!input.contact) {
+          throw new DomainError(
+            "CONTACT_REQUIRED",
+            "Enter your business name to submit a quote",
+            422,
+          );
+        }
+        return { ...base, contact: input.contact };
+      })();
+
+  // Delegate to the single quote entry point: fee-disclosure guard, RFQ-status
+  // guard, and the channel↔rfq ownership re-check all live there.
+  return await recordQuote(ctx, channel.schemeId, channel.rfqId, recordInput);
+}
+
+/** An accept token resolving to no work order is indistinguishable from expired. */
+async function workOrderByAcceptToken(ctx: ServiceContext, token: string) {
+  if (!token || token.length < 16) throw notFound("Work order link");
+  const wo = await ctx.db.query.workOrders.findFirst({
+    where: eq(workOrders.acceptToken, token),
+  });
+  if (!wo) throw notFound("Work order link");
+  return wo;
+}
+
+/** Location line for a work order, mirroring `dispatchWorkOrder` (Lot N / Common property). */
+async function workOrderLocation(ctx: ServiceContext, wo: { requestId: string | null }) {
+  if (!wo.requestId) return "Common property";
+  const request = await ctx.db.query.maintenanceRequests.findFirst({
+    where: eq(maintenanceRequests.id, wo.requestId),
+  });
+  if (!request?.lotId) return "Common property";
+  const lot = await ctx.db.query.lots.findFirst({ where: eq(lots.id, request.lotId) });
+  return `Lot ${lot?.lotNumber ?? "?"}`;
+}
+
+/**
+ * Public read for /work-order/{token}. THIS is the one place the exact address
+ * is revealed to a contractor — legitimate because a work order exists only
+ * after the committee award. Returns scope (markdown + safe HTML), the full
+ * address, the location line, the approved amount, and access notes. Never the
+ * quote comparison, other contractors, fees, or the decision.
+ */
+export async function getWorkOrderByAcceptToken(ctx: ServiceContext, token: string) {
+  const wo = await workOrderByAcceptToken(ctx, token);
+  const scheme = await ctx.db.query.schemes.findFirst({
+    where: eq(schemes.id, wo.schemeId),
+    columns: { addressLine1: true, suburb: true },
+  });
+  const location = await workOrderLocation(ctx, wo);
+
+  return {
+    scope: wo.scope,
+    scopeHtml: renderMarkdown(wo.scope),
+    // Post-award reveal: full street address + suburb.
+    address: scheme ? `${scheme.addressLine1}, ${scheme.suburb}` : null,
+    location,
+    approvedAmountCents: wo.approvedAmountCents,
+    approvedAmountFormatted: formatCents(wo.approvedAmountCents),
+    accessNotes: wo.accessNotes,
+    status: wo.status,
+  };
+}
+
+/**
+ * Contractor accepts the work order: `dispatched → accepted`. Confirms the
+ * engagement only — it does NOT award, touch money, or approve anything beyond
+ * what the committee award already did. Idempotent: any status other than
+ * `dispatched` returns the current status unchanged.
+ */
+export async function acceptWorkOrderByToken(ctx: ServiceContext, token: string) {
+  const wo = await workOrderByAcceptToken(ctx, token);
+  if (wo.status !== "dispatched") return { workOrderId: wo.id, status: wo.status };
+
+  await ctx.db.transaction(async (tx) => {
+    await tx.update(workOrders).set({ status: "accepted" }).where(eq(workOrders.id, wo.id));
+    await publishEvent(tx, {
+      schemeId: wo.schemeId,
+      stream: `work_order:${wo.id}`,
+      type: "work_order.accepted",
+      payload: { workOrderId: wo.id, contractorId: wo.contractorId },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+  });
+  return { workOrderId: wo.id, status: "accepted" as const };
+}
+
+/**
+ * Contractor declines the work order. There is no `declined` enum value, so the
+ * WO is `cancelled` and the officers are flagged (event + in-app notification)
+ * to re-award or re-dispatch. Idempotent for any non-`dispatched` status.
+ */
+export async function declineWorkOrderByToken(ctx: ServiceContext, token: string) {
+  const wo = await workOrderByAcceptToken(ctx, token);
+  if (wo.status !== "dispatched") return { workOrderId: wo.id, status: wo.status };
+
+  await ctx.db.transaction(async (tx) => {
+    await tx.update(workOrders).set({ status: "cancelled" }).where(eq(workOrders.id, wo.id));
+    await publishEvent(tx, {
+      schemeId: wo.schemeId,
+      stream: `work_order:${wo.id}`,
+      type: "work_order.declined",
+      payload: { workOrderId: wo.id, contractorId: wo.contractorId },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+  });
+
+  // Flag the humans: a declined engagement needs a re-award/re-dispatch.
+  const officers = await ctx.db
+    .selectDistinct({ userId: memberships.userId })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.schemeId, wo.schemeId),
+        inArray(memberships.role, ["chair", "secretary", "treasurer", "committee_member"]),
+        isNull(memberships.endedOn),
+        isNotNull(memberships.userId),
+      ),
+    );
+  const userIds = officers.map((o) => o.userId).filter((id): id is string => id !== null);
+  if (userIds.length > 0) {
+    await notifyUsers(ctx, wo.schemeId, userIds, {
+      title: "A contractor declined a work order",
+      body: "An awarded contractor declined the work order. Re-award the job or dispatch it to another contractor.",
+      category: "maintenance",
+      related: { type: "work_order", id: wo.id },
+    });
+  }
+
+  return { workOrderId: wo.id, status: "cancelled" as const };
 }

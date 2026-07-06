@@ -17,8 +17,10 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WorkOrderTokenRouteImport } from './routes/work-order.$token'
 import { Route as TrustSchemeIdRouteImport } from './routes/trust.$schemeId'
 import { Route as SchemesSchemeIdRouteImport } from './routes/schemes.$schemeId'
+import { Route as QuoteTokenRouteImport } from './routes/quote.$token'
 import { Route as SchemesSchemeIdManagerRouteImport } from './routes/schemes.$schemeId.manager'
 
 const WhatAmIPayingRoute = WhatAmIPayingRouteImport.update({
@@ -61,6 +63,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkOrderTokenRoute = WorkOrderTokenRouteImport.update({
+  id: '/work-order/$token',
+  path: '/work-order/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TrustSchemeIdRoute = TrustSchemeIdRouteImport.update({
   id: '/trust/$schemeId',
   path: '/trust/$schemeId',
@@ -69,6 +76,11 @@ const TrustSchemeIdRoute = TrustSchemeIdRouteImport.update({
 const SchemesSchemeIdRoute = SchemesSchemeIdRouteImport.update({
   id: '/schemes/$schemeId',
   path: '/schemes/$schemeId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuoteTokenRoute = QuoteTokenRouteImport.update({
+  id: '/quote/$token',
+  path: '/quote/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SchemesSchemeIdManagerRoute = SchemesSchemeIdManagerRouteImport.update({
@@ -86,8 +98,10 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
+  '/quote/$token': typeof QuoteTokenRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
   '/trust/$schemeId': typeof TrustSchemeIdRoute
+  '/work-order/$token': typeof WorkOrderTokenRoute
   '/schemes/$schemeId/manager': typeof SchemesSchemeIdManagerRoute
 }
 export interface FileRoutesByTo {
@@ -99,8 +113,10 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
+  '/quote/$token': typeof QuoteTokenRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
   '/trust/$schemeId': typeof TrustSchemeIdRoute
+  '/work-order/$token': typeof WorkOrderTokenRoute
   '/schemes/$schemeId/manager': typeof SchemesSchemeIdManagerRoute
 }
 export interface FileRoutesById {
@@ -113,8 +129,10 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/what-am-i-paying': typeof WhatAmIPayingRoute
+  '/quote/$token': typeof QuoteTokenRoute
   '/schemes/$schemeId': typeof SchemesSchemeIdRouteWithChildren
   '/trust/$schemeId': typeof TrustSchemeIdRoute
+  '/work-order/$token': typeof WorkOrderTokenRoute
   '/schemes/$schemeId/manager': typeof SchemesSchemeIdManagerRoute
 }
 export interface FileRouteTypes {
@@ -128,8 +146,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/signup'
     | '/what-am-i-paying'
+    | '/quote/$token'
     | '/schemes/$schemeId'
     | '/trust/$schemeId'
+    | '/work-order/$token'
     | '/schemes/$schemeId/manager'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -141,8 +161,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/signup'
     | '/what-am-i-paying'
+    | '/quote/$token'
     | '/schemes/$schemeId'
     | '/trust/$schemeId'
+    | '/work-order/$token'
     | '/schemes/$schemeId/manager'
   id:
     | '__root__'
@@ -154,8 +176,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/signup'
     | '/what-am-i-paying'
+    | '/quote/$token'
     | '/schemes/$schemeId'
     | '/trust/$schemeId'
+    | '/work-order/$token'
     | '/schemes/$schemeId/manager'
   fileRoutesById: FileRoutesById
 }
@@ -168,8 +192,10 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
   WhatAmIPayingRoute: typeof WhatAmIPayingRoute
+  QuoteTokenRoute: typeof QuoteTokenRoute
   SchemesSchemeIdRoute: typeof SchemesSchemeIdRouteWithChildren
   TrustSchemeIdRoute: typeof TrustSchemeIdRoute
+  WorkOrderTokenRoute: typeof WorkOrderTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -230,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/work-order/$token': {
+      id: '/work-order/$token'
+      path: '/work-order/$token'
+      fullPath: '/work-order/$token'
+      preLoaderRoute: typeof WorkOrderTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/trust/$schemeId': {
       id: '/trust/$schemeId'
       path: '/trust/$schemeId'
@@ -242,6 +275,13 @@ declare module '@tanstack/react-router' {
       path: '/schemes/$schemeId'
       fullPath: '/schemes/$schemeId'
       preLoaderRoute: typeof SchemesSchemeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quote/$token': {
+      id: '/quote/$token'
+      path: '/quote/$token'
+      fullPath: '/quote/$token'
+      preLoaderRoute: typeof QuoteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schemes/$schemeId/manager': {
@@ -275,8 +315,10 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
   WhatAmIPayingRoute: WhatAmIPayingRoute,
+  QuoteTokenRoute: QuoteTokenRoute,
   SchemesSchemeIdRoute: SchemesSchemeIdRouteWithChildren,
   TrustSchemeIdRoute: TrustSchemeIdRoute,
+  WorkOrderTokenRoute: WorkOrderTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -21,6 +21,8 @@
  *   - Web-safe system font stack; bold sans headings.
  */
 
+import { renderMarkdown } from "./markdown.js";
+
 /** Brand palette, resolved from site/style.css oklch tokens to email-safe hex. */
 const COLOR = {
   paper: "#faf9f7",
@@ -100,7 +102,26 @@ export interface InfoNoteBlock {
   tone?: "info" | "warning";
 }
 
-export type EmailBlock = ParagraphBlock | KeyValueTableBlock | AmountPanelBlock | InfoNoteBlock;
+/**
+ * A block of scope prose written in a tiny markdown subset (headings, bullet
+ * lists, bold). Rendered through {@link renderMarkdown}, which HTML-escapes
+ * every run FIRST and then applies a fixed tag whitelist — so untrusted scope
+ * text (`rfqs.specMd` / `workOrders.scope`) can never inject markup.
+ */
+export interface MarkdownBlock {
+  kind: "markdown";
+  /** Raw markdown source (escaped + whitelisted at render time). */
+  markdown: string;
+  /** Optional caption shown above the rendered prose (e.g. "Scope of work"). */
+  caption?: string;
+}
+
+export type EmailBlock =
+  | ParagraphBlock
+  | KeyValueTableBlock
+  | AmountPanelBlock
+  | InfoNoteBlock
+  | MarkdownBlock;
 
 /** Structured, presentation-agnostic description of a transactional email. */
 export interface EmailInput {
@@ -159,11 +180,17 @@ export const infoNote = (text: string, tone: "info" | "warning" = "info"): InfoN
   tone,
 });
 
+export const markdownBlock = (markdown: string, caption?: string): MarkdownBlock => ({
+  kind: "markdown",
+  markdown,
+  caption,
+});
+
 // ---------------------------------------------------------------------------
 // Escaping
 // ---------------------------------------------------------------------------
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -246,6 +273,19 @@ function renderInfoNote(b: InfoNoteBlock): string {
   </td></tr>`;
 }
 
+function renderMarkdownBlock(b: MarkdownBlock): string {
+  const caption = b.caption
+    ? `<div style="font-family:${FONT_STACK};font-size:12px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:${COLOR.faintInk};padding:0 0 8px 2px;">${escapeHtml(
+        b.caption,
+      )}</div>`
+    : "";
+  // `renderMarkdown` escapes first and emits only a fixed tag whitelist, so its
+  // output is safe to embed directly. Wrap it so headings/lists inherit the
+  // email's font + colour and carry no runaway top margin.
+  const body = renderMarkdown(b.markdown);
+  return `<tr><td style="padding:0 0 20px 0;font-family:${FONT_STACK};font-size:15px;line-height:1.6;color:${COLOR.ink};">${caption}<div style="font-family:${FONT_STACK};font-size:15px;line-height:1.6;color:${COLOR.ink};">${body}</div></td></tr>`;
+}
+
 function renderBlock(b: EmailBlock): string {
   switch (b.kind) {
     case "paragraph":
@@ -256,6 +296,8 @@ function renderBlock(b: EmailBlock): string {
       return renderAmountPanel(b);
     case "infoNote":
       return renderInfoNote(b);
+    case "markdown":
+      return renderMarkdownBlock(b);
   }
 }
 
@@ -420,6 +462,11 @@ function textBlock(b: EmailBlock): string {
     }
     case "infoNote":
       return `Note: ${b.text}`;
+    case "markdown": {
+      // Plaintext alternative: the raw markdown is already human-readable.
+      const head = b.caption ? `${b.caption.toUpperCase()}\n` : "";
+      return head + b.markdown.trim();
+    }
   }
 }
 

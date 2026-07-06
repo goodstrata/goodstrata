@@ -29,6 +29,7 @@ import {
   publicInviteRoutes,
 } from "./routes/onboarding.js";
 import { overviewRoutes } from "./routes/overview.js";
+import { publicQuoteRoutes, publicWorkOrderRoutes } from "./routes/portal.js";
 import { profileRoutes } from "./routes/profile.js";
 import { rfqsRoutes } from "./routes/rfqs.js";
 import { schemesRoutes } from "./routes/schemes.js";
@@ -118,6 +119,9 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     // cookie). Host-aware, degrades to same-origin locally.
     .route("/", mcpRoutes(deps))
     .route("/api/invites", publicInviteRoutes(deps))
+    // Public contractor self-service portal — token-authenticated, pre-auth.
+    .route("/api/quote", publicQuoteRoutes(deps))
+    .route("/api/work-order", publicWorkOrderRoutes(deps))
     .route("/webhooks", paymentWebhookRoutes(deps))
     .route("/api", api);
 
