@@ -16,7 +16,7 @@ import {
   type TradeMarketProvider,
   tradeMarketByName,
 } from "@goodstrata/integrations";
-import { addDays, formatCents } from "@goodstrata/shared";
+import { addDays, formatCents, isRealDateOnly } from "@goodstrata/shared";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
@@ -123,12 +123,26 @@ async function getRfqOrThrow(ctx: ServiceContext, schemeId: string, rfqId: strin
 // Create — snapshots suburb, drafts an anonymized spec from the request.
 // ---------------------------------------------------------------------------
 
+/**
+ * Quotes-due date for the DATE column. The scope-drafter agent emits all kinds
+ * of non-dates here ("", "Not set", a full ISO datetime, null); reduce any of
+ * them to a real calendar date-only string (YYYY-MM-DD) or null (= no due date)
+ * so invalid input can never reach Postgres and loop the tool. Applied in the
+ * service body, not just the schema, because the agent tool calls the service
+ * with unparsed args.
+ */
+function coerceQuotesDueOn(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const dateOnly = v.trim().slice(0, 10);
+  return isRealDateOnly(dateOnly) ? dateOnly : null;
+}
+
 export const createRfqInput = z.object({
   requestId: z.string(),
   title: z.string().min(3).max(200).optional(),
   category: z.string().min(2).max(50).optional(),
-  /** ISO date quotes are due by. */
-  quotesDueOn: z.string().optional(),
+  /** ISO date quotes are due by (coerced to YYYY-MM-DD or null). */
+  quotesDueOn: z.string().nullish(),
 });
 export type CreateRfqInput = z.infer<typeof createRfqInput>;
 
@@ -177,7 +191,7 @@ export async function createRfqFromRequest(
         // Suburb snapshot: this is ALL the location external parties get.
         suburb: scheme.suburb,
         buildingType: null, // schemes carry no building-type column yet
-        quotesDueOn: input.quotesDueOn ?? null,
+        quotesDueOn: coerceQuotesDueOn(input.quotesDueOn),
         status: "draft",
       })
       .returning();
@@ -205,7 +219,7 @@ export const applyRfqSpecInput = z.object({
   title: z.string().min(3).max(200),
   specMd: z.string().min(20).max(20000),
   category: z.string().min(2).max(50),
-  quotesDueOn: z.string().optional(),
+  quotesDueOn: z.string().nullish(),
 });
 export type ApplyRfqSpecInput = z.infer<typeof applyRfqSpecInput>;
 
@@ -232,7 +246,7 @@ export async function applyRfqSpec(
         title: anonymizeRfqText(input.title, identifiers),
         specMd: anonymizeRfqText(input.specMd, identifiers),
         category: input.category,
-        quotesDueOn: input.quotesDueOn ?? rfq.quotesDueOn,
+        quotesDueOn: coerceQuotesDueOn(input.quotesDueOn) ?? rfq.quotesDueOn,
       })
       .where(eq(rfqs.id, rfqId))
       .returning();

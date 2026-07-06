@@ -235,6 +235,48 @@ describe("anonymization is enforced in code", () => {
   });
 });
 
+describe("quotes-due date coercion (the DATE column never sees junk)", () => {
+  it("coerces non-date quotesDueOn to null instead of failing the query", async () => {
+    // Repro of the prod loop: the scope-drafter agent emitted "", "Not set" and
+    // a full ISO datetime into the DATE column, which Postgres rejected.
+    // On CREATE (no prior value) any non-date reduces to null.
+    const r1 = await newTriagedRequest("Dog mess in the common lobby.");
+    const empty = await tradeRfqService.createRfqFromRequest(ctx(), schemeId, {
+      requestId: r1.id,
+      quotesDueOn: "",
+    });
+    expect(empty.quotesDueOn).toBeNull();
+
+    const r2 = await newTriagedRequest("Broken common gate latch.");
+    const impossible = await tradeRfqService.createRfqFromRequest(ctx(), schemeId, {
+      requestId: r2.id,
+      quotesDueOn: "2026-02-30", // Feb 30 never exists
+    });
+    expect(impossible.quotesDueOn).toBeNull();
+
+    const spec = {
+      title: "Lobby clean-down",
+      specMd: "Clean and disinfect the affected common-area floor thoroughly.",
+      category: "cleaning",
+    };
+
+    // A real date lands as date-only, even when supplied as a full ISO datetime.
+    const dated = await tradeRfqService.applyRfqSpec(ctx(), schemeId, empty.id, {
+      ...spec,
+      quotesDueOn: "2026-07-20T00:00:00.000Z",
+    });
+    expect(dated.quotesDueOn).toBe("2026-07-20");
+
+    // A non-date on a later edit keeps the existing date rather than crashing
+    // or wiping it.
+    const kept = await tradeRfqService.applyRfqSpec(ctx(), schemeId, empty.id, {
+      ...spec,
+      quotesDueOn: "Not set",
+    });
+    expect(kept.quotesDueOn).toBe("2026-07-20");
+  });
+});
+
 describe("fees always surface (zero hidden margin)", () => {
   it("rejects a nonzero fee without a named recipient", async () => {
     const rfq = await newQuotingRfq();
