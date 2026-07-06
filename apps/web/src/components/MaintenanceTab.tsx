@@ -3,6 +3,11 @@ import { Bot, ClipboardCheck, HardHat, Plus, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import {
+  ownerStatusLabel,
+  ownerStatusTone,
+  ReportIssueDialog,
+} from "@/components/maintenance/ReportIssueDialog";
 import { RequestQuotesButton, RfqSection } from "@/components/RfqSection";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +39,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
-import { useIsOfficer } from "@/lib/roles";
+import { useIsOfficer, useIsOwnerView } from "@/lib/roles";
 
 interface Request {
   id: string;
@@ -75,6 +80,7 @@ const URGENCY_TONES: Record<string, "critical" | "caution" | "neutral"> = {
 export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
+  const isOwnerView = useIsOwnerView(schemeId);
   const invalidate = () => {
     for (const key of ["maintenance", "work-orders", "contractors", "decisions", "rfqs", "rfq"]) {
       void queryClient.invalidateQueries({ queryKey: [key, schemeId] });
@@ -85,159 +91,46 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
     <div className="space-y-8">
       <PageHeader
         as="h2"
-        title="Maintenance"
-        description="Report issues, follow the agent's triage, and track work through to completion."
-        actions={<ReportIssueDialog schemeId={schemeId} onChange={invalidate} />}
+        title={isOwnerView ? "Report an issue" : "Maintenance"}
+        description={
+          isOwnerView
+            ? "Report something wrong in the building. The maintenance agent triages every report automatically."
+            : "Report issues, follow the agent's triage, and track work through to completion."
+        }
+        actions={
+          <ReportIssueDialog
+            schemeId={schemeId}
+            onChange={invalidate}
+            triggerLabel="Report an issue"
+          />
+        }
       />
-      <RequestList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
-      <RfqSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
-      <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
+      <RequestList
+        schemeId={schemeId}
+        isOfficer={isOfficer}
+        isOwnerView={isOwnerView}
+        onChange={invalidate}
+      />
+      {/* Ops surfaces — committee only. Owners never see RFQs, work orders, or
+          the contractor pool; each stays fully intact for officers. */}
+      {isOfficer && <RfqSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />}
+      {isOfficer && (
+        <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
+      )}
       {isOfficer && <ContractorSection schemeId={schemeId} onChange={invalidate} />}
     </div>
-  );
-}
-
-const reportSchema = z.object({
-  title: z.string().trim().min(1, "Give the issue a short title."),
-  description: z.string().trim().min(1, "Describe the issue so the agent can triage it."),
-  lotId: z.string(),
-});
-
-function ReportIssueDialog({ schemeId, onChange }: { schemeId: string; onChange: () => void }) {
-  const [open, setOpen] = useState(false);
-  const lots = useQuery({
-    queryKey: ["lots", schemeId],
-    queryFn: async () =>
-      unwrap<{ lots: { id: string; lotNumber: string }[] }>(
-        await api.schemes[":schemeId"].lots.$get({ param: { schemeId } }),
-      ),
-    enabled: open,
-  });
-  const create = useMutation({
-    mutationFn: async (values: { title: string; description: string; lotId: string }) =>
-      unwrap(
-        await api.schemes[":schemeId"].maintenance.$post({
-          param: { schemeId },
-          json: {
-            title: values.title,
-            description: values.description,
-            lotId: values.lotId === "common" ? undefined : values.lotId,
-          },
-        }),
-      ),
-    onSuccess: () => {
-      setOpen(false);
-      form.reset();
-      toast.success("Request submitted — the maintenance agent will triage it");
-      onChange();
-    },
-  });
-  const form = useAppForm({
-    schema: reportSchema,
-    defaultValues: { title: "", description: "", lotId: "common" },
-    onSubmit: (values) => create.mutateAsync(values),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus aria-hidden="true" className="size-4" /> Report issue
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Report a maintenance issue</DialogTitle>
-          <DialogDescription>
-            The maintenance agent triages every report automatically.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="mr-form"
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            void form.handleSubmit();
-          }}
-        >
-          <form.Field name="title">
-            {(field) => (
-              <Field label="Title" required error={fieldError(field.state.meta.errors)}>
-                {(controlProps) => (
-                  <Input
-                    {...controlProps}
-                    data-testid="mr-title"
-                    placeholder="What's the problem? (e.g. Water stain on ceiling)"
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                  />
-                )}
-              </Field>
-            )}
-          </form.Field>
-          <form.Field name="description">
-            {(field) => (
-              <Field label="Description" required error={fieldError(field.state.meta.errors)}>
-                {(controlProps) => (
-                  <Textarea
-                    {...controlProps}
-                    data-testid="mr-description"
-                    className="min-h-28"
-                    placeholder="Describe it — where, since when, how bad."
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                  />
-                )}
-              </Field>
-            )}
-          </form.Field>
-          <form.Field name="lotId">
-            {(field) => (
-              <Field
-                label="Where is it?"
-                hint="Pick your lot if the issue is inside it — it helps the triage."
-                error={fieldError(field.state.meta.errors)}
-              >
-                {(controlProps) => (
-                  <Select value={field.state.value} onValueChange={field.handleChange}>
-                    <SelectTrigger {...controlProps} data-testid="mr-lot">
-                      <SelectValue placeholder="Common property / shared areas" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="common">Common property / shared areas</SelectItem>
-                      {(lots.data?.lots ?? []).map((lot) => (
-                        <SelectItem key={lot.id} value={lot.id}>
-                          Lot {lot.lotNumber}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </Field>
-            )}
-          </form.Field>
-          <FormError form={form} />
-        </form>
-        <DialogFooter>
-          <SubmitButton form={form} formId="mr-form">
-            Submit request
-          </SubmitButton>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
 function RequestList({
   schemeId,
   isOfficer,
+  isOwnerView,
   onChange,
 }: {
   schemeId: string;
   isOfficer: boolean;
+  isOwnerView: boolean;
   onChange: () => void;
 }) {
   const { data, isLoading, isError, refetch } = useQuery({
@@ -251,9 +144,13 @@ function RequestList({
 
   return (
     <section>
-      <h2 className="text-base font-semibold">Requests</h2>
+      <h2 className="text-base font-semibold">
+        {isOwnerView ? "Requests in your building" : "Requests"}
+      </h2>
       <p className="text-sm text-muted-foreground">
-        Maintenance reports from residents and owners.
+        {isOwnerView
+          ? "Track what's been reported. Report anything new and the maintenance agent takes it from there."
+          : "Maintenance reports from residents and owners."}
       </p>
       <div className="mt-4 space-y-2.5">
         {isLoading && <Skeleton className="h-24" />}
@@ -266,9 +163,19 @@ function RequestList({
         {data?.requests.length === 0 && (
           <EmptyState
             icon={Wrench}
-            title="No maintenance requests yet"
-            description="Report an issue and the maintenance agent triages it automatically."
-            action={<ReportIssueDialog schemeId={schemeId} onChange={onChange} />}
+            title={isOwnerView ? "Nothing reported yet" : "No maintenance requests yet"}
+            description={
+              isOwnerView
+                ? "If something's wrong in the building, report it and we'll take it from there."
+                : "Report an issue and the maintenance agent triages it automatically."
+            }
+            action={
+              <ReportIssueDialog
+                schemeId={schemeId}
+                onChange={onChange}
+                triggerLabel="Report an issue"
+              />
+            }
           />
         )}
         {data?.requests.map((r) => (
@@ -277,10 +184,14 @@ function RequestList({
               <div className="flex items-start justify-between gap-3">
                 <p className="text-sm font-medium">{r.title}</p>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  {r.urgency && (
+                  {!isOwnerView && r.urgency && (
                     <Badge tone={URGENCY_TONES[r.urgency] ?? "neutral"}>{r.urgency}</Badge>
                   )}
-                  <StatusBadge status={r.status} />
+                  {isOwnerView ? (
+                    <Badge tone={ownerStatusTone(r.status)}>{ownerStatusLabel(r.status)}</Badge>
+                  ) : (
+                    <StatusBadge status={r.status} />
+                  )}
                 </div>
               </div>
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>

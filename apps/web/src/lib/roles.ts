@@ -15,7 +15,7 @@ export function schemeQueryOptions(schemeId: string) {
   };
 }
 
-const OFFICER_ROLES = ["chair", "secretary", "treasurer", "manager_admin"];
+export const OFFICER_ROLES = ["chair", "secretary", "treasurer", "manager_admin"];
 const COMMITTEE_ROLES = ["committee_member", "chair", "secretary", "treasurer"];
 
 /** Roles the signed-in user holds on this scheme ([] while loading). */
@@ -30,6 +30,18 @@ export function useSchemeRoles(schemeId: string): string[] {
  */
 export function useIsOfficer(schemeId: string): boolean {
   return useSchemeRoles(schemeId).some((r) => OFFICER_ROLES.includes(r));
+}
+
+/**
+ * True for a plain member — someone who holds a membership on this scheme but
+ * no officer/committee role. Drives the focused owner presentation (nav set +
+ * landing). Returns false while roles are still loading (roles === []), so the
+ * committee layout is never flashed before the owner layout resolves. This is
+ * presentation only; the API still enforces access via requireScope.
+ */
+export function useIsOwnerView(schemeId: string): boolean {
+  const roles = useSchemeRoles(schemeId);
+  return roles.length > 0 && !roles.some((r) => OFFICER_ROLES.includes(r));
 }
 
 /** Mirrors core's rolesAllowedToDecide for a decision's decider tier. */

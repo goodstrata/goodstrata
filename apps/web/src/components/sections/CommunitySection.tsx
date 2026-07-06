@@ -36,7 +36,7 @@ import { api, unwrap } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { useIsOfficer } from "@/lib/roles";
+import { useIsOfficer, useIsOwnerView } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -153,6 +153,7 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
   const isOfficer = useIsOfficer(schemeId);
+  const isOwnerView = useIsOwnerView(schemeId);
 
   const feed = useInfiniteQuery({
     queryKey: FEED_KEY(schemeId),
@@ -206,7 +207,7 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <PostComposer schemeId={schemeId} />
+      <PostComposer schemeId={schemeId} isOwnerView={isOwnerView} />
 
       {feed.isError ? (
         <ErrorState
@@ -223,8 +224,12 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
       ) : posts.length === 0 ? (
         <EmptyState
           icon={MessagesSquare}
-          title="No posts yet"
-          description="Start the conversation — share the first update with your neighbours."
+          title={isOwnerView ? "Nothing here yet" : "No posts yet"}
+          description={
+            isOwnerView
+              ? "Be the first to post — share a notice or a question with your building."
+              : "Start the conversation — share the first update with your neighbours."
+          }
         />
       ) : (
         <div className="space-y-4">
@@ -268,7 +273,7 @@ const composerSchema = z.object({
 });
 type ComposerValues = z.infer<typeof composerSchema>;
 
-function PostComposer({ schemeId }: { schemeId: string }) {
+function PostComposer({ schemeId, isOwnerView }: { schemeId: string; isOwnerView: boolean }) {
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [images, setImages] = useState<{ file: File; url: string }[]>([]);
@@ -355,9 +360,11 @@ function PostComposer({ schemeId }: { schemeId: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Share with your community</CardTitle>
+        <CardTitle>{isOwnerView ? "Post to your building" : "Share with your community"}</CardTitle>
         <CardDescription>
-          Post an update, a question, or a photo for owners and residents of this scheme.
+          {isOwnerView
+            ? "Share a notice, a question, or a photo with the owners and residents in your building."
+            : "Post an update, a question, or a photo for owners and residents of this scheme."}
         </CardDescription>
       </CardHeader>
       <CardContent>

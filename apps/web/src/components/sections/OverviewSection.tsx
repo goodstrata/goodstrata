@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { OnboardingChecklist } from "@/components/overview/OnboardingChecklist";
 import { OverviewDashboard, type OverviewData } from "@/components/overview/OverviewDashboard";
+import { OwnerHome } from "@/components/overview/OwnerHome";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, unwrap } from "@/lib/api";
-import { useIsOfficer } from "@/lib/roles";
+import { useIsOfficer, useIsOwnerView } from "@/lib/roles";
 
 /**
  * The scheme landing screen. Before activation it is the onboarding checklist;
@@ -13,6 +14,7 @@ import { useIsOfficer } from "@/lib/roles";
  */
 export function OverviewSection({ schemeId }: { schemeId: string }) {
   const isOfficer = useIsOfficer(schemeId);
+  const isOwnerView = useIsOwnerView(schemeId);
   const { data, isError, error, refetch } = useQuery({
     queryKey: ["overview", schemeId],
     queryFn: async () =>
@@ -51,5 +53,9 @@ export function OverviewSection({ schemeId }: { schemeId: string }) {
     );
   }
 
-  return <OverviewDashboard schemeId={schemeId} data={data} />;
+  return isOwnerView ? (
+    <OwnerHome schemeId={schemeId} data={data} />
+  ) : (
+    <OverviewDashboard schemeId={schemeId} data={data} />
+  );
 }

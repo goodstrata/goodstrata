@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, type SearchSchemaInput } from "@tanstack/react-router";
+import { createFileRoute, Link, Navigate, type SearchSchemaInput } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -38,7 +38,7 @@ import { PeopleSection } from "@/components/sections/PeopleSection";
 import { RegistryPlate } from "@/components/ui/registry-plate";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { schemeQueryOptions } from "@/lib/roles";
+import { schemeQueryOptions, useIsOwnerView } from "@/lib/roles";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -127,18 +127,76 @@ const ALL_ITEMS: SectionItem[] = NAV_GROUPS.flatMap((g) => g.items);
 /** Sections pinned to the mobile bottom bar; the rest live behind "More". */
 const MOBILE_PRIMARY: readonly Section[] = ["overview", "finance", "meetings", "activity"];
 
+// ---------------------------------------------------------------------------
+// Owner (plain-member) presentation — a focused subset of the committee nav.
+// Committee viewers keep the full NAV_GROUPS above, byte-for-byte. This is IA
+// only: the server still enforces every read via requireScope, so hiding a
+// section is a UX choice, never a security boundary (see the deep-link guard
+// in SectionBody).
+// ---------------------------------------------------------------------------
+
+/** The only sections an owner viewer sees, in order. */
+const OWNER_SECTIONS: readonly Section[] = [
+  "overview",
+  "maintenance",
+  "finance",
+  "meetings",
+  "community",
+  "documents",
+];
+
+/** Owner-voiced labels; internal org vocabulary is reframed for the resident. */
+const OWNER_LABELS: Partial<Record<Section, string>> = {
+  overview: "Home",
+  maintenance: "Report an issue",
+  finance: "What I owe",
+  community: "My building",
+};
+
+/** Owner mobile bottom-bar primaries; community + documents live behind "More". */
+const OWNER_MOBILE_PRIMARY: readonly Section[] = ["overview", "maintenance", "finance", "meetings"];
+
+/**
+ * Derive the owner nav from the single-source committee groups: keep only
+ * owner sections, apply owner labels, and drop groups that empty out. Order
+ * follows OWNER_SECTIONS so "Report an issue" sits second under Home.
+ */
+function ownerNavGroups(): { heading: string | null; items: SectionItem[] }[] {
+  const byKey = new Map(ALL_ITEMS.map((item) => [item.key, item]));
+  const items = OWNER_SECTIONS.flatMap((key) => {
+    const base = byKey.get(key);
+    if (!base) return [];
+    return [{ ...base, label: OWNER_LABELS[key] ?? base.label }];
+  });
+  // A single flat, unheaded group reads best for the short owner index.
+  return [{ heading: null, items }];
+}
+
+interface NavConfig {
+  groups: { heading: string | null; items: SectionItem[] }[];
+  mobilePrimary: readonly Section[];
+}
+
+const COMMITTEE_NAV: NavConfig = { groups: NAV_GROUPS, mobilePrimary: MOBILE_PRIMARY };
+const OWNER_NAV: NavConfig = { groups: ownerNavGroups(), mobilePrimary: OWNER_MOBILE_PRIMARY };
+
 function SchemePage() {
   const { schemeId } = Route.useParams();
   const { section } = Route.useSearch();
   const { data } = useQuery(schemeQueryOptions(schemeId));
+  const isOwnerView = useIsOwnerView(schemeId);
   // Show the register-index sidebar from md (768px) so tablets/small laptops
   // get it instead of the phone bottom bar; the shared hook stays at 1024.
   const isMobile = useIsMobile(768);
 
+  // Pick the nav set only once roles have loaded (data present) so an owner
+  // never sees the committee index flash before their own resolves.
+  const nav: NavConfig | null = data ? (isOwnerView ? OWNER_NAV : COMMITTEE_NAV) : null;
+
   return (
     <>
       <div className="md:grid md:grid-cols-[14rem_1fr] md:gap-8">
-        {!isMobile && <SidebarNav schemeId={schemeId} active={section} />}
+        {!isMobile && <SidebarNav schemeId={schemeId} active={section} nav={nav} />}
         <div className="min-w-0 space-y-6 pb-24 md:pb-8">
           {data ? (
             <RegistryPlate
@@ -158,16 +216,38 @@ function SchemePage() {
               <Skeleton className="h-px w-full" />
             </div>
           )}
-          <SectionBody schemeId={schemeId} section={section} />
+          <SectionBody schemeId={schemeId} section={section} isOwnerView={isOwnerView} />
         </div>
       </div>
-      {isMobile && <BottomNav schemeId={schemeId} active={section} />}
+      {isMobile && nav && <BottomNav schemeId={schemeId} active={section} nav={nav} />}
     </>
   );
 }
 
 /** Only the active section mounts, so inactive sections never fetch. */
-function SectionBody({ schemeId, section }: { schemeId: string; section: Section }) {
+function SectionBody({
+  schemeId,
+  section,
+  isOwnerView,
+}: {
+  schemeId: string;
+  section: Section;
+  isOwnerView: boolean;
+}) {
+  // Owners can still type ?section=decisions; send them home. Cosmetic tidiness
+  // on top of the server's own rejection — never presented as security. The
+  // guard only fires once we know the viewer is an owner (isOwnerView is false
+  // while roles load), so committee viewers are never redirected.
+  if (isOwnerView && !OWNER_SECTIONS.includes(section)) {
+    return (
+      <Navigate
+        to="/schemes/$schemeId"
+        params={{ schemeId }}
+        search={{ section: "overview" }}
+        replace
+      />
+    );
+  }
   switch (section) {
     case "overview":
       return <OverviewSection schemeId={schemeId} />;
@@ -243,15 +323,17 @@ function SectionLink({
 function NavGroups({
   schemeId,
   active,
+  groups,
   onNavigate,
 }: {
   schemeId: string;
   active: Section;
+  groups: { heading: string | null; items: SectionItem[] }[];
   onNavigate?: () => void;
 }) {
   return (
     <div className="space-y-5">
-      {NAV_GROUPS.map((group) => (
+      {groups.map((group) => (
         <div key={group.heading ?? "overview"}>
           {group.heading && (
             <p className="mb-1 px-2.5 text-xs font-semibold text-muted-foreground">
@@ -277,19 +359,46 @@ function NavGroups({
 }
 
 /** Tablet/desktop (≥ md) register index: sticky left sidebar. */
-function SidebarNav({ schemeId, active }: { schemeId: string; active: Section }) {
+function SidebarNav({
+  schemeId,
+  active,
+  nav,
+}: {
+  schemeId: string;
+  active: Section;
+  nav: NavConfig | null;
+}) {
   return (
     <nav aria-label="Scheme sections" className="sticky top-20 self-start">
-      <NavGroups schemeId={schemeId} active={active} />
+      {nav ? (
+        <NavGroups schemeId={schemeId} active={active} groups={nav.groups} />
+      ) : (
+        <div className="space-y-2">
+          {["a", "b", "c", "d", "e", "f"].map((k) => (
+            <Skeleton key={k} className="h-9 w-full rounded-md" />
+          ))}
+        </div>
+      )}
     </nav>
   );
 }
 
 /** Mobile (< md) fixed bottom bar; "More" opens a sheet with every section. */
-function BottomNav({ schemeId, active }: { schemeId: string; active: Section }) {
+function BottomNav({
+  schemeId,
+  active,
+  nav,
+}: {
+  schemeId: string;
+  active: Section;
+  nav: NavConfig;
+}) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const primary = ALL_ITEMS.filter((item) => MOBILE_PRIMARY.includes(item.key));
-  const moreActive = !MOBILE_PRIMARY.includes(active);
+  const allItems = nav.groups.flatMap((g) => g.items);
+  const primary = nav.mobilePrimary
+    .map((key) => allItems.find((item) => item.key === key))
+    .filter((item): item is SectionItem => item !== undefined);
+  const moreActive = !nav.mobilePrimary.includes(active);
 
   return (
     <nav
@@ -336,7 +445,12 @@ function BottomNav({ schemeId, active }: { schemeId: string; active: Section }) 
             <SheetTitle>Scheme sections</SheetTitle>
           </SheetHeader>
           <div className="px-4 pb-8">
-            <NavGroups schemeId={schemeId} active={active} onNavigate={() => setMoreOpen(false)} />
+            <NavGroups
+              schemeId={schemeId}
+              active={active}
+              groups={nav.groups}
+              onNavigate={() => setMoreOpen(false)}
+            />
           </div>
         </SheetContent>
       </Sheet>
