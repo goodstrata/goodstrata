@@ -36,6 +36,11 @@ interface Env {
   MONOOVA_PAYID_NAME?: string;
   MONOOVA_WEBHOOK_PUBLIC_KEY?: string;
   MONOOVA_WEBHOOK_SECRET?: string;
+  // Twilio SMS. All three present flips the notifier's SMS provider to twilio;
+  // otherwise SMS stays "console" (email + in-app are unaffected).
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+  TWILIO_PHONE_NUMBER?: string;
 }
 
 const APP_URL = "https://my.goodstrata.com.au";
@@ -119,6 +124,18 @@ export class GoodstrataApp extends Container<Env> {
         }
       : {}; // falls back to the mock provider until Monoova creds are added
 
+    // Twilio SMS: only lights up when all three secrets are present, so a
+    // half-configured account never breaks boot — SMS just stays on "console".
+    const sms =
+      env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER
+        ? {
+            SMS_PROVIDER: "twilio",
+            TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID,
+            TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN,
+            TWILIO_PHONE_NUMBER: env.TWILIO_PHONE_NUMBER,
+          }
+        : {};
+
     super(ctx, env, {
       envVars: {
         DATABASE_URL: env.DATABASE_URL,
@@ -133,6 +150,7 @@ export class GoodstrataApp extends Container<Env> {
         ...video,
         ...google,
         ...payments,
+        ...sms,
       },
     });
   }
