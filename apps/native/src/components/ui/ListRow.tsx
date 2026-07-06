@@ -28,6 +28,10 @@ export interface ListRowProps {
   unread?: boolean;
   /** Hairline under the row, inset to the text column. Skip on the last row of a group. */
   divider?: boolean;
+  /** Accessible name for the pressable row. Falls back to the row's text content. */
+  accessibilityLabel?: string;
+  /** Accessible hint describing what activating the row does (e.g. "Opens finance"). */
+  accessibilityHint?: string;
 }
 
 export function ListRow({
@@ -39,6 +43,8 @@ export function ListRow({
   leading,
   unread,
   divider,
+  accessibilityLabel,
+  accessibilityHint,
 }: ListRowProps) {
   const theme = useTheme();
   const showChevron = chevron ?? !!onPress;
@@ -142,7 +148,12 @@ export function ListRow({
 
   if (!onPress) return withDivider;
   return (
-    <PressableScale onPress={onPress} accessibilityRole="button">
+    <PressableScale
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+    >
       {withDivider}
     </PressableScale>
   );

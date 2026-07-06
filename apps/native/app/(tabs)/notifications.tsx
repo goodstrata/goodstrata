@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, RefreshControl, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
@@ -15,6 +16,7 @@ import {
 } from "../../src/components";
 import { api, apiPost } from "../../src/lib/api";
 import { formatRelativeTime } from "../../src/lib/format";
+import { resolveNotificationTarget } from "../../src/lib/notificationTarget";
 import { space, type as t } from "../../src/theme/tokens";
 
 // ── API shapes ──────────────────────────────────────────────────────────────
@@ -160,6 +162,15 @@ export default function Notifications() {
     for (const schemeId of schemeIds) markRead.mutate({ schemeId, all: true });
   };
 
+  // Tap = notification center: clear unread (if any) AND deep-link to the entity.
+  const openNotification = (item: FeedItem) => {
+    if (!item.readAt) {
+      markRead.mutate({ schemeId: item.schemeId, notificationId: item.id });
+    }
+    const target = resolveNotificationTarget(item);
+    if (target) router.push(target);
+  };
+
   const headerRight =
     unreadCount > 0 ? (
       <PressableScale
@@ -210,13 +221,12 @@ export default function Notifications() {
               title={item.title}
               subtitle={subtitle}
               unread={unread}
-              chevron={false}
               divider={index < items.length - 1}
-              onPress={
-                unread
-                  ? () => markRead.mutate({ schemeId: item.schemeId, notificationId: item.id })
-                  : undefined
-              }
+              onPress={() => openNotification(item)}
+              accessibilityLabel={[item.title, subtitle, unread ? "Unread" : undefined]
+                .filter(Boolean)
+                .join(". ")}
+              accessibilityHint="Opens the related item"
               right={
                 <Text style={[t.figureSmall, { color: theme.muted }]}>
                   {formatRelativeTime(item.createdAt)}
