@@ -369,7 +369,6 @@ function SendRfqDialog({
                 <MarkdownEditor
                   {...controlProps}
                   data-testid="rfq-spec"
-                  textareaClassName="min-h-40 font-mono text-xs"
                   value={spec}
                   onValueChange={setEditedSpec}
                   loading={drafting}
