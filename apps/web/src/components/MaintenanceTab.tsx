@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, ClipboardCheck, HardHat, Plus, Wrench } from "lucide-react";
+import { Bot, ClipboardCheck, FileSearch, HardHat, Plus, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
@@ -81,11 +82,23 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
   const isOwnerView = useIsOwnerView(schemeId);
+  const [tab, setTab] = useState("requests");
   const invalidate = () => {
     for (const key of ["maintenance", "work-orders", "contractors", "decisions", "rfqs", "rfq"]) {
       void queryClient.invalidateQueries({ queryKey: [key, schemeId] });
     }
   };
+
+  // The Requests surface is for everyone (owners get their own variant). It is
+  // shared between the owner's untabbed view and the officer's first tab.
+  const requests = (
+    <RequestList
+      schemeId={schemeId}
+      isOfficer={isOfficer}
+      isOwnerView={isOwnerView}
+      onChange={invalidate}
+    />
+  );
 
   return (
     <div className="space-y-8">
@@ -105,19 +118,43 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
           />
         }
       />
-      <RequestList
-        schemeId={schemeId}
-        isOfficer={isOfficer}
-        isOwnerView={isOwnerView}
-        onChange={invalidate}
-      />
-      {/* Ops surfaces — committee only. Owners never see RFQs, work orders, or
-          the contractor pool; each stays fully intact for officers. */}
-      {isOfficer && <RfqSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />}
-      {isOfficer && (
-        <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
+      {/* Role gating preserved exactly: the committee-only ops surfaces (Quotes,
+          Work orders, Contractors) live behind officer tabs and never render for
+          non-officers. Owners keep their single, untabbed Requests view. */}
+      {isOfficer ? (
+        <Tabs value={tab} onValueChange={setTab} className="gap-4">
+          <TabsList aria-label="Maintenance sections">
+            <TabsTrigger value="requests" className="gap-2">
+              <Wrench className="size-4" aria-hidden="true" />
+              Requests
+            </TabsTrigger>
+            <TabsTrigger value="quotes" className="gap-2">
+              <FileSearch className="size-4" aria-hidden="true" />
+              Quotes
+            </TabsTrigger>
+            <TabsTrigger value="work-orders" className="gap-2">
+              <ClipboardCheck className="size-4" aria-hidden="true" />
+              Work orders
+            </TabsTrigger>
+            <TabsTrigger value="contractors" className="gap-2">
+              <HardHat className="size-4" aria-hidden="true" />
+              Contractors
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="requests">{requests}</TabsContent>
+          <TabsContent value="quotes">
+            <RfqSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
+          </TabsContent>
+          <TabsContent value="work-orders">
+            <WorkOrderList schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
+          </TabsContent>
+          <TabsContent value="contractors">
+            <ContractorSection schemeId={schemeId} onChange={invalidate} />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        requests
       )}
-      {isOfficer && <ContractorSection schemeId={schemeId} onChange={invalidate} />}
     </div>
   );
 }
