@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
+import type { ComponentProps } from "react";
 import { Text, View } from "react-native";
 import {
   Card,
@@ -19,19 +20,7 @@ import {
   useTheme,
 } from "../../../src/components";
 import { api } from "../../../src/lib/api";
-
-interface SchemeRow {
-  id: string;
-  name: string;
-  planOfSubdivision: string | null;
-  tier: number | string | null;
-  status: string;
-}
-
-interface SchemeDetail {
-  scheme: SchemeRow;
-  roles: string[];
-}
+import { schemeQueryOptions, useIsOfficer } from "../../../src/lib/roles";
 
 interface SchemeOverview {
   scheme: { id: string; name: string; planOfSubdivision: string | null; tier: number | string | null; status: string };
@@ -64,17 +53,26 @@ function money(cents: number): string {
   return `${m.dollars}${m.cents}`;
 }
 
+/**
+ * One row in the hub's "In this scheme" index. A `path` makes it a navigable
+ * row; its absence marks a destination not yet built on mobile (rendered as a
+ * quiet "Soon" row rather than a dead link).
+ */
+interface HubLink {
+  key: string;
+  icon: ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  subtitle: string;
+  path?: string;
+}
+
 export default function SchemeHub() {
   const theme = useTheme();
   const params = useLocalSearchParams<{ id: string }>();
   const schemeId = typeof params.id === "string" ? params.id : "";
   const queryClient = useQueryClient();
 
-  const detailQuery = useQuery({
-    queryKey: ["scheme", schemeId],
-    queryFn: () => api<SchemeDetail>(`/api/schemes/${schemeId}`),
-    enabled: !!schemeId,
-  });
+  const detailQuery = useQuery({ ...schemeQueryOptions(schemeId), enabled: !!schemeId });
   const overviewQuery = useQuery({
     queryKey: ["scheme", schemeId, "overview"],
     queryFn: () => api<SchemeOverview>(`/api/schemes/${schemeId}/overview`),
@@ -98,46 +96,96 @@ export default function SchemeHub() {
   const lotsInArrears = finance?.lotsInArrears ?? 0;
   const pendingDecisions = overview?.attention.pendingDecisions ?? 0;
 
-  const links = [
+  // Presentation-only role gate, mirroring web's OWNER vs COMMITTEE split
+  // (schemes.$schemeId.tsx). Officers/managers get the full register; plain
+  // owners and committee members get the focused resident view. Gate on
+  // `rolesLoaded` so the officer set (with Decisions) is never flashed before
+  // roles resolve. The API still enforces every read — hiding a row is UX.
+  const isOfficer = useIsOfficer(schemeId);
+  const rolesLoaded = !!detailQuery.data;
+
+  const financeSubtitle =
+    lotsInArrears > 0
+      ? `${lotsInArrears} lot${lotsInArrears === 1 ? "" : "s"} in arrears`
+      : finance
+        ? `${finance.noticeCount} levy notice${finance.noticeCount === 1 ? "" : "s"} issued`
+        : "Levies, payments and arrears";
+  const meetingsSubtitle = overview?.nextMeeting
+    ? `Next: ${formatDate(overview.nextMeeting.scheduledAt)}`
+    : "Notices and minutes";
+
+  const officerLinks: HubLink[] = [
     {
       key: "finance",
-      icon: "cash-outline" as const,
+      icon: "cash-outline",
       title: "Finance",
-      subtitle:
-        lotsInArrears > 0
-          ? `${lotsInArrears} lot${lotsInArrears === 1 ? "" : "s"} in arrears`
-          : finance
-            ? `${finance.noticeCount} levy notice${finance.noticeCount === 1 ? "" : "s"} issued`
-            : "Levies, payments and arrears",
+      subtitle: financeSubtitle,
       path: `/scheme/${schemeId}/finance`,
     },
     {
       key: "decisions",
-      icon: "checkmark-circle-outline" as const,
+      icon: "checkmark-circle-outline",
       title: "Decisions",
       subtitle:
-        pendingDecisions > 0
-          ? `${pendingDecisions} waiting on you`
-          : "Approvals on the record",
+        pendingDecisions > 0 ? `${pendingDecisions} waiting on you` : "Approvals on the record",
       path: `/scheme/${schemeId}/decisions`,
     },
     {
       key: "meetings",
-      icon: "calendar-outline" as const,
+      icon: "calendar-outline",
       title: "Meetings",
-      subtitle: overview?.nextMeeting
-        ? `Next: ${formatDate(overview.nextMeeting.scheduledAt)}`
-        : "Notices and minutes",
+      subtitle: meetingsSubtitle,
       path: `/scheme/${schemeId}/meetings`,
     },
     {
       key: "documents",
-      icon: "document-text-outline" as const,
+      icon: "document-text-outline",
       title: "Documents",
       subtitle: "The scheme's records",
       path: `/scheme/${schemeId}/documents`,
     },
   ];
+
+  // Owner-voiced subset. "Report an issue" (maintenance) and "My building"
+  // (community) have no mobile route yet — they render as quiet "Soon" rows
+  // until parity lands, matching the web owner nav order.
+  const ownerLinks: HubLink[] = [
+    {
+      key: "maintenance",
+      icon: "construct-outline",
+      title: "Report an issue",
+      subtitle: "Maintenance and repairs",
+    },
+    {
+      key: "finance",
+      icon: "cash-outline",
+      title: "What I owe",
+      subtitle: financeSubtitle,
+      path: `/scheme/${schemeId}/finance`,
+    },
+    {
+      key: "meetings",
+      icon: "calendar-outline",
+      title: "Meetings",
+      subtitle: meetingsSubtitle,
+      path: `/scheme/${schemeId}/meetings`,
+    },
+    {
+      key: "community",
+      icon: "people-outline",
+      title: "My building",
+      subtitle: "Neighbours and notices",
+    },
+    {
+      key: "documents",
+      icon: "document-text-outline",
+      title: "Documents",
+      subtitle: "The scheme's records",
+      path: `/scheme/${schemeId}/documents`,
+    },
+  ];
+
+  const links = isOfficer ? officerLinks : ownerLinks;
 
   return (
     <Screen
@@ -211,16 +259,28 @@ export default function SchemeHub() {
 
           <SectionHeader label="In this scheme" />
           <Card>
-            {links.map((link, i) => (
-              <ListRow
-                key={link.key}
-                title={link.title}
-                subtitle={link.subtitle}
-                leading={<Ionicons name={link.icon} size={18} color={theme.accent} />}
-                onPress={() => router.push(link.path)}
-                divider={i < links.length - 1}
-              />
-            ))}
+            {rolesLoaded
+              ? links.map((link, i) => (
+                  <ListRow
+                    key={link.key}
+                    title={link.title}
+                    subtitle={link.subtitle}
+                    leading={<Ionicons name={link.icon} size={18} color={theme.accent} />}
+                    onPress={link.path ? () => router.push(link.path!) : undefined}
+                    chevron={!!link.path}
+                    right={
+                      link.path ? undefined : (
+                        <Text style={[t.caption, { color: theme.muted }]}>Soon</Text>
+                      )
+                    }
+                    divider={i < links.length - 1}
+                  />
+                ))
+              : [0, 1, 2, 3].map((i) => (
+                  <View key={i} style={{ paddingVertical: space(3) }}>
+                    <Skeleton width={i % 2 ? "55%" : "70%"} height={16} />
+                  </View>
+                ))}
           </Card>
         </>
       )}

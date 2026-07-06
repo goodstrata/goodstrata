@@ -22,6 +22,7 @@ import {
   useTheme,
 } from "../../../src/components";
 import { api, apiPost } from "../../../src/lib/api";
+import { schemeQueryOptions } from "../../../src/lib/roles";
 
 // ---------------------------------------------------------------------------
 // API types (from the API map — meetings list + detail)
@@ -57,11 +58,6 @@ interface MeetingsResponse {
 interface MeetingDetailResponse {
   meeting: Meeting;
   agenda: AgendaItem[];
-}
-
-interface SchemeResponse {
-  scheme: { id: string; name: string; planOfSubdivision: string | null };
-  roles: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -144,11 +140,7 @@ export default function MeetingsScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const schemeQuery = useQuery({
-    queryKey: ["scheme", schemeId],
-    queryFn: () => api<SchemeResponse>(`/api/schemes/${schemeId}`),
-    enabled: !!schemeId,
-  });
+  const schemeQuery = useQuery({ ...schemeQueryOptions(schemeId), enabled: !!schemeId });
 
   const meetingsQuery = useQuery({
     queryKey: ["scheme", schemeId, "meetings"],

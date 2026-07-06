@@ -35,6 +35,7 @@ import {
 } from "../../../src/components";
 import type { StatusToneName } from "../../../src/components";
 import { api, apiPost } from "../../../src/lib/api";
+import { schemeQueryOptions } from "../../../src/lib/roles";
 
 // ---------------------------------------------------------------------------
 // Types (shapes from the API map — GET/POST /schemes/:id/decisions…)
@@ -174,15 +175,7 @@ export default function DecisionsScreen() {
     enabled: !!id,
   });
 
-  const schemeQuery = useQuery({
-    queryKey: ["scheme", id],
-    queryFn: () =>
-      api<{
-        scheme: { planOfSubdivision: string | null; tier: number | string | null };
-        roles: string[];
-      }>(`/api/schemes/${id}`),
-    enabled: !!id,
-  });
+  const schemeQuery = useQuery({ ...schemeQueryOptions(id), enabled: !!id });
 
   // Session-local vote results, keyed by decision id: the pill flips in place
   // and the card exits once the refetch moves it to Decided.

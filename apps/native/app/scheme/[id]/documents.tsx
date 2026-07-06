@@ -21,6 +21,7 @@ import {
 } from "../../../src/components";
 import { api } from "../../../src/lib/api";
 import { authClient } from "../../../src/lib/auth";
+import { schemeQueryOptions } from "../../../src/lib/roles";
 
 const BASE = "https://my.goodstrata.com.au";
 
@@ -37,11 +38,6 @@ interface SchemeDocument {
 
 interface DocumentsResponse {
   documents: SchemeDocument[];
-}
-
-interface SchemeResponse {
-  scheme: { id: string; name: string; planOfSubdivision: string | null };
-  roles: string[];
 }
 
 /** Register order for the grouped list; unknown categories append after. */
@@ -153,11 +149,7 @@ export default function DocumentsScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const schemeId = typeof params.id === "string" ? params.id : (params.id?.[0] ?? "");
 
-  const schemeQuery = useQuery({
-    queryKey: ["scheme", schemeId],
-    queryFn: () => api<SchemeResponse>(`/api/schemes/${schemeId}`),
-    enabled: !!schemeId,
-  });
+  const schemeQuery = useQuery({ ...schemeQueryOptions(schemeId), enabled: !!schemeId });
 
   const documentsQuery = useQuery({
     queryKey: ["scheme", schemeId, "documents"],
