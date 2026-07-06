@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import SignIn from "../app/sign-in";
 import { authClient } from "../src/lib/auth";
 
@@ -108,7 +108,9 @@ describe("SignIn screen", () => {
     await render(<SignIn />);
 
     await fillCredentials("resident@example.com", "hunter2");
-    fireEvent.press(signInButton());
+    await act(async () => {
+      fireEvent.press(signInButton());
+    });
 
     await waitFor(() =>
       expect(mockedSignInEmail).toHaveBeenCalledWith({
@@ -127,7 +129,9 @@ describe("SignIn screen", () => {
     await render(<SignIn />);
 
     await fillCredentials("resident@example.com", "wrong-pass");
-    fireEvent.press(signInButton());
+    await act(async () => {
+      fireEvent.press(signInButton());
+    });
 
     expect(await screen.findByText("Invalid email or password")).toBeOnTheScreen();
     expect(mockReplace).not.toHaveBeenCalled();
