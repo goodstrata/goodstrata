@@ -83,7 +83,21 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
   const isOwnerView = useIsOwnerView(schemeId);
-  const [tab, setTab] = useState("requests");
+  // Remember the sub-tab per scheme so a reload reopens where you left off.
+  const tabStorageKey = `maint-tab:${schemeId}`;
+  const [tab, setTab] = useState(() =>
+    typeof localStorage === "undefined"
+      ? "requests"
+      : (localStorage.getItem(tabStorageKey) ?? "requests"),
+  );
+  const changeTab = (value: string) => {
+    setTab(value);
+    try {
+      localStorage.setItem(tabStorageKey, value);
+    } catch {
+      // Ignore storage failures (private mode / quota) — the tab still switches.
+    }
+  };
   const invalidate = () => {
     for (const key of ["maintenance", "work-orders", "contractors", "decisions", "rfqs", "rfq"]) {
       void queryClient.invalidateQueries({ queryKey: [key, schemeId] });
@@ -123,7 +137,7 @@ export function MaintenanceTab({ schemeId }: { schemeId: string }) {
           Work orders, Contractors) live behind officer tabs and never render for
           non-officers. Owners keep their single, untabbed Requests view. */}
       {isOfficer ? (
-        <Tabs value={tab} onValueChange={setTab} className="gap-4">
+        <Tabs value={tab} onValueChange={changeTab} className="gap-4">
           <TabsList aria-label="Maintenance sections">
             <TabsTrigger value="requests" className="gap-2">
               <Wrench className="size-4" aria-hidden="true" />

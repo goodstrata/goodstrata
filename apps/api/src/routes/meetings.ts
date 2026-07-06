@@ -72,7 +72,13 @@ export function meetingsRoutes(deps: AppDeps) {
         const person = await personForUser(deps, c.get("schemeId"), c.get("user").id);
         if (!person) {
           return c.json(
-            { error: { code: "NO_PERSON", message: "No person record linked to your login" } },
+            {
+              error: {
+                code: "NO_PERSON",
+                message:
+                  "Your login isn't linked to an owner or occupier in this owners corporation yet, so you can't take part in this meeting action. Ask your committee or manager to link your account to your lot on the People page.",
+              },
+            },
             422,
           );
         }
@@ -159,7 +165,13 @@ export function meetingsRoutes(deps: AppDeps) {
       const person = await personForUser(deps, c.get("schemeId"), c.get("user").id);
       if (!person) {
         return c.json(
-          { error: { code: "NO_PERSON", message: "No person record linked to your login" } },
+          {
+              error: {
+                code: "NO_PERSON",
+                message:
+                  "Your login isn't linked to an owner or occupier in this owners corporation yet, so you can't take part in this meeting action. Ask your committee or manager to link your account to your lot on the People page.",
+              },
+            },
           422,
         );
       }
@@ -191,7 +203,13 @@ export function meetingsRoutes(deps: AppDeps) {
       const person = await personForUser(deps, c.get("schemeId"), c.get("user").id);
       if (!person) {
         return c.json(
-          { error: { code: "NO_PERSON", message: "No person record linked to your login" } },
+          {
+              error: {
+                code: "NO_PERSON",
+                message:
+                  "Your login isn't linked to an owner or occupier in this owners corporation yet, so you can't take part in this meeting action. Ask your committee or manager to link your account to your lot on the People page.",
+              },
+            },
           422,
         );
       }
@@ -212,7 +230,13 @@ export function meetingsRoutes(deps: AppDeps) {
         const person = await personForUser(deps, c.get("schemeId"), c.get("user").id);
         if (!person) {
           return c.json(
-            { error: { code: "NO_PERSON", message: "No person record linked to your login" } },
+            {
+              error: {
+                code: "NO_PERSON",
+                message:
+                  "Your login isn't linked to an owner or occupier in this owners corporation yet, so you can't take part in this meeting action. Ask your committee or manager to link your account to your lot on the People page.",
+              },
+            },
             422,
           );
         }

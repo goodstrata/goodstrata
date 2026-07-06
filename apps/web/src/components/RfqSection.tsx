@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, ChevronUp, FileSearch, Gavel, HardHat, Plus, Send } from "lucide-react";
+import { ChevronDown, ChevronUp, FileSearch, Gavel, HardHat, Plus, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -350,11 +350,6 @@ function SendRfqDialog({
         )}
         {rfq && rfq.status === "draft" && (
           <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto pr-1">
-            <p className="flex items-center gap-1.5 text-xs text-agent">
-              <Bot aria-hidden="true" className="size-3.5" />
-              Drafted by the maintenance agent and scrubbed of personal details — edit anything
-              before sending.
-            </p>
             <Field label="Title" required>
               {(controlProps) => (
                 <Input
