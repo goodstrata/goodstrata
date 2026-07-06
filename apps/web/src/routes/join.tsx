@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Building2 } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -99,6 +99,7 @@ function AcceptInvite({ token }: { token: string }) {
 function SignupThenAccept({ token }: { token: string }) {
   const navigate = useNavigate();
   const previewRef = useRef<InvitePreview | undefined>(undefined);
+  const [needsVerification, setNeedsVerification] = useState(false);
 
   // Unauthenticated preview via query param (public by design: token IS the secret).
   const {
@@ -124,6 +125,9 @@ function SignupThenAccept({ token }: { token: string }) {
     onSubmit: async ({ name, password }) => {
       const current = previewRef.current;
       if (!current) throw new Error("This invite is invalid or has expired.");
+      // Stash the token so it's accepted after email verification + sign-in even
+      // when we can't accept inline right now (verification defers the session).
+      localStorage.setItem("pendingInviteToken", token);
       const signup = await signUp.email({
         email: current.email,
         password,
@@ -132,10 +136,18 @@ function SignupThenAccept({ token }: { token: string }) {
         name: current.name?.trim() || name.trim() || current.email.split("@")[0]!,
       });
       if (signup.error) throw new Error(signup.error.message ?? "Sign up failed.");
-      const data = await unwrap<{ schemeId: string }>(
-        await api.invites.accept.$post({ json: { token } }),
-      );
-      void navigate({ to: "/schemes/$schemeId", params: { schemeId: data.schemeId } });
+      try {
+        // Works when signup establishes a session immediately.
+        const data = await unwrap<{ schemeId: string }>(
+          await api.invites.accept.$post({ json: { token } }),
+        );
+        localStorage.removeItem("pendingInviteToken");
+        void navigate({ to: "/schemes/$schemeId", params: { schemeId: data.schemeId } });
+      } catch {
+        // Not signed in yet — email verification is required. The stashed token
+        // is accepted automatically once they verify and sign in.
+        setNeedsVerification(true);
+      }
     },
   });
 
@@ -157,6 +169,23 @@ function SignupThenAccept({ token }: { token: string }) {
       <div className="mx-auto mt-8 w-full max-w-sm space-y-3 md:mt-16">
         <Skeleton className="h-6 w-2/3" />
         <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  if (needsVerification) {
+    return (
+      <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Check your email</CardTitle>
+            <CardDescription>
+              Your account for <span className="break-all">{preview.email}</span> is set up. Open the
+              verification link we just emailed you and sign in — you'll be added to{" "}
+              {preview.schemeName} automatically.
+            </CardDescription>
+          </CardHeader>
+        </Card>
       </div>
     );
   }

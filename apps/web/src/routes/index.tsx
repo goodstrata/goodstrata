@@ -1,7 +1,7 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { RegistryPlate } from "@/components/ui/registry-plate";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { api, unwrap } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
@@ -91,8 +92,43 @@ function SchemeCardSkeleton() {
   );
 }
 
+function JoiningState() {
+  return (
+    <div className="mx-auto mt-16 flex max-w-sm flex-col items-center gap-3 text-center md:mt-24">
+      <Spinner size="lg" className="text-primary" />
+      <p className="text-sm text-muted-foreground">Adding you to your building…</p>
+    </div>
+  );
+}
+
 function SchemeList() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [wizardActive, setWizardActive] = useState(false);
+
+  // A user who signed up from an invite may not have been signed in when the
+  // /join page tried to accept (email verification defers the session). The
+  // token is stashed in localStorage there; accept it now they're signed in and
+  // send them to the scheme, so they never land on the create-a-scheme wizard.
+  const [pendingInvite] = useState(() =>
+    typeof localStorage !== "undefined" ? localStorage.getItem("pendingInviteToken") : null,
+  );
+  const acceptStarted = useRef(false);
+  const acceptInvite = useMutation({
+    mutationFn: async (token: string) =>
+      unwrap<{ schemeId: string }>(await api.invites.accept.$post({ json: { token } })),
+    onSuccess: (result) => {
+      localStorage.removeItem("pendingInviteToken");
+      void queryClient.invalidateQueries({ queryKey: ["schemes"] });
+      void navigate({ to: "/schemes/$schemeId", params: { schemeId: result.schemeId } });
+    },
+    onError: () => {
+      // Expired / already used / invalid — drop it so we don't retry forever.
+      localStorage.removeItem("pendingInviteToken");
+    },
+  });
+
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["schemes"],
     queryFn: async () => unwrap<{ schemes: SchemeRow[] }>(await api.schemes.$get()),
@@ -100,17 +136,30 @@ function SchemeList() {
 
   const isEmpty = !isLoading && !isError && data?.schemes.length === 0;
 
+  useEffect(() => {
+    if (pendingInvite && !acceptStarted.current) {
+      acceptStarted.current = true;
+      acceptInvite.mutate(pendingInvite);
+    }
+  }, [pendingInvite, acceptInvite]);
+
   // First run (signed in, no scheme yet): the guided onboarding wizard replaces
   // the bare empty state and takes over the whole surface — no page header.
   // Latched: step 1 creates the scheme, and the ["schemes"] query can refetch
   // mid-flow (invalidation, window refocus). A non-empty result must not
   // unmount the wizard — the user still has the lots and invite steps to
   // finish. FinishStep navigates away, so a fresh visit to "/" renders the
-  // normal list again.
-  const [wizardActive, setWizardActive] = useState(false);
+  // normal list again. Never latch it for someone mid-join via an invite.
   useEffect(() => {
-    if (isEmpty) setWizardActive(true);
-  }, [isEmpty]);
+    if (isEmpty && !pendingInvite) setWizardActive(true);
+  }, [isEmpty, pendingInvite]);
+
+  // Hold the surface while a pending invite is being accepted so the wizard
+  // never flashes for someone who is actually joining an existing scheme.
+  if (pendingInvite && !acceptInvite.isError) {
+    return <JoiningState />;
+  }
+
   if (isEmpty || wizardActive) return <OnboardingWizard />;
 
   const newSchemeButton = (

@@ -65,6 +65,8 @@ test("maintenance: contractor pool + report issue validation + owner role gating
 
   // ================= Contractor pool (officer only) =================
 
+  // Maintenance sections are sub-tabs now; the pool lives under "Contractors".
+  await page.getByRole("tab", { name: "Contractors" }).click();
   await expect(page.getByText("Contractor pool")).toBeVisible();
   await page.getByRole("button", { name: "New contractor" }).click();
   await page.getByTestId("contractor-name").fill("Fitzroy Sparks");
@@ -95,6 +97,8 @@ test("maintenance: contractor pool + report issue validation + owner role gating
 
   // ================= Report issue (trim validation, lot select) =================
 
+  // Back to the Requests sub-tab where the request list + report triggers live.
+  await page.getByRole("tab", { name: "Requests" }).click();
   // Two triggers exist while the request list is empty (header + empty state).
   await page.getByRole("button", { name: "Report issue" }).first().click();
   await page.getByTestId("mr-title").fill("   ");
