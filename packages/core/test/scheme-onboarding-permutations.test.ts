@@ -4,7 +4,7 @@
  * assignment and activation — exercised at the service layer with real
  * Postgres, per docs/SPEC.md invariants (roles, validation, error codes).
  */
-import { funds, memberships, schemes, users } from "@goodstrata/db";
+import { funds, invites, memberships, notifications, people, schemes, users } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import { integrationsFromEnv, mockPaymentsProvider } from "@goodstrata/integrations";
 import { type Actor, agentActor, fixedClock, userActor } from "@goodstrata/shared";
@@ -367,6 +367,56 @@ describe("invitePerson / acceptInvite permutations", () => {
     );
   });
 
+  it("auto-links an invitee who already has a login instead of sending an invite, and notifies them", async () => {
+    const scheme = await seedScheme("PS700099Z");
+    const person = await peopleService.createPerson(ctx(), scheme.id, {
+      givenName: "Robin",
+      familyName: "Rees",
+      email: "robin.rees@example.com",
+    });
+    await tdb.db
+      .insert(users)
+      .values({ id: "perm-user-robin", name: "Robin Rees", email: "robin.rees@example.com" });
+
+    const result = await invitesService.invitePerson(ctx(), scheme.id, person.id, "owner", APP_URL);
+    expect(result.linked).toBe(true);
+
+    // person record is linked to the existing login
+    const linked = await tdb.db.query.people.findFirst({ where: eq(people.id, person.id) });
+    expect(linked?.userId).toBe("perm-user-robin");
+
+    // an active owner membership was granted
+    const mships = await tdb.db.query.memberships.findMany({
+      where: and(eq(memberships.schemeId, scheme.id), eq(memberships.userId, "perm-user-robin")),
+    });
+    expect(mships.some((m) => m.role === "owner" && m.endedOn === null)).toBe(true);
+
+    // no invite row — they never had to create an account
+    const inviteRows = await tdb.db.query.invites.findMany({
+      where: eq(invites.email, "robin.rees@example.com"),
+    });
+    expect(inviteRows).toHaveLength(0);
+
+    // and they were notified in-app
+    const notes = await tdb.db.query.notifications.findMany({
+      where: eq(notifications.userId, "perm-user-robin"),
+    });
+    expect(notes.length).toBeGreaterThan(0);
+  });
+
+  it("still sends an invite when the email has no login yet", async () => {
+    const scheme = await seedScheme("PS700098Y");
+    const person = await peopleService.createPerson(ctx(), scheme.id, {
+      email: "newcomer@example.com",
+    });
+    const result = await invitesService.invitePerson(ctx(), scheme.id, person.id, "owner", APP_URL);
+    expect(result.linked).toBe(false);
+    const inviteRows = await tdb.db.query.invites.findMany({
+      where: eq(invites.email, "newcomer@example.com"),
+    });
+    expect(inviteRows).toHaveLength(1);
+  });
+
   it("refuses to invite a person with no email address", async () => {
     const scheme = await seedScheme("PS700021B");
     const person = await peopleService.createPerson(ctx(), scheme.id, { givenName: "NoEmail" });
@@ -394,16 +444,12 @@ describe("invitePerson / acceptInvite permutations", () => {
     const scheme = await seedScheme("PS700024E");
     const person = await peopleService.createPerson(ctx(), scheme.id, {
       givenName: "Billie",
-      email: "perm-billie@example.com",
+      email: "billie-invitee@example.com",
     });
 
-    const { token, expiresAt } = await invitesService.invitePerson(
-      ctx(),
-      scheme.id,
-      person.id,
-      "owner",
-      APP_URL,
-    );
+    const invited = await invitesService.invitePerson(ctx(), scheme.id, person.id, "owner", APP_URL);
+    if (invited.linked) throw new Error("expected an invite for a brand-new email");
+    const { token, expiresAt } = invited;
     expect(expiresAt.toISOString()).toBe("2026-07-18T00:00:00.000Z"); // NOW + 14 days
 
     const roll = await peopleService.listPeople(ctx(), scheme.id);
@@ -417,17 +463,15 @@ describe("invitePerson / acceptInvite permutations", () => {
 
   it("accepting links the login, creates the membership once, and burns the token", async () => {
     const scheme = await seedScheme("PS700025F");
+    // A brand-new email (no login yet) so a real invite is issued rather than
+    // being auto-linked; the invitee "signs up" further down.
     const person = await peopleService.createPerson(ctx(), scheme.id, {
-      givenName: "Alex",
-      email: "perm-alex@example.com",
+      givenName: "Casey",
+      email: "casey-signup@example.com",
     });
-    const { token } = await invitesService.invitePerson(
-      ctx(),
-      scheme.id,
-      person.id,
-      "owner",
-      APP_URL,
-    );
+    const invited = await invitesService.invitePerson(ctx(), scheme.id, person.id, "owner", APP_URL);
+    if (invited.linked) throw new Error("expected an invite for a brand-new email");
+    const { token } = invited;
 
     // Only a signed-in user can accept.
     await expectDomainError(
@@ -436,21 +480,25 @@ describe("invitePerson / acceptInvite permutations", () => {
       403,
     );
 
-    const asAlex = ctx(userActor("perm-user-alex"));
-    const result = await invitesService.acceptInvite(asAlex, token);
+    // The invitee signs up — their login identity now exists.
+    await tdb.db
+      .insert(users)
+      .values({ id: "perm-user-casey", name: "Casey", email: "casey-signup@example.com" });
+    const asCasey = ctx(userActor("perm-user-casey"));
+    const result = await invitesService.acceptInvite(asCasey, token);
     expect(result.schemeId).toBe(scheme.id);
 
-    expect(await schemesService.rolesForUser(ctx(), scheme.id, "perm-user-alex")).toEqual([
+    expect(await schemesService.rolesForUser(ctx(), scheme.id, "perm-user-casey")).toEqual([
       "owner",
     ]);
     const roll = await peopleService.listPeople(ctx(), scheme.id);
     expect(roll.find((p) => p.id === person.id)).toMatchObject({
-      userId: "perm-user-alex",
+      userId: "perm-user-casey",
       pendingInvite: false,
     });
 
     // One-time token: a replay is refused.
-    await expectDomainError(invitesService.acceptInvite(asAlex, token), "INVALID_INVITE", 410);
+    await expectDomainError(invitesService.acceptInvite(asCasey, token), "INVALID_INVITE", 410);
   });
 });
 

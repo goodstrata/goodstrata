@@ -40,19 +40,36 @@ function ctxAt(iso: string, actor: Actor = OFFICER): ServiceContext {
   return { db: tdb.db, clock: fixedClock(iso), integrations, actor };
 }
 
-/** A person on the roll with an email, plus a login identity ready to accept. */
+/**
+ * A person on the roll with an email but NO login yet — inviting an email that
+ * already has a login now auto-links instead of issuing a token, so the /join
+ * (invite → signup → accept) contract is only exercised for new emails. Tests
+ * that accept an invite call signUp() first to mirror real signup-then-accept.
+ */
 async function makeInvitee(slug: string) {
   const person = await peopleService.createPerson(ctxAt(NOW), schemeId, {
     givenName: slug,
     email: `${slug}@example.com`,
   });
-  const userId = `user-${slug}`;
-  await tdb.db.insert(users).values({
-    id: userId,
-    name: slug,
-    email: `${slug}@example.com`,
-  });
-  return { person, userId };
+  return { person, userId: `user-${slug}` };
+}
+
+/** Simulate the invitee completing signup: their login identity now exists. */
+async function signUp(slug: string) {
+  await tdb.db
+    .insert(users)
+    .values({ id: `user-${slug}`, name: slug, email: `${slug}@example.com` });
+}
+
+/** Invite and assert a real token was issued (i.e. the email wasn't auto-linked). */
+async function issueInvite(
+  personId: string,
+  role: Parameters<typeof invitesService.invitePerson>[3] = "owner",
+  at: string = NOW,
+) {
+  const r = await invitesService.invitePerson(ctxAt(at), schemeId, personId, role, APP_URL);
+  if (r.linked) throw new Error("expected an invite token, but the email was auto-linked");
+  return r;
 }
 
 beforeAll(async () => {
@@ -116,13 +133,7 @@ describe("invitePerson guardrails", () => {
   it("issues a 14-day token and emails a /join link to the person's address", async () => {
     const { person } = await makeInvitee("alex");
     const before = outbox().length;
-    const { token, expiresAt } = await invitesService.invitePerson(
-      ctxAt(NOW),
-      schemeId,
-      person.id,
-      "owner",
-      APP_URL,
-    );
+    const { token, expiresAt } = await issueInvite(person.id);
     expect(token.length).toBeGreaterThanOrEqual(24);
     expect(expiresAt.toISOString()).toBe("2026-07-15T00:00:00.000Z");
 
@@ -137,18 +148,13 @@ describe("invitePerson guardrails", () => {
 describe("previewInvite (public — powers the signed-out /join page)", () => {
   it("returns scheme name, role, and invite email for a live token", async () => {
     const { person } = await makeInvitee("billie");
-    const { token } = await invitesService.invitePerson(
-      ctxAt(NOW),
-      schemeId,
-      person.id,
-      "committee_member",
-      APP_URL,
-    );
+    const { token } = await issueInvite(person.id, "committee_member");
     const preview = await invitesService.previewInvite(ctxAt(NOW), token);
     expect(preview).toEqual({
       schemeName: "Join Test OC",
       role: "committee_member",
       email: "billie@example.com",
+      name: "billie",
     });
   });
 
@@ -164,13 +170,7 @@ describe("previewInvite (public — powers the signed-out /join page)", () => {
 
   it("410s an expired token (14-day TTL lapsed)", async () => {
     const { person } = await makeInvitee("dana");
-    const { token } = await invitesService.invitePerson(
-      ctxAt(NOW),
-      schemeId,
-      person.id,
-      "owner",
-      APP_URL,
-    );
+    const { token } = await issueInvite(person.id);
     // Still previews on the last day…
     await expect(
       invitesService.previewInvite(ctxAt("2026-07-14T23:59:59Z"), token),
@@ -185,13 +185,7 @@ describe("previewInvite (public — powers the signed-out /join page)", () => {
 describe("acceptInvite", () => {
   it("403s a non-user actor — signing in is a precondition", async () => {
     const { person } = await makeInvitee("erin");
-    const { token } = await invitesService.invitePerson(
-      ctxAt(NOW),
-      schemeId,
-      person.id,
-      "owner",
-      APP_URL,
-    );
+    const { token } = await issueInvite(person.id);
     await expect(
       invitesService.acceptInvite(ctxAt(NOW, systemActor("not-a-login")), token),
     ).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
@@ -201,14 +195,10 @@ describe("acceptInvite", () => {
 
   it("links login ↔ person, creates the membership, and is single-use", async () => {
     const { person, userId } = await makeInvitee("frankie");
-    const { token } = await invitesService.invitePerson(
-      ctxAt(NOW),
-      schemeId,
-      person.id,
-      "owner",
-      APP_URL,
-    );
+    const { token } = await issueInvite(person.id);
 
+    // The invitee signs up, then accepts.
+    await signUp("frankie");
     const result = await invitesService.acceptInvite(ctxAt(NOW, userActor(userId)), token);
     expect(result).toEqual({ schemeId });
 
@@ -235,15 +225,12 @@ describe("acceptInvite", () => {
 
   it("does not duplicate an open membership when re-invited with the same role", async () => {
     const { person, userId } = await makeInvitee("gus");
-    const first = await invitesService.invitePerson(
-      ctxAt(NOW),
-      schemeId,
-      person.id,
-      "owner",
-      APP_URL,
-    );
+    const first = await issueInvite(person.id);
+    await signUp("gus");
     await invitesService.acceptInvite(ctxAt(NOW, userActor(userId)), first.token);
 
+    // Re-invited later: the login now exists, so this auto-links rather than
+    // issuing a new token — and must not open a second membership.
     const second = await invitesService.invitePerson(
       ctxAt("2026-07-02T00:00:00Z"),
       schemeId,
@@ -251,10 +238,7 @@ describe("acceptInvite", () => {
       "owner",
       APP_URL,
     );
-    await invitesService.acceptInvite(
-      ctxAt("2026-07-02T00:00:00Z", userActor(userId)),
-      second.token,
-    );
+    expect(second.linked).toBe(true);
 
     const rows = await tdb.db.query.memberships.findMany({
       where: and(
@@ -268,13 +252,7 @@ describe("acceptInvite", () => {
 
   it("410s an expired token even for a signed-in user", async () => {
     const { person, userId } = await makeInvitee("harper");
-    const { token } = await invitesService.invitePerson(
-      ctxAt(NOW),
-      schemeId,
-      person.id,
-      "owner",
-      APP_URL,
-    );
+    const { token } = await issueInvite(person.id);
     await expect(
       invitesService.acceptInvite(ctxAt("2026-07-16T00:00:00Z", userActor(userId)), token),
     ).rejects.toMatchObject({ code: "INVALID_INVITE", status: 410 });

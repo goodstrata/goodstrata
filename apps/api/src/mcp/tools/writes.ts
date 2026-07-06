@@ -200,8 +200,10 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
           ctx.deps.env.APP_URL,
         );
         return jsonResult(
-          `Invited ${email} to join as ${role.replace("_", " ")}; join link emailed (expires ${result.expiresAt.toISOString()}). personId: ${person.id}.`,
-          { personId: person.id, email, role, expiresAt: result.expiresAt },
+          result.linked
+            ? `Added ${email} as ${role.replace("_", " ")} — they already have a GoodStrata account, so they were linked and notified directly. personId: ${person.id}.`
+            : `Invited ${email} to join as ${role.replace("_", " ")}; join link emailed (expires ${result.expiresAt.toISOString()}). personId: ${person.id}.`,
+          { personId: person.id, email, role, linked: result.linked, expiresAt: result.expiresAt },
         );
       }),
   );

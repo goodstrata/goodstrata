@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { invites, memberships, people, schemes } from "@goodstrata/db";
+import { invites, memberships, people, schemes, users } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import { INVITABLE_ROLES, type MembershipRole, toDateOnly } from "@goodstrata/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import { causationFields, type ServiceContext } from "../context.js";
 import { infoNote, paragraph, renderEmail } from "../email/index.js";
 import { DomainError, notFound } from "../errors.js";
+import { notifyUsers } from "./notifications.js";
 
 const INVITE_TTL_DAYS = 14;
 
@@ -38,6 +39,70 @@ export async function invitePerson(
   const scheme = await ctx.db.query.schemes.findFirst({ where: eq(schemes.id, schemeId) });
   if (!scheme) throw notFound("Scheme");
 
+  const roleLabel = role.replace(/_/g, " ");
+
+  // If the invited email already has a GoodStrata login, don't make them "create
+  // an account": link the person record to that user, grant the membership, and
+  // notify them. They land straight in the scheme the next time they sign in.
+  const existingUser = await ctx.db.query.users.findFirst({
+    where: eq(users.email, person.email),
+  });
+  if (existingUser) {
+    await ctx.db.transaction(async (tx) => {
+      await tx.update(people).set({ userId: existingUser.id }).where(eq(people.id, personId));
+      const active = await tx.query.memberships.findMany({
+        where: and(
+          eq(memberships.schemeId, schemeId),
+          eq(memberships.userId, existingUser.id),
+          eq(memberships.role, role),
+          isNull(memberships.endedOn),
+        ),
+      });
+      if (active.length === 0) {
+        await tx.insert(memberships).values({
+          schemeId,
+          userId: existingUser.id,
+          role,
+          startedOn: toDateOnly(ctx.clock.now()),
+        });
+      }
+      await publishEvent(tx, {
+        schemeId,
+        stream: `person:${personId}`,
+        type: "owner.joined",
+        payload: { personId, userId: existingUser.id },
+        actor: ctx.actor,
+        ...causationFields(ctx),
+      });
+    });
+
+    await notifyUsers(ctx, schemeId, [existingUser.id], {
+      title: `You've been added to ${scheme.name}`,
+      body: `You now have ${roleLabel} access to ${scheme.name}. Open GoodStrata to see your building.`,
+      category: "general",
+    });
+
+    const added = renderEmail({
+      preheader: `You've been added to ${scheme.name} on GoodStrata.`,
+      heading: `You've been added to ${scheme.name}`,
+      intro: `Hi ${person.givenName ?? "there"}, you've been added to ${scheme.name} (${scheme.planOfSubdivision}) on GoodStrata as ${roleLabel}. It's linked to your existing account — just sign in.`,
+      blocks: [
+        paragraph(
+          "GoodStrata is the register for your owners corporation — levies, meetings, decisions, and documents, all on the record.",
+        ),
+      ],
+      cta: { label: "Open GoodStrata", url: appUrl },
+    });
+    await ctx.integrations.email.send({
+      to: person.email,
+      subject: `You've been added to ${scheme.name} on GoodStrata`,
+      text: added.text,
+      html: added.html,
+    });
+
+    return { linked: true as const, expiresAt: null };
+  }
+
   const token = randomBytes(24).toString("base64url");
   const expiresAt = new Date(ctx.clock.now().getTime() + INVITE_TTL_DAYS * 86_400_000);
 
@@ -61,7 +126,6 @@ export async function invitePerson(
   });
 
   const joinUrl = `${appUrl}/join?token=${token}`;
-  const roleLabel = role.replace(/_/g, " ");
   const { html, text } = renderEmail({
     preheader: `You've been invited to join ${scheme.name} on GoodStrata.`,
     heading: `You're invited to join ${scheme.name}`,
@@ -81,7 +145,7 @@ export async function invitePerson(
     html,
   });
 
-  return { token, expiresAt };
+  return { linked: false as const, token, expiresAt };
 }
 
 /** Public preview so the join page can say what the invite is for. */

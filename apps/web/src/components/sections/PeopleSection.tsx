@@ -171,14 +171,18 @@ export function PeopleSection({ schemeId }: { schemeId: string }) {
   });
   const invite = useMutation({
     mutationFn: async (personId: string) =>
-      unwrap(
+      unwrap<{ linked: boolean; expiresAt: string | null }>(
         await api.schemes[":schemeId"].people[":personId"].invite.$post({
           param: { schemeId, personId },
           json: { role: "owner" },
         }),
       ),
-    onSuccess: () => {
-      toast.success("Invite sent");
+    onSuccess: (result) => {
+      toast.success(
+        result?.linked
+          ? "Added to the scheme — they already have a GoodStrata account and were notified"
+          : "Invite sent",
+      );
       void queryClient.invalidateQueries({ queryKey: ["people", schemeId] });
     },
     onError: (e) => toast.error(e.message),

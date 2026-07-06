@@ -119,7 +119,7 @@ export function peopleRoutes(deps: AppDeps) {
           c.req.valid("json").role,
           deps.env.APP_URL,
         );
-        return c.json({ expiresAt: result.expiresAt }, 201);
+        return c.json({ linked: result.linked, expiresAt: result.expiresAt }, 201);
       },
     )
     .get("/:schemeId/members", requireSchemeMember(deps), async (c) => {
