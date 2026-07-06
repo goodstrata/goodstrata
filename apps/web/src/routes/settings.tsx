@@ -1,8 +1,9 @@
 import { createFileRoute, type SearchSchemaInput, useNavigate } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
-import { KeyRound, SlidersHorizontal, UserRound } from "lucide-react";
+import { Bell, KeyRound, SlidersHorizontal, UserRound } from "lucide-react";
 import { useEffect } from "react";
 import { z } from "zod";
+import { NotificationsSection } from "@/components/settings/NotificationsSection";
 import { PreferencesSection } from "@/components/settings/PreferencesSection";
 import { ProfileSection } from "@/components/settings/ProfileSection";
 import { SecuritySection } from "@/components/settings/SecuritySection";
@@ -12,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/lib/auth";
 import { useIsMobile } from "@/lib/use-mobile";
 
-const SECTIONS = ["profile", "security", "preferences"] as const;
+const SECTIONS = ["profile", "security", "notifications", "preferences"] as const;
 type SettingsSection = (typeof SECTIONS)[number];
 
 const searchSchema = z.object({
@@ -28,6 +29,7 @@ export const Route = createFileRoute("/settings")({
 const TABS: { key: SettingsSection; label: string; icon: LucideIcon }[] = [
   { key: "profile", label: "Profile", icon: UserRound },
   { key: "security", label: "Security", icon: KeyRound },
+  { key: "notifications", label: "Notifications", icon: Bell },
   { key: "preferences", label: "Preferences", icon: SlidersHorizontal },
 ];
 
@@ -97,6 +99,9 @@ function SettingsPage() {
                 }}
               />
             </TabsContent>
+            <TabsContent value="notifications">
+              <NotificationsSection />
+            </TabsContent>
             <TabsContent value="preferences">
               <PreferencesSection />
             </TabsContent>
@@ -111,7 +116,7 @@ function SettingsSkeleton() {
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
       <div className="flex gap-2 lg:w-48 lg:flex-col">
-        {[0, 1, 2].map((i) => (
+        {[0, 1, 2, 3].map((i) => (
           <Skeleton key={i} className="h-9 w-24 lg:w-full" />
         ))}
       </div>

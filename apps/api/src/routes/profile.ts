@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { notificationPreferencesService } from "@goodstrata/core";
+import {
+  NOTIFICATION_GROUPS,
+  NOTIFICATION_PREF_CHANNELS,
+  NOTIFICATION_TYPE_META,
+  NOTIFICATION_TYPES,
+  userActor,
+} from "@goodstrata/shared";
 import { Hono } from "hono";
+import { z } from "zod";
 import type { AppDeps } from "../deps.js";
 import type { AppEnv } from "../middleware.js";
+import { zv } from "../validate.js";
 
 /** Image content types we accept for avatars, mapped to a stored extension. */
 const AVATAR_TYPES: Record<string, string> = {
@@ -35,6 +45,63 @@ function ownedAvatarKey(userId: string, image: string | null | undefined): strin
   return `avatars/${userId}/${file}`;
 }
 
+/** One (type, channel, enabled) edit — validated against the shared registry. */
+const prefUpdateSchema = z.object({
+  type: z.enum(NOTIFICATION_TYPES),
+  channel: z.enum(NOTIFICATION_PREF_CHANNELS),
+  enabled: z.boolean(),
+});
+
+/**
+ * The PATCH body accepts either a single edit (the settings screen's per-toggle
+ * autosave) or a batch under `updates` (set many at once), so the UI can use
+ * whichever fits without a second endpoint.
+ */
+const prefPatchSchema = z.union([
+  prefUpdateSchema,
+  z.object({ updates: z.array(prefUpdateSchema).min(1).max(64) }),
+]);
+
+/**
+ * Compose the settings payload from the shared registry (groups/labels/help) +
+ * the user's effective matrix (pref row ⋁ default) + their phone-on-file state.
+ * Copy lives once in `@goodstrata/shared`; the API only shapes it.
+ */
+async function notificationPreferencesPayload(
+  deps: AppDeps,
+  userId: string,
+): Promise<{
+  smsAvailable: boolean;
+  phone: string | null;
+  groups: Array<{
+    key: string;
+    label: string;
+    types: Array<{
+      type: string;
+      label: string;
+      help: string;
+      channels: Record<string, boolean>;
+    }>;
+  }>;
+}> {
+  const ctx = deps.serviceContext(userActor(userId));
+  const [matrix, phone] = await Promise.all([
+    notificationPreferencesService.listEffectivePreferences(ctx, userId),
+    notificationPreferencesService.resolveUserPhone(ctx, userId),
+  ]);
+  const groups = NOTIFICATION_GROUPS.map((group) => ({
+    key: group.key,
+    label: group.label,
+    types: group.types.map((type) => ({
+      type,
+      label: NOTIFICATION_TYPE_META[type].label,
+      help: NOTIFICATION_TYPE_META[type].help,
+      channels: matrix[type],
+    })),
+  }));
+  return { smsAvailable: phone.hasPhone, phone: phone.phone, groups };
+}
+
 /**
  * Profile routes — mounted under the authenticated /api surface, so the parent
  * requireAuth middleware has already put the user on the context.
@@ -48,103 +115,130 @@ function ownedAvatarKey(userId: string, image: string | null | undefined): strin
  *                            UUID so keys can't be enumerated).
  */
 export function profileRoutes(deps: AppDeps) {
-  return new Hono<AppEnv>()
-    .post("/avatar", async (c) => {
-      const user = c.get("user");
-      const body = await c.req.parseBody();
-      const file = body.file;
-      if (!(file instanceof File)) {
-        return c.json({ error: { code: "NO_FILE", message: "Attach an image." } }, 422);
-      }
-      const ext = AVATAR_TYPES[file.type];
-      if (!ext) {
-        return c.json(
-          {
-            error: {
-              code: "UNSUPPORTED_TYPE",
-              message: "Use a PNG, JPEG, WebP or GIF image.",
+  return (
+    new Hono<AppEnv>()
+      .post("/avatar", async (c) => {
+        const user = c.get("user");
+        const body = await c.req.parseBody();
+        const file = body.file;
+        if (!(file instanceof File)) {
+          return c.json({ error: { code: "NO_FILE", message: "Attach an image." } }, 422);
+        }
+        const ext = AVATAR_TYPES[file.type];
+        if (!ext) {
+          return c.json(
+            {
+              error: {
+                code: "UNSUPPORTED_TYPE",
+                message: "Use a PNG, JPEG, WebP or GIF image.",
+              },
             },
-          },
-          422,
-        );
-      }
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      if (bytes.byteLength === 0) {
-        return c.json({ error: { code: "EMPTY_FILE", message: "That image is empty." } }, 422);
-      }
-      if (bytes.byteLength > MAX_AVATAR_BYTES) {
-        return c.json({ error: { code: "TOO_LARGE", message: "Keep images under 5 MB." } }, 422);
-      }
-
-      const filename = `${randomUUID()}.${ext}`;
-      // Namespaced by user so a delete/cleanup could target a single owner.
-      const key = `avatars/${user.id}/${filename}`;
-      await deps.integrations.storage.put(key, bytes, file.type);
-
-      // The current image (if it's one of ours) becomes garbage once replaced.
-      const session = await deps.auth.api.getSession({ headers: c.req.raw.headers });
-      const previousKey = ownedAvatarKey(user.id, session?.user.image);
-
-      // Same-origin served URL; an <img> request carries the session cookie so
-      // the member-scoped GET below authenticates it.
-      const image = `/api/profile/avatar/${user.id}/${filename}`;
-      await deps.auth.api.updateUser({
-        body: { image },
-        headers: c.req.raw.headers,
-      });
-
-      if (previousKey && previousKey !== key) {
-        // Best effort — an orphaned file must never fail the upload.
-        try {
-          await deps.integrations.storage.delete(previousKey);
-        } catch {
-          // ignore
+            422,
+          );
         }
-      }
-
-      return c.json({ image }, 201);
-    })
-    .delete("/avatar", async (c) => {
-      const user = c.get("user");
-      const session = await deps.auth.api.getSession({ headers: c.req.raw.headers });
-      const key = ownedAvatarKey(user.id, session?.user.image);
-      await deps.auth.api.updateUser({
-        body: { image: null },
-        headers: c.req.raw.headers,
-      });
-      if (key) {
-        // Best effort — a leftover file must never fail the removal.
-        try {
-          await deps.integrations.storage.delete(key);
-        } catch {
-          // ignore
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (bytes.byteLength === 0) {
+          return c.json({ error: { code: "EMPTY_FILE", message: "That image is empty." } }, 422);
         }
-      }
-      return c.json({ ok: true });
-    })
-    .get("/avatar/:userId/:file", async (c) => {
-      const userId = c.req.param("userId");
-      const fileParam = c.req.param("file");
-      // Guard against traversal: params must be plain path segments.
-      if (userId.includes("/") || fileParam.includes("/") || fileParam.includes("..")) {
-        return c.json({ error: { code: "NOT_FOUND", message: "Not found" } }, 404);
-      }
-      const ext = fileParam.split(".").pop()?.toLowerCase() ?? "";
-      const mime = EXT_MIME[ext];
-      if (!mime) {
-        return c.json({ error: { code: "NOT_FOUND", message: "Not found" } }, 404);
-      }
-      const key = `avatars/${userId}/${fileParam}`;
-      let content: Uint8Array;
-      try {
-        content = await deps.integrations.storage.get(key);
-      } catch {
-        return c.json({ error: { code: "NOT_FOUND", message: "Not found" } }, 404);
-      }
-      return c.body(content.buffer as ArrayBuffer, 200, {
-        "content-type": mime,
-        // Content is immutable (UUID filename); cache privately in the browser.
-        "cache-control": "private, max-age=86400",
-      });
-    });
+        if (bytes.byteLength > MAX_AVATAR_BYTES) {
+          return c.json({ error: { code: "TOO_LARGE", message: "Keep images under 5 MB." } }, 422);
+        }
+
+        const filename = `${randomUUID()}.${ext}`;
+        // Namespaced by user so a delete/cleanup could target a single owner.
+        const key = `avatars/${user.id}/${filename}`;
+        await deps.integrations.storage.put(key, bytes, file.type);
+
+        // The current image (if it's one of ours) becomes garbage once replaced.
+        const session = await deps.auth.api.getSession({ headers: c.req.raw.headers });
+        const previousKey = ownedAvatarKey(user.id, session?.user.image);
+
+        // Same-origin served URL; an <img> request carries the session cookie so
+        // the member-scoped GET below authenticates it.
+        const image = `/api/profile/avatar/${user.id}/${filename}`;
+        await deps.auth.api.updateUser({
+          body: { image },
+          headers: c.req.raw.headers,
+        });
+
+        if (previousKey && previousKey !== key) {
+          // Best effort — an orphaned file must never fail the upload.
+          try {
+            await deps.integrations.storage.delete(previousKey);
+          } catch {
+            // ignore
+          }
+        }
+
+        return c.json({ image }, 201);
+      })
+      .delete("/avatar", async (c) => {
+        const user = c.get("user");
+        const session = await deps.auth.api.getSession({ headers: c.req.raw.headers });
+        const key = ownedAvatarKey(user.id, session?.user.image);
+        await deps.auth.api.updateUser({
+          body: { image: null },
+          headers: c.req.raw.headers,
+        });
+        if (key) {
+          // Best effort — a leftover file must never fail the removal.
+          try {
+            await deps.integrations.storage.delete(key);
+          } catch {
+            // ignore
+          }
+        }
+        return c.json({ ok: true });
+      })
+      .get("/avatar/:userId/:file", async (c) => {
+        const userId = c.req.param("userId");
+        const fileParam = c.req.param("file");
+        // Guard against traversal: params must be plain path segments.
+        if (userId.includes("/") || fileParam.includes("/") || fileParam.includes("..")) {
+          return c.json({ error: { code: "NOT_FOUND", message: "Not found" } }, 404);
+        }
+        const ext = fileParam.split(".").pop()?.toLowerCase() ?? "";
+        const mime = EXT_MIME[ext];
+        if (!mime) {
+          return c.json({ error: { code: "NOT_FOUND", message: "Not found" } }, 404);
+        }
+        const key = `avatars/${userId}/${fileParam}`;
+        let content: Uint8Array;
+        try {
+          content = await deps.integrations.storage.get(key);
+        } catch {
+          return c.json({ error: { code: "NOT_FOUND", message: "Not found" } }, 404);
+        }
+        return c.body(content.buffer as ArrayBuffer, 200, {
+          "content-type": mime,
+          // Content is immutable (UUID filename); cache privately in the browser.
+          "cache-control": "private, max-age=86400",
+        });
+      })
+      // The current user's notification preference matrix: every type × channel
+      // with its effective on/off (pref row over default), grouped and labelled
+      // for the settings screen, plus phone-on-file state for the SMS column.
+      .get("/notification-preferences", async (c) => {
+        const user = c.get("user");
+        return c.json(await notificationPreferencesPayload(deps, user.id));
+      })
+      // Upsert one or many (type, channel, enabled). userId is always the session
+      // user — never trusted from the body. Storing sms=on with no phone is
+      // allowed; send-time gating (phone on file) is the real guard. Returns the
+      // fresh full payload so the client can reconcile its optimistic update.
+      .patch("/notification-preferences", zv("json", prefPatchSchema), async (c) => {
+        const user = c.get("user");
+        const body = c.req.valid("json");
+        const updates = "updates" in body ? body.updates : [body];
+        const ctx = deps.serviceContext(userActor(user.id));
+        for (const update of updates) {
+          await notificationPreferencesService.upsertPreference(ctx, user.id, {
+            notificationType: update.type,
+            channel: update.channel,
+            enabled: update.enabled,
+          });
+        }
+        return c.json(await notificationPreferencesPayload(deps, user.id));
+      })
+  );
 }

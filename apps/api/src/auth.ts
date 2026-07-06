@@ -139,6 +139,12 @@ export function createAuth(opts: {
       },
     },
     user: {
+      // The DB column already exists (packages/db users.phone); declaring it here
+      // lets better-auth's updateUser persist a mobile number (E.164) so the
+      // notifier's SMS path and the settings screen's SMS column can use it.
+      additionalFields: {
+        phone: { type: "string", required: false, input: true },
+      },
       changeEmail: {
         enabled: true,
         // better-auth 1.6.23 names this callback sendChangeEmailConfirmation

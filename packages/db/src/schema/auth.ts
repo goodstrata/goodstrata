@@ -11,6 +11,13 @@ export const users = pgTable("users", {
   email: text().notNull().unique(),
   emailVerified: boolean().notNull().default(false),
   image: text(),
+  /**
+   * Per-user mobile number in E.164 (e.g. "+61400000000"), nullable. The
+   * notifier's SMS path resolves a phone as `users.phone ?? people.phone`, so
+   * a user-level number gives a single place to opt into texts across every
+   * scheme (people.phone stays the scheme-scoped roll contact).
+   */
+  phone: text(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });

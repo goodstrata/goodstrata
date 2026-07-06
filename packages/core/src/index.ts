@@ -50,6 +50,7 @@ export {
   createMeetingInput,
   submitProxyInput,
 } from "./services/meetings.js";
+export * as notificationPreferencesService from "./services/notificationPreferences.js";
 export * as notificationsService from "./services/notifications.js";
 export * as notifierService from "./services/notifier.js";
 export * as onboardingService from "./services/onboarding.js";
