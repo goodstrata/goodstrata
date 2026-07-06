@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { stripAgentTags } from "@/lib/agent-text";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,20 @@ export function Markdown({ children, className }: { children: string; className?
         className,
       )}
     >
-      <ReactMarkdown>{stripAgentTags(children)}</ReactMarkdown>
+      {/* remark-gfm adds GFM tables, task lists, strikethrough and autolinks.
+          Wide tables scroll inside their own container so the page never does. */}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          table: ({ node: _node, ...props }) => (
+            <div className="overflow-x-auto">
+              <table {...props} />
+            </div>
+          ),
+        }}
+      >
+        {stripAgentTags(children)}
+      </ReactMarkdown>
     </div>
   );
 }
