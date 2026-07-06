@@ -71,7 +71,7 @@ describe("SignIn screen", () => {
   it("renders the heading and the email + password fields", async () => {
     await render(<SignIn />);
 
-    expect(screen.getByText("GOODSTRATA")).toBeOnTheScreen();
+    expect(screen.getByLabelText("GoodStrata")).toBeOnTheScreen();
     expect(screen.getByText(/The building runs itself/)).toBeOnTheScreen();
     expect(screen.getByText("Email")).toBeOnTheScreen();
     expect(screen.getByText("Password")).toBeOnTheScreen();
