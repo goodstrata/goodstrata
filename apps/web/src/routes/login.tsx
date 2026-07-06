@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Building2 } from "lucide-react";
 import { useState } from "react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { SelfRunningBuilding } from "@/components/auth/self-running-building";
 import { SignInForm } from "@/components/auth/sign-in-form";
 import { useAuthPageInfo } from "@/components/auth/social-sign-in";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,12 @@ function LoginPage() {
   return (
     <AuthShell
       heading={
-        <h1 className="page-title text-balance">The building runs itself. You stay in charge.</h1>
+        <div className="flex flex-col items-center gap-5 lg:items-start">
+          <SelfRunningBuilding className="h-24 w-auto text-muted-foreground" />
+          <h1 className="page-title text-balance lg:text-4xl">
+            The building runs itself. You stay in charge.
+          </h1>
+        </div>
       }
     >
       {hasDemo && (
