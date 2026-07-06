@@ -13,6 +13,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, { FadeInDown, useReducedMotion } from "react-native-reanimated";
+import Svg, { Line, Polygon } from "react-native-svg";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Button, useTheme } from "../src/components";
@@ -21,9 +23,28 @@ import { palette, radius, space, type as t } from "../src/theme/tokens";
 
 type Field = "email" | "password";
 
+/**
+ * The site-header wireframe cube, drawn as a flat isometric mark for the
+ * eucalypt sign-in header (a true 3D CSS cube isn't available in RN). Outer
+ * hexagon + three inner edges meeting at the front vertex — a soft white line
+ * mark on eucalypt.
+ */
+function LogoCube({ size = 56 }: { size?: number }) {
+  const line = { stroke: palette.white, strokeOpacity: 0.55, strokeWidth: 3 } as const;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      <Polygon points="50,6 89,28 89,72 50,94 11,72 11,28" fill="none" {...line} strokeLinejoin="round" />
+      <Line x1={50} y1={50} x2={11} y2={28} {...line} strokeLinecap="round" />
+      <Line x1={50} y1={50} x2={89} y2={28} {...line} strokeLinecap="round" />
+      <Line x1={50} y1={50} x2={50} y2={94} {...line} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export default function SignIn() {
   const router = useRouter();
   const theme = useTheme();
+  const reduceMotion = useReducedMotion();
   const passwordRef = useRef<TextInput>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -87,6 +108,19 @@ export default function SignIn() {
         style={{ flex: 1, justifyContent: "flex-end" }}
       >
         <View style={{ padding: space(6), paddingBottom: space(4) }}>
+          <Animated.View
+            entering={
+              reduceMotion
+                ? undefined
+                : FadeInDown.springify()
+                    .damping(15)
+                    .delay(120)
+                    .withInitialValues({ opacity: 0, transform: [{ translateY: 20 }] })
+            }
+            style={{ marginBottom: space(3) }}
+          >
+            <LogoCube />
+          </Animated.View>
           <Text style={{ ...t.eyebrow, color: palette.eucalyptSoft }}>GOODSTRATA</Text>
           <Text style={{ ...t.display, color: palette.white, marginTop: space(2) }}>
             The building runs itself.{"\n"}You stay in charge.
