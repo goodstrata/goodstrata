@@ -93,10 +93,17 @@ export async function previewInvite(ctx: ServiceContext, token: string) {
   const scheme = await ctx.db.query.schemes.findFirst({
     where: eq(schemes.id, invite.schemeId),
   });
+  // The person's name is already set on the invited record — return it so the
+  // join screen can show it read-only rather than asking them to re-type it.
+  const person = await ctx.db.query.people.findFirst({
+    where: eq(people.id, invite.personId),
+  });
+  const name = [person?.givenName, person?.familyName].filter(Boolean).join(" ").trim();
   return {
     schemeName: scheme?.name ?? "an owners corporation",
     role: invite.role,
     email: invite.email,
+    name: name || null,
   };
 }
 

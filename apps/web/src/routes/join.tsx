@@ -26,6 +26,8 @@ interface InvitePreview {
   schemeName: string;
   role: string;
   email: string;
+  /** Set from the invited person record; when present the join form locks it. */
+  name: string | null;
 }
 
 const joinSchema = z.object({
@@ -125,7 +127,9 @@ function SignupThenAccept({ token }: { token: string }) {
       const signup = await signUp.email({
         email: current.email,
         password,
-        name: name || current.email.split("@")[0]!,
+        // The invite already carries the person's name; only fall back to the
+        // typed field (or the email local-part) when it doesn't.
+        name: current.name?.trim() || name.trim() || current.email.split("@")[0]!,
       });
       if (signup.error) throw new Error(signup.error.message ?? "Sign up failed.");
       const data = await unwrap<{ schemeId: string }>(
@@ -177,19 +181,32 @@ function SignupThenAccept({ token }: { token: string }) {
             }}
             className="flex flex-col gap-4"
           >
-            <form.Field name="name">
-              {(field) => (
-                <Field label="Name" htmlFor="join-name">
-                  <Input
-                    placeholder="Your name"
-                    autoComplete="name"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                  />
-                </Field>
-              )}
-            </form.Field>
+            {preview.name ? (
+              <Field label="Name" htmlFor="join-name" hint="Set from your invitation.">
+                <Input
+                  id="join-name"
+                  value={preview.name}
+                  readOnly
+                  disabled
+                  autoComplete="name"
+                />
+              </Field>
+            ) : (
+              <form.Field name="name">
+                {(field) => (
+                  <Field label="Name" htmlFor="join-name">
+                    <Input
+                      id="join-name"
+                      placeholder="Your name"
+                      autoComplete="name"
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                    />
+                  </Field>
+                )}
+              </form.Field>
+            )}
             <form.Field name="password">
               {(field) => (
                 <Field
