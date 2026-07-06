@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, ChevronDown, ChevronUp, FileSearch, Gavel, HardHat, Plus, Send } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Markdown } from "@/components/Markdown";
@@ -23,6 +23,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { FormMessage } from "@/components/ui/form-message";
 import { Input } from "@/components/ui/input";
+import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { Money } from "@/components/ui/money";
 import {
   Select,
@@ -185,6 +186,7 @@ export function RequestQuotesButton({
           schemeId={schemeId}
           rfqId={rfqId}
           open
+          expectDrafting
           onOpenChange={(open) => {
             if (!open) setRfqId(null);
           }}
@@ -202,18 +204,32 @@ export function RequestQuotesButton({
 
 const EMAIL_LIKE = /^\S+@\S+\.\S+$/;
 
+/**
+ * A freshly-created RFQ carries a stub scope (built straight from the request)
+ * until the maintenance agent redrafts it. The stub always ends with this line,
+ * which the agent's rewrite drops — so its presence is a reliable "still
+ * drafting" signal without any new backend flag. Belt-and-braces: the overlay
+ * also times out so a failed draft never leaves it spinning forever.
+ */
+const SPEC_STUB_MARKER = "exact address is shared with the successful contractor after award";
+const specIsStub = (spec: string) => spec.includes(SPEC_STUB_MARKER);
+const DRAFTING_TIMEOUT_MS = 40_000;
+
 function SendRfqDialog({
   schemeId,
   rfqId,
   open,
   onOpenChange,
   onChange,
+  expectDrafting = false,
 }: {
   schemeId: string;
   rfqId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onChange: () => void;
+  /** True when opened right after creation, so the agent is actively drafting. */
+  expectDrafting?: boolean;
 }) {
   // Edits are overlays: null means "follow the server draft", so the agent's
   // spec streams into the preview until the officer starts typing.
@@ -238,6 +254,23 @@ function SendRfqDialog({
   const title = editedTitle ?? rfq?.title ?? "";
   const spec = editedSpec ?? rfq?.specMd ?? "";
   const dueOn = editedDueOn ?? rfq?.quotesDueOn ?? "";
+
+  // Show the generating overlay while the agent's real scope is still on its
+  // way: only when we opened expecting a draft, the officer hasn't started
+  // editing, and the spec is still the stub. Auto-clears when the redraft lands
+  // (spec no longer stub), when they type, or after a timeout as a safety net.
+  const [draftTimedOut, setDraftTimedOut] = useState(false);
+  useEffect(() => {
+    if (!expectDrafting) return;
+    const t = setTimeout(() => setDraftTimedOut(true), DRAFTING_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [expectDrafting]);
+  const drafting =
+    expectDrafting &&
+    !draftTimedOut &&
+    editedSpec === null &&
+    rfq?.status === "draft" &&
+    specIsStub(spec);
 
   const send = useMutation({
     mutationFn: async () => {
@@ -338,12 +371,14 @@ function SendRfqDialog({
               hint={`Sent as written. Trade: ${rfq.category} · Location shared: ${rfq.suburb} (suburb only).`}
             >
               {(controlProps) => (
-                <Textarea
+                <MarkdownEditor
                   {...controlProps}
                   data-testid="rfq-spec"
-                  className="min-h-40 font-mono text-xs"
+                  textareaClassName="min-h-40 font-mono text-xs"
                   value={spec}
-                  onChange={(e) => setEditedSpec(e.target.value)}
+                  onValueChange={setEditedSpec}
+                  loading={drafting}
+                  loadingLabel="The agent is drafting the scope…"
                 />
               )}
             </Field>
