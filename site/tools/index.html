@@ -42,21 +42,19 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       padding: 28px;
       margin-top: 22px;
     }
-    .tool-card h2 { font-size: clamp(21px, 3vw, 27px); }
+    .tool-card h2 { font-size: clamp(21px, 3vw, 27px); max-width: none; }
     .tool-card > p { color: var(--muted-ink); margin-top: 8px; max-width: 60ch; }
     .steps { counter-reset: tstep; margin: 22px 0 0; padding: 0; list-style: none; }
     .steps li {
       counter-increment: tstep;
       position: relative;
-      padding: 4px 0 18px 46px;
-      border-left: 2px solid var(--line);
-      margin-left: 15px;
+      padding: 3px 0 20px 44px;
     }
-    .steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
+    .steps li:last-child { padding-bottom: 0; }
     .steps li::before {
       content: counter(tstep);
       position: absolute;
-      left: -16px;
+      left: 0;
       top: 0;
       width: 30px; height: 30px;
       display: grid; place-items: center;
