@@ -152,7 +152,10 @@ function NotificationsMatrix({ data }: { data: PrefsPayload }) {
 
       {/* Column headers — once, aligned to the shared grid track. */}
       <div className={cn(GRID, "gap-y-0 border-b pb-2")}>
-        <span className="sr-only">Notification</span>
+        {/* Occupies the 1fr label column so the channel headers line up over
+            their toggles. Must NOT be sr-only (position:absolute drops the grid
+            cell, shifting every header one column left). */}
+        <span aria-hidden="true" />
         {NOTIFICATION_PREF_CHANNELS.map((channel) => (
           <span key={channel} className="text-center text-13 font-medium text-muted-foreground">
             {CHANNEL_LABELS[channel]}

@@ -210,6 +210,7 @@ function DisplayNameCard({ user, onSaved }: { user: SettingsUser; onSaved: () =>
   return (
     <Card>
       <form
+        className="flex flex-col gap-6"
         onSubmit={(e) => {
           e.preventDefault();
           void form.handleSubmit();
@@ -289,6 +290,7 @@ function EmailCard({ user, onSent }: { user: SettingsUser; onSent: () => void })
   return (
     <Card>
       <form
+        className="flex flex-col gap-6"
         onSubmit={(e) => {
           e.preventDefault();
           void form.handleSubmit();
