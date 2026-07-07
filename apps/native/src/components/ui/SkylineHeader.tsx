@@ -8,7 +8,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Line, Rect } from "react-native-svg";
+import Svg, { Line, Path, Rect } from "react-native-svg";
 import { useTheme } from "../../theme/useTheme";
 
 // A quiet skyline whose windows light themselves on and off in a staggered
@@ -20,19 +20,22 @@ import { useTheme } from "../../theme/useTheme";
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 const VIEW_W = 340;
-const VIEW_H = 46;
-const GROUND_Y = 42;
+const VIEW_H = 60;
+const GROUND_Y = 56;
+// The viewBox keeps ~26px of empty sky above the tallest roof so the
+// `xMidYMax slice` crop only ever eats sky, never a rooftop, at any screen
+// width. Towers are slim and short so the cluster reads delicate, not looming.
 
-// [x, width, height] — a modest, uneven skyline that reads as a real cluster.
+// [x, width, height] — slim towers of uneven height. Tallest tops at y=26.
 const BUILDINGS: [number, number, number][] = [
-  [22, 30, 34],
-  [60, 24, 22],
-  [96, 36, 40],
-  [144, 26, 28],
-  [182, 30, 36],
-  [224, 40, 44],
-  [276, 26, 30],
-  [312, 20, 24],
+  [26, 26, 26],
+  [62, 22, 22],
+  [94, 30, 30],
+  [136, 24, 24],
+  [170, 28, 28],
+  [212, 22, 24],
+  [248, 30, 30],
+  [290, 26, 28],
 ];
 
 interface Win {
@@ -45,26 +48,28 @@ interface Win {
 }
 
 /** Deterministic window grid (no Math.random → identical every render, and the
- * lights read as autonomous rather than uniform). ~2 cols × ≤3 rows per tower. */
+ * lights read as autonomous rather than uniform). Denser than a single column
+ * so each tower carries several lights. */
 function buildWindows(): Win[] {
   const wins: Win[] = [];
   let idx = 0;
   for (const [bx, bw, bh] of BUILDINGS) {
     const top = GROUND_Y - bh;
-    const cols = 2;
-    const rows = Math.min(3, Math.max(2, Math.floor(bh / 12)));
+    const cols = bw >= 25 ? 3 : 2;
+    const rows = 3;
     const cw = bw / cols;
     const ch = bh / rows;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const hsh = (idx * 2654435761) >>> 0;
         wins.push({
-          x: bx + c * cw + cw * 0.3,
-          y: top + r * ch + ch * 0.28,
-          w: cw * 0.4,
-          h: ch * 0.44,
-          delay: ((hsh % 1000) / 1000) * 4.5,
-          dur: 3000 + (((hsh >> 10) % 1000) / 1000) * 2600,
+          x: bx + c * cw + cw * 0.26,
+          y: top + r * ch + ch * 0.24,
+          w: cw * 0.48,
+          h: ch * 0.5,
+          // wider stagger + slower cycles read as a calmer, self-running rhythm
+          delay: ((hsh % 1000) / 1000) * 6,
+          dur: 5000 + (((hsh >> 10) % 1000) / 1000) * 4500,
         });
         idx++;
       }
@@ -74,7 +79,7 @@ function buildWindows(): Win[] {
 }
 
 function GlowWindow({ win, color, reduce }: { win: Win; color: string; reduce: boolean }) {
-  const op = useSharedValue(0.07);
+  const op = useSharedValue(0.06);
   useEffect(() => {
     if (reduce) {
       // calm, partly-lit static pattern
@@ -97,14 +102,14 @@ function GlowWindow({ win, color, reduce }: { win: Win; color: string; reduce: b
       y={win.y}
       width={win.w}
       height={win.h}
-      rx={0.6}
+      rx={0.5}
       fill={color}
       animatedProps={animatedProps}
     />
   );
 }
 
-export function SkylineHeader({ height = 38 }: { height?: number }) {
+export function SkylineHeader({ height = 46 }: { height?: number }) {
   const theme = useTheme();
   const reduce = useReducedMotion();
   const wins = useMemo(buildWindows, []);
@@ -127,18 +132,27 @@ export function SkylineHeader({ height = 38 }: { height?: number }) {
         strokeOpacity={0.16}
         strokeWidth={0.75}
       />
+      {/* Faint tower bodies — fill only, no stroke. */}
       {BUILDINGS.map(([bx, bw, bh], i) => (
         <Rect
-          key={i}
+          key={`b${i}`}
           x={bx}
           y={GROUND_Y - bh}
           width={bw}
           height={bh}
-          rx={1}
           fill={theme.muted}
-          fillOpacity={0.045}
+          fillOpacity={0.05}
+        />
+      ))}
+      {/* Outline: left + top + right only — no bottom edge, so it never
+          doubles up on the shared ground line. */}
+      {BUILDINGS.map(([bx, bw, bh], i) => (
+        <Path
+          key={`o${i}`}
+          d={`M${bx} ${GROUND_Y} L${bx} ${GROUND_Y - bh} L${bx + bw} ${GROUND_Y - bh} L${bx + bw} ${GROUND_Y}`}
+          fill="none"
           stroke={theme.muted}
-          strokeOpacity={0.14}
+          strokeOpacity={0.15}
           strokeWidth={0.75}
         />
       ))}

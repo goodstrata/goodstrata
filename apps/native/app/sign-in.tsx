@@ -142,7 +142,7 @@ export default function SignIn() {
       >
         {/* Self-running skyline — the visual for "the building runs itself",
             sitting just above the inputs, spaced down from the wordmark. */}
-        <SkylineHeader height={84} />
+        <SkylineHeader height={108} />
         <View
           style={{ paddingHorizontal: space(6), paddingBottom: space(2), marginTop: space(5) }}
         >
