@@ -113,6 +113,14 @@ export default function SchemeHub() {
   const meetingsSubtitle = overview?.nextMeeting
     ? `Next: ${formatDate(overview.nextMeeting.scheduledAt)}`
     : "Notices and minutes";
+  const complianceOverdue = overview?.attention.complianceOverdue ?? 0;
+  const complianceOpen = overview?.attention.complianceOpen ?? 0;
+  const complianceSubtitle =
+    complianceOverdue > 0
+      ? `${complianceOverdue} overdue`
+      : complianceOpen > 0
+        ? `${complianceOpen} obligation${complianceOpen === 1 ? "" : "s"} open`
+        : "Statutory deadlines";
 
   const officerLinks: HubLink[] = [
     {
@@ -136,6 +144,13 @@ export default function SchemeHub() {
       title: "Meetings",
       subtitle: meetingsSubtitle,
       path: `/scheme/${schemeId}/meetings`,
+    },
+    {
+      key: "compliance",
+      icon: "shield-checkmark-outline",
+      title: "Compliance",
+      subtitle: complianceSubtitle,
+      path: `/scheme/${schemeId}/compliance`,
     },
     {
       key: "documents",
