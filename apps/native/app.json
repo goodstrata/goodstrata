@@ -38,7 +38,15 @@
           "resizeMode": "contain",
           "backgroundColor": "#0c1220"
         }
-      ]
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": { "deploymentTarget": "16.4" }
+        }
+      ],
+      "./plugins/withPodDeploymentTarget",
+      "./plugins/withIosSceneLifecycle"
     ],
     "extra": {
       "router": {},
