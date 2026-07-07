@@ -126,6 +126,8 @@ export default function SchemeHub() {
     openMaintenance > 0
       ? `${openMaintenance} open request${openMaintenance === 1 ? "" : "s"}`
       : "Repairs and requests";
+  const peopleCount = overview?.glance.people ?? 0;
+  const peopleSubtitle = peopleCount > 0 ? `${peopleCount} on the roll` : "The owners register";
 
   const officerLinks: HubLink[] = [
     {
@@ -170,6 +172,13 @@ export default function SchemeHub() {
       title: "Grievances",
       subtitle: "Concerns and disputes",
       path: `/scheme/${schemeId}/grievances`,
+    },
+    {
+      key: "people",
+      icon: "people-outline",
+      title: "People",
+      subtitle: peopleSubtitle,
+      path: `/scheme/${schemeId}/people`,
     },
     {
       key: "documents",
