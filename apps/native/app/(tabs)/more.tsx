@@ -61,13 +61,10 @@ export default function More() {
       <Card padded={false} style={{ paddingHorizontal: space(4) }}>
         <ListRow
           title="Notifications"
-          subtitle="Alerts and delivery, in system settings"
+          subtitle="Choose what reaches you, and how"
           leading={<Ionicons name="notifications-outline" size={18} color={theme.accent} />}
-          chevron={false}
-          right={<OpenIcon />}
-          onPress={() => {
-            Linking.openSettings().catch(() => {});
-          }}
+          chevron
+          onPress={() => router.push("/settings/notifications")}
         />
       </Card>
 
