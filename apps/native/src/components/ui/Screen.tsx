@@ -21,6 +21,9 @@ export interface ScreenProps {
   onRefresh?: () => void;
   /** Single quiet icon action, 44pt hit area. */
   headerRight?: ReactNode;
+  /** Ambient self-lighting skyline band above the title. Opt-in — only the
+   * scheme overview uses it; the login screen carries its own. */
+  skyline?: boolean;
   children: ReactNode;
 }
 
@@ -37,6 +40,7 @@ export function Screen({
   refreshing,
   onRefresh,
   headerRight,
+  skyline = false,
   children,
 }: ScreenProps) {
   const theme = useTheme();
@@ -89,13 +93,13 @@ export function Screen({
             ) : undefined
           }
         >
-          <SkylineHeader />
+          {skyline ? <SkylineHeader /> : null}
           {header}
           <View style={{ paddingHorizontal: space(5) }}>{children}</View>
         </ScrollView>
       ) : (
         <View style={{ flex: 1 }}>
-          <SkylineHeader />
+          {skyline ? <SkylineHeader /> : null}
           {header}
           <View style={{ flex: 1, paddingHorizontal: space(5) }}>{children}</View>
         </View>

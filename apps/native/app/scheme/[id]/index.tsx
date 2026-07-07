@@ -236,6 +236,7 @@ export default function SchemeHub() {
       reserveEyebrow
       refreshing={refreshing}
       onRefresh={refetchAll}
+      skyline
     >
       {failed ? (
         <ErrorState onRetry={refetchAll} />
