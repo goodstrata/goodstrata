@@ -27,6 +27,7 @@ import Animated, {
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { PressableScale } from "../src/components/ui/PressableScale";
+import { SkylineHeader } from "../src/components/ui/SkylineHeader";
 import { authClient } from "../src/lib/auth";
 import { palette, radius, space, type as t } from "../src/theme/tokens";
 
@@ -124,21 +125,27 @@ export default function SignIn() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar style="light" />
+      {/* Wordmark pinned to the top */}
+      <Animated.View style={[{ paddingHorizontal: space(6), paddingTop: space(3) }, logoStyle]}>
+        <Image
+          source={require("../assets/wordmark-on-dark.png")}
+          accessibilityRole="image"
+          accessibilityLabel="GoodStrata"
+          resizeMode="contain"
+          // native asset is 1200×252 (≈4.76:1)
+          style={{ width: 208, height: 44 }}
+        />
+      </Animated.View>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1, justifyContent: "flex-end" }}
       >
-        <View style={{ paddingHorizontal: space(6), paddingBottom: space(2) }}>
-          <Animated.View style={[{ marginBottom: space(5) }, logoStyle]}>
-            <Image
-              source={require("../assets/wordmark-on-dark.png")}
-              accessibilityRole="image"
-              accessibilityLabel="GoodStrata"
-              resizeMode="contain"
-              // native asset is 1200×252 (≈4.76:1)
-              style={{ width: 208, height: 44 }}
-            />
-          </Animated.View>
+        {/* Self-running skyline — the visual for "the building runs itself",
+            sitting just above the inputs, spaced down from the wordmark. */}
+        <SkylineHeader height={84} />
+        <View
+          style={{ paddingHorizontal: space(6), paddingBottom: space(2), marginTop: space(5) }}
+        >
           <Text style={{ ...t.display, color: TEXT }}>
             The building runs itself.{"\n"}You stay in charge.
           </Text>

@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { space, type } from "../../theme/tokens";
 import { useTheme } from "../../theme/useTheme";
+import { SkylineHeader } from "./SkylineHeader";
 
 export interface ScreenProps {
   /** The large title — this IS the header (expo-router header hidden). */
@@ -88,11 +89,13 @@ export function Screen({
             ) : undefined
           }
         >
+          <SkylineHeader />
           {header}
           <View style={{ paddingHorizontal: space(5) }}>{children}</View>
         </ScrollView>
       ) : (
         <View style={{ flex: 1 }}>
+          <SkylineHeader />
           {header}
           <View style={{ flex: 1, paddingHorizontal: space(5) }}>{children}</View>
         </View>

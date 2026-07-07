@@ -39,6 +39,7 @@ module.exports = {
   // Hooks.
   useSharedValue: (initial) => ({ value: initial }),
   useAnimatedStyle: () => ({}),
+  useAnimatedProps: () => ({}),
   useDerivedValue: (fn) => ({ value: typeof fn === "function" ? fn() : undefined }),
   useAnimatedScrollHandler: () => () => {},
   useAnimatedRef: () => React.createRef(),
