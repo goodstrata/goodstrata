@@ -9,6 +9,7 @@ export { Card } from "./ui/Card";
 export type { CardProps } from "./ui/Card";
 export { EmptyState } from "./ui/EmptyState";
 export type { EmptyStateProps } from "./ui/EmptyState";
+export { FormField } from "./ui/FormField";
 export { ErrorState } from "./ui/ErrorState";
 export type { ErrorStateProps } from "./ui/ErrorState";
 export { Figure } from "./ui/Figure";

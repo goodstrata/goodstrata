@@ -165,6 +165,13 @@ export default function SchemeHub() {
       path: `/scheme/${schemeId}/compliance`,
     },
     {
+      key: "grievances",
+      icon: "chatbox-ellipses-outline",
+      title: "Grievances",
+      subtitle: "Concerns and disputes",
+      path: `/scheme/${schemeId}/grievances`,
+    },
+    {
       key: "documents",
       icon: "document-text-outline",
       title: "Documents",
@@ -203,6 +210,13 @@ export default function SchemeHub() {
       icon: "people-outline",
       title: "My building",
       subtitle: "Neighbours and notices",
+    },
+    {
+      key: "grievances",
+      icon: "chatbox-ellipses-outline",
+      title: "Raise a concern",
+      subtitle: "Grievances and disputes",
+      path: `/scheme/${schemeId}/grievances`,
     },
     {
       key: "documents",

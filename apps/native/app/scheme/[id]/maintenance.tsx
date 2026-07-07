@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams } from "expo-router";
-import { type ComponentProps, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import {
   Button,
   Card,
   EmptyState,
   ErrorState,
+  FormField,
   Screen,
   SectionHeader,
   Skeleton,
@@ -21,7 +22,6 @@ import {
   useTheme,
 } from "../../../src/components";
 import { api, apiPost } from "../../../src/lib/api";
-import { radius } from "../../../src/theme/tokens";
 import { schemeQueryOptions, useIsOfficer } from "../../../src/lib/roles";
 
 // ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ function ReportForm({
 }) {
   return (
     <View style={{ gap: space(3) }}>
-      <Field
+      <FormField
         label="What's wrong?"
         value={title}
         onChangeText={onTitle}
@@ -227,7 +227,7 @@ function ReportForm({
         returnKeyType="next"
         maxLength={200}
       />
-      <Field
+      <FormField
         label="Any detail that helps"
         value={description}
         onChangeText={onDescription}
@@ -239,39 +239,6 @@ function ReportForm({
       <View style={{ alignItems: "flex-start", marginTop: space(1) }}>
         <Button label="Report issue" onPress={onSubmit} disabled={!canSubmit} pending={pending} />
       </View>
-    </View>
-  );
-}
-
-function Field({
-  label,
-  multiline,
-  ...props
-}: { label: string; multiline?: boolean } & ComponentProps<typeof TextInput>) {
-  const theme = useTheme();
-  const [focused, setFocused] = useState(false);
-  return (
-    <View style={{ gap: space(2) }}>
-      <Text style={{ ...t.label, color: theme.muted }}>{label}</Text>
-      <TextInput
-        {...props}
-        multiline={multiline}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        placeholderTextColor={theme.muted}
-        selectionColor={theme.accent}
-        style={{
-          ...t.body,
-          color: theme.text,
-          backgroundColor: theme.surface,
-          borderWidth: 1,
-          borderColor: focused ? theme.accent : theme.line,
-          borderRadius: radius.control,
-          paddingHorizontal: space(4),
-          paddingVertical: space(3),
-          ...(multiline ? { minHeight: 92, textAlignVertical: "top" as const } : null),
-        }}
-      />
     </View>
   );
 }
