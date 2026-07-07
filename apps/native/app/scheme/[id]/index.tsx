@@ -121,6 +121,11 @@ export default function SchemeHub() {
       : complianceOpen > 0
         ? `${complianceOpen} obligation${complianceOpen === 1 ? "" : "s"} open`
         : "Statutory deadlines";
+  const openMaintenance = overview?.attention.openMaintenanceRequests ?? 0;
+  const maintenanceSubtitle =
+    openMaintenance > 0
+      ? `${openMaintenance} open request${openMaintenance === 1 ? "" : "s"}`
+      : "Repairs and requests";
 
   const officerLinks: HubLink[] = [
     {
@@ -137,6 +142,13 @@ export default function SchemeHub() {
       subtitle:
         pendingDecisions > 0 ? `${pendingDecisions} waiting on you` : "Approvals on the record",
       path: `/scheme/${schemeId}/decisions`,
+    },
+    {
+      key: "maintenance",
+      icon: "construct-outline",
+      title: "Maintenance",
+      subtitle: maintenanceSubtitle,
+      path: `/scheme/${schemeId}/maintenance`,
     },
     {
       key: "meetings",
@@ -170,6 +182,7 @@ export default function SchemeHub() {
       icon: "construct-outline",
       title: "Report an issue",
       subtitle: "Maintenance and repairs",
+      path: `/scheme/${schemeId}/maintenance`,
     },
     {
       key: "finance",
