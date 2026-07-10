@@ -34,6 +34,13 @@ export const documents = pgTable(
     retentionUntil: date(),
     /** Stamped by the daily retention sweep once the object is deleted and the row de-identified. */
     purgedAt: timestamp({ withTimezone: true }),
+    /**
+     * Officer soft-delete: hides the record from the register and content
+     * serving, but the row (and any running retention clock) stays behind as
+     * the audit trail. Never set while `retentionUntil` is still in the future.
+     */
+    deletedAt: timestamp({ withTimezone: true }),
+    /** Versioning: this row replaces the pointed-at revision (the old row is untouched). */
     supersedesDocumentId: uuid(),
     uploadedBy: jsonb().notNull(), // Actor
     createdAt: createdAt(),

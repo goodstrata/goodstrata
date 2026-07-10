@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema/index.js";
@@ -8,18 +9,42 @@ export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export type DbHandle = Database | Transaction;
 
 /**
+ * TLS chain-verification policy, env-driven:
+ *
+ *  - DB_SSL_REJECT_UNAUTHORIZED=true|false wins when set.
+ *  - Otherwise: verify in production, permissive elsewhere. The asymmetry is
+ *    deliberate — dev/CI talk to docker/testcontainer Postgres or a Supabase
+ *    pooler whose cert chain is self-signed (SELF_SIGNED_CERT_IN_CHAIN), so
+ *    verification there only breaks the loop, and dev traffic carries no
+ *    member data. Production fails closed unless explicitly opted out.
+ *  - DB_SSL_CA pins the provider CA (inline PEM, or a path to a PEM file) —
+ *    required for verification to pass against Supabase's self-signed chain.
+ */
+function sslOptions(): { rejectUnauthorized: boolean; ca?: string } {
+  const flag = process.env.DB_SSL_REJECT_UNAUTHORIZED;
+  const rejectUnauthorized =
+    flag !== undefined ? flag !== "false" : process.env.NODE_ENV === "production";
+  const rawCa = process.env.DB_SSL_CA;
+  const ca = rawCa
+    ? rawCa.includes("-----BEGIN")
+      ? rawCa
+      : readFileSync(rawCa, "utf8")
+    : undefined;
+  return ca ? { rejectUnauthorized, ca } : { rejectUnauthorized };
+}
+
+/**
  * Normalise a Postgres URL into node-postgres connection config with TLS
  * handled consistently across every consumer (pool, pg-boss, the LISTEN
  * client). Managed Postgres (Supabase, RDS, …) requires TLS, but node-postgres
- * ≥ 8.22 verifies the chain when `sslmode` is in the URL and rejects Supabase's
- * pooler cert (SELF_SIGNED_CERT_IN_CHAIN). So we strip `sslmode` and drive TLS
- * ourselves — encrypt without chain verification. Local/dev URLs carry no
- * sslmode and keep connecting in the clear.
- * TODO(hardening): pin the provider CA and flip to rejectUnauthorized: true.
+ * ≥ 8.22 applies its own semantics when `sslmode` is in the URL, so we strip
+ * `sslmode` and drive TLS ourselves: always encrypt, with chain verification
+ * per `sslOptions()` (env-driven; see above). Local/dev URLs carry no sslmode
+ * and keep connecting in the clear.
  */
 export function pgConfig(connectionString: string): {
   connectionString: string;
-  ssl?: { rejectUnauthorized: false };
+  ssl?: { rejectUnauthorized: boolean; ca?: string };
 } {
   const wantsTls = /[?&]sslmode=(require|prefer|verify-ca|verify-full|no-verify)\b/i.test(
     connectionString,
@@ -29,7 +54,7 @@ export function pgConfig(connectionString: string): {
     .replace(/\?&/, "?")
     .replace(/[?&]$/, "");
   return wantsTls
-    ? { connectionString: cleaned, ssl: { rejectUnauthorized: false } }
+    ? { connectionString: cleaned, ssl: sslOptions() }
     : { connectionString: cleaned };
 }
 
