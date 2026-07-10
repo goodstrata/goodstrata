@@ -1,19 +1,22 @@
 import {
   communityPosts,
+  complaints,
   complianceObligations,
   lots,
+  maintenanceRequests,
   memberships,
   ownerships,
   people,
   schemes,
 } from "@goodstrata/db";
 import type { EventRecord } from "@goodstrata/events";
-import { formatCents, type MembershipRole } from "@goodstrata/shared";
+import { type CommentEntityType, formatCents, type MembershipRole } from "@goodstrata/shared";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { ServiceContext } from "../context.js";
 import { emailBrand, paragraph, renderEmail } from "../email/index.js";
-import { notifyUsers } from "./notifications.js";
+import { THREAD_OFFICER_ROLES } from "./entityComments.js";
 import { resolveRecipientChannels } from "./notificationPreferences.js";
+import { notifyUsers } from "./notifications.js";
 
 /**
  * The notifier: a pure-code event consumer (never an LLM) that turns domain
@@ -31,6 +34,7 @@ export const NOTIFIER_EVENT_TYPES = [
   "minutes.drafted",
   "maintenance.request.created",
   "community.comment.created",
+  "entity.comment.created",
   "compliance.obligation.due",
 ] as const;
 
@@ -98,11 +102,7 @@ async function deliver(
     smsBody?: string;
   },
 ): Promise<number> {
-  const resolved = await resolveRecipientChannels(
-    ctx,
-    content.userIds,
-    content.notificationType,
-  );
+  const resolved = await resolveRecipientChannels(ctx, content.userIds, content.notificationType);
 
   const created = await notifyUsers(ctx, content.schemeId, resolved.inApp, content.inApp);
 
@@ -563,6 +563,87 @@ export async function handleEventForNotifications(
           body: "Open the community board to read the reply and respond.",
           ctaLabel: "Open community board",
           url: schemeUrl(schemeId, "community"),
+        }),
+        smsBody: `GoodStrata: ${body}`,
+      });
+      return { created };
+    }
+
+    case "entity.comment.created": {
+      const payload = event.payload as {
+        commentId: string;
+        entityType: CommentEntityType;
+        entityId: string;
+        authorUserId: string;
+      };
+      const isMaintenance = payload.entityType === "maintenance_request";
+
+      // Resolve the member side of the thread (the requester's / complainant's
+      // login) — null when the person isn't linked to an account.
+      let memberUserId: string | null = null;
+      let requestTitle: string | null = null;
+      if (isMaintenance) {
+        const request = await ctx.db.query.maintenanceRequests.findFirst({
+          where: eq(maintenanceRequests.id, payload.entityId),
+        });
+        if (!request) return { created: 0 };
+        requestTitle = request.title;
+        if (request.reportedByPersonId) {
+          const person = await ctx.db.query.people.findFirst({
+            where: eq(people.id, request.reportedByPersonId),
+          });
+          memberUserId = person?.userId ?? null;
+        }
+      } else {
+        const complaint = await ctx.db.query.complaints.findFirst({
+          where: eq(complaints.id, payload.entityId),
+        });
+        if (!complaint) return { created: 0 };
+        const person = await ctx.db.query.people.findFirst({
+          where: eq(people.id, complaint.complainantPersonId),
+        });
+        memberUserId = person?.userId ?? null;
+      }
+
+      // Notify the other side of the conversation: the member's comment goes
+      // to the officer tier that works the thread; an officer's goes to the
+      // member. Never the author themselves.
+      const counterparty =
+        payload.authorUserId === memberUserId
+          ? await userIdsWithRoles(ctx, schemeId, THREAD_OFFICER_ROLES)
+          : memberUserId
+            ? [memberUserId]
+            : [];
+      const recipients = counterparty.filter((id) => id !== payload.authorUserId);
+      if (recipients.length === 0) return { created: 0 };
+
+      // The complaint's subject stays out of notification copy — the bell and
+      // email surfaces are less guarded than the officer-gated register.
+      const title = isMaintenance
+        ? `New reply on maintenance request: ${requestTitle}`
+        : "New reply on a complaint";
+      const body = isMaintenance
+        ? "There's a new reply on the maintenance request thread."
+        : "There's a new reply on a complaint you're involved in.";
+      const section = isMaintenance ? "maintenance" : "grievances";
+      const created = await deliver(ctx, {
+        schemeId,
+        notificationType: "entity.comment.created",
+        userIds: recipients,
+        inApp: {
+          title,
+          body,
+          category: isMaintenance ? "maintenance" : "general",
+          related: { type: payload.entityType, id: payload.entityId },
+        },
+        email: genericEmail({
+          subject: title,
+          preheader: body,
+          heading: title,
+          intro: body,
+          body: "Open the thread to read the reply and respond.",
+          ctaLabel: "Open the thread",
+          url: schemeUrl(schemeId, section),
         }),
         smsBody: `GoodStrata: ${body}`,
       });

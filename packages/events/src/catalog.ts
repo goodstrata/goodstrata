@@ -1,4 +1,4 @@
-import { CHAIR_NOTE_KINDS } from "@goodstrata/shared";
+import { CHAIR_NOTE_KINDS, COMMENT_ENTITY_TYPES } from "@goodstrata/shared";
 import { z } from "zod";
 
 /**
@@ -322,6 +322,20 @@ export const eventDefs = {
     userId: z.string(),
     reaction: z.string(),
     active: z.boolean(),
+  }),
+
+  // entity comment threads (maintenance requests / complaints)
+  "entity.comment.created": z.object({
+    commentId: z.string(),
+    entityType: z.enum(COMMENT_ENTITY_TYPES),
+    entityId: z.string(),
+    authorUserId: z.string(),
+  }),
+  "entity.comment.removed": z.object({
+    commentId: z.string(),
+    entityType: z.enum(COMMENT_ENTITY_TYPES),
+    entityId: z.string(),
+    removedBy: z.string(),
   }),
 
   "notification.created": z.object({
