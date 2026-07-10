@@ -1,0 +1,2 @@
+ALTER TYPE "public"."meeting_status" ADD VALUE 'minutes_draft' BEFORE 'minutes_distributed';--> statement-breakpoint
+ALTER TABLE "maintenance_requests" ADD COLUMN "reported_emergency" boolean DEFAULT false NOT NULL;

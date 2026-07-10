@@ -100,6 +100,9 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
   const runtimeDeps: RuntimeDeps = {
     resolveModel: deps.resolveModel,
     serviceContext: deps.serviceContext,
+    // Spend ceilings (defaults applied in the runtime when unset).
+    runTokenBudget: deps.env.AGENT_RUN_TOKEN_BUDGET,
+    schemeDailyTokenBudget: deps.env.AGENT_SCHEME_DAILY_TOKEN_BUDGET,
   };
   await registerAgentWorkers(boss, deps.db, runtimeDeps, allAgents, (agent, outcome) => {
     if (outcome.kind === "ran") {

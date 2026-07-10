@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { schemes, users } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import { integrationsFromEnv } from "@goodstrata/integrations";
-import { type Actor, fixedClock, systemActor, userActor } from "@goodstrata/shared";
+import { type Actor, agentActor, fixedClock, systemActor, userActor } from "@goodstrata/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServiceContext } from "../src/context.js";
 import * as decisionsService from "../src/services/decisions.js";
@@ -25,11 +26,15 @@ function ctx(actor: Actor = systemActor("test")): ServiceContext {
   return { db: tdb.db, clock: fixedClock("2026-07-02T00:00:00Z"), integrations, actor };
 }
 
-async function newTriagedRequest(urgency: "emergency" | "high" | "routine") {
+async function newTriagedRequest(
+  urgency: "emergency" | "high" | "routine",
+  opts: { reportedEmergency?: boolean } = {},
+) {
   const c = ctx();
   const request = await maintenanceService.createMaintenanceRequest(c, schemeId, {
     title: `Job ${Math.random().toString(36).slice(2, 8)}`,
     description: "Something needs fixing",
+    reportedEmergency: opts.reportedEmergency,
   });
   await maintenanceService.applyTriage(c, schemeId, request.id, {
     category: "plumbing",
@@ -70,16 +75,21 @@ afterAll(async () => {
 });
 
 describe("work order threshold routing (code, not LLM)", () => {
-  it("auto-dispatches under the auto-approve threshold and emails the contractor", async () => {
+  it("auto-dispatches a HUMAN officer's under-threshold estimate and emails the contractor", async () => {
     const request = await newTriagedRequest("routine");
     memoryEmail.sent.length = 0;
 
-    const route = await maintenanceService.proposeWorkOrder(ctx(), schemeId, {
-      requestId: request.id,
-      contractorId,
-      scope: "Replace washer on common laundry tap",
-      estimatedCents: 18_000, // $180 < $500 default threshold
-    });
+    // The proposer is a signed-in user, so the estimate is human-supplied.
+    const route = await maintenanceService.proposeWorkOrder(
+      ctx(userActor(managerUserId)),
+      schemeId,
+      {
+        requestId: request.id,
+        contractorId,
+        scope: "Replace washer on common laundry tap",
+        estimatedCents: 18_000, // $180 < $500 default threshold
+      },
+    );
 
     expect(route.mode).toBe("auto_dispatched");
     const orders = await maintenanceService.listWorkOrders(ctx(), schemeId);
@@ -87,6 +97,52 @@ describe("work order threshold routing (code, not LLM)", () => {
     expect(memoryEmail.sent).toHaveLength(1);
     expect(memoryEmail.sent[0]!.to).toBe("jobs@fitzroyplumbing.example");
     expect(memoryEmail.sent[0]!.text).toContain("$180.00");
+  });
+
+  it("an AGENT's under-threshold estimate never auto-dispatches — committee gate opens", async () => {
+    const request = await newTriagedRequest("routine");
+    memoryEmail.sent.length = 0;
+
+    // Same cheap estimate, but LLM-originated (agent actor) → decision gate.
+    const route = await maintenanceService.proposeWorkOrder(
+      ctx(agentActor("maintenance", randomUUID())),
+      schemeId,
+      {
+        requestId: request.id,
+        contractorId,
+        scope: "Replace washer on common laundry tap",
+        estimatedCents: 100, // $1 — trivially under every threshold
+      },
+    );
+
+    expect(route.mode).toBe("awaiting_approval");
+    if (route.mode !== "awaiting_approval") return;
+    const orders = await maintenanceService.listWorkOrders(ctx(), schemeId);
+    expect(orders.find((o) => o.id === route.workOrderId)!.status).toBe("draft");
+    expect(memoryEmail.sent).toHaveLength(0);
+    const decisions = await decisionsService.listDecisions(ctx(), schemeId);
+    expect(decisions.find((d) => d.id === route.decisionId)!.kind).toBe("quote_approval");
+  });
+
+  it("LLM triage urgency 'emergency' does NOT dispatch when the reporter didn't flag it", async () => {
+    const request = await newTriagedRequest("emergency"); // triage says emergency; reporter did not
+    memoryEmail.sent.length = 0;
+
+    const route = await maintenanceService.proposeWorkOrder(
+      ctx(agentActor("maintenance", randomUUID())),
+      schemeId,
+      {
+        requestId: request.id,
+        contractorId,
+        scope: "Claimed-urgent repair",
+        estimatedCents: 90_000,
+      },
+    );
+
+    expect(route.mode).toBe("awaiting_approval");
+    const orders = await maintenanceService.listWorkOrders(ctx(), schemeId);
+    expect(orders.find((o) => o.id === route.workOrderId)!.status).toBe("draft");
+    expect(memoryEmail.sent).toHaveLength(0);
   });
 
   it("routes over-threshold work to a committee decision; approval dispatches", async () => {
@@ -133,16 +189,22 @@ describe("work order threshold routing (code, not LLM)", () => {
     expect(decision.summaryMd).toContain("comparison quotes");
   });
 
-  it("emergency works dispatch immediately with a post-hoc review decision", async () => {
-    const request = await newTriagedRequest("emergency");
+  it("reporter-flagged emergency works dispatch immediately with a post-hoc review decision", async () => {
+    // The REPORTER flagged the emergency at intake — the human-origin signal.
+    const request = await newTriagedRequest("emergency", { reportedEmergency: true });
     memoryEmail.sent.length = 0;
 
-    const route = await maintenanceService.proposeWorkOrder(ctx(), schemeId, {
-      requestId: request.id,
-      contractorId,
-      scope: "Burst common water main — shut off and repair",
-      estimatedCents: 350_000, // way over both thresholds, but it's an emergency
-    });
+    // Even an agent-proposed work order dispatches on the reporter's flag.
+    const route = await maintenanceService.proposeWorkOrder(
+      ctx(agentActor("maintenance", randomUUID())),
+      schemeId,
+      {
+        requestId: request.id,
+        contractorId,
+        scope: "Burst common water main — shut off and repair",
+        estimatedCents: 350_000, // way over both thresholds, but it's an emergency
+      },
+    );
 
     expect(route.mode).toBe("emergency_dispatched");
     if (route.mode !== "emergency_dispatched") return;

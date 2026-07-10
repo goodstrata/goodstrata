@@ -108,6 +108,8 @@ export const eventDefs = {
     title: z.string(),
     description: z.string(),
     lotId: z.string().nullable(),
+    /** Human origin: the reporter flagged this an emergency at creation. */
+    reportedEmergency: z.boolean().optional(),
   }),
   "maintenance.request.triaged": z.object({
     requestId: z.string(),
@@ -210,6 +212,12 @@ export const eventDefs = {
     forWeight: z.number().int(),
     againstWeight: z.number().int(),
     abstainWeight: z.number().int(),
+  }),
+  /** The AI chair proposed closing a motion; a human officer runs the tally. */
+  "motion.close.proposed": z.object({
+    motionId: z.string(),
+    meetingId: z.string().nullable(),
+    title: z.string(),
   }),
   "minutes.drafted": z.object({ meetingId: z.string(), documentId: z.string() }),
   "meeting.video.started": z.object({ meetingId: z.string(), url: z.string() }),

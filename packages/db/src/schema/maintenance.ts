@@ -49,6 +49,12 @@ export const maintenanceRequests = pgTable(
     reportedByPersonId: uuid().references(() => people.id),
     title: text().notNull(),
     description: text().notNull(),
+    /**
+     * Set by the HUMAN reporter at creation ("this is an emergency"). The only
+     * flag that may gate immediate work-order dispatch — `urgency` below is
+     * agent triage (LLM output) and must never authorise spending on its own.
+     */
+    reportedEmergency: boolean().notNull().default(false),
     category: text(), // plumbing | electrical | ... (agent-assigned, free vocab)
     urgency: maintenanceUrgencyEnum(),
     isCommonProperty: boolean(),

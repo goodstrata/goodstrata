@@ -142,8 +142,7 @@ describe("createRequestInput validation", () => {
         .success,
     ).toBe(false);
     expect(
-      maintenanceService.createRequestInput.safeParse({ title: "abc", description: "abc" })
-        .success,
+      maintenanceService.createRequestInput.safeParse({ title: "abc", description: "abc" }).success,
     ).toBe(true);
   });
 
@@ -458,8 +457,8 @@ describe("work order routing boundaries", () => {
     expect(decision.summaryMd).toContain("comparison quotes");
   });
 
-  it("emergency urgency wins over the amount: even a tiny job takes the emergency path", async () => {
-    const request = await newTriagedRequest("emergency");
+  it("a reporter-flagged emergency wins over the amount: even a tiny job takes the emergency path", async () => {
+    const request = await newTriagedRequest("emergency", { reportedEmergency: true });
     const route = await proposeFor(request.id, 100); // $1 — far below auto threshold
     expect(route.mode).toBe("emergency_dispatched");
     if (route.mode !== "emergency_dispatched") return;
@@ -469,6 +468,12 @@ describe("work order routing boundaries", () => {
       (d) => d.id === route.reviewDecisionId,
     )!;
     expect(review.kind).toBe("emergency_review");
+  });
+
+  it("triage-only emergency urgency (no reporter flag) does NOT get the emergency shortcut", async () => {
+    const request = await newTriagedRequest("emergency");
+    const route = await proposeFor(request.id, AUTO_APPROVE_CENTS + 1);
+    expect(route.mode).toBe("awaiting_approval");
   });
 
   it("high urgency does NOT get the emergency shortcut — thresholds still apply", async () => {
@@ -535,19 +540,21 @@ describe("completeWorkOrder status permutations", () => {
     return { workOrderId: route.workOrderId, requestId: request.id };
   }
 
-  it.each(["dispatched", "accepted", "scheduled", "in_progress"] as const)(
-    "completes from %s",
-    async (status) => {
-      const { workOrderId } = await dispatchedWorkOrder();
-      if (status !== "dispatched") {
-        await tdb.db.update(workOrders).set({ status }).where(eq(workOrders.id, workOrderId));
-      }
-      const result = await maintenanceService.completeWorkOrder(ctx(), schemeId, workOrderId);
-      expect(result.workOrderId).toBe(workOrderId);
-      const after = await maintenanceService.listWorkOrders(ctx(), schemeId);
-      expect(after.find((o) => o.id === workOrderId)!.status).toBe("completed");
-    },
-  );
+  it.each([
+    "dispatched",
+    "accepted",
+    "scheduled",
+    "in_progress",
+  ] as const)("completes from %s", async (status) => {
+    const { workOrderId } = await dispatchedWorkOrder();
+    if (status !== "dispatched") {
+      await tdb.db.update(workOrders).set({ status }).where(eq(workOrders.id, workOrderId));
+    }
+    const result = await maintenanceService.completeWorkOrder(ctx(), schemeId, workOrderId);
+    expect(result.workOrderId).toBe(workOrderId);
+    const after = await maintenanceService.listWorkOrders(ctx(), schemeId);
+    expect(after.find((o) => o.id === workOrderId)!.status).toBe("completed");
+  });
 
   it("completing closes the linked request too", async () => {
     const { workOrderId, requestId } = await dispatchedWorkOrder();

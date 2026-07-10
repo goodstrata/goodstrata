@@ -12,8 +12,8 @@ import { formatCents, type MembershipRole } from "@goodstrata/shared";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { ServiceContext } from "../context.js";
 import { emailBrand, paragraph, renderEmail } from "../email/index.js";
-import { notifyUsers } from "./notifications.js";
 import { resolveRecipientChannels } from "./notificationPreferences.js";
+import { notifyUsers } from "./notifications.js";
 
 /**
  * The notifier: a pure-code event consumer (never an LLM) that turns domain
@@ -32,6 +32,8 @@ export const NOTIFIER_EVENT_TYPES = [
   "maintenance.request.created",
   "community.comment.created",
   "compliance.obligation.due",
+  // In-app only (not in the preference matrix; unknown types default to bell).
+  "motion.close.proposed",
 ] as const;
 
 /** Roles considered "the committee" for notification fan-out. */
@@ -98,11 +100,7 @@ async function deliver(
     smsBody?: string;
   },
 ): Promise<number> {
-  const resolved = await resolveRecipientChannels(
-    ctx,
-    content.userIds,
-    content.notificationType,
-  );
+  const resolved = await resolveRecipientChannels(ctx, content.userIds, content.notificationType);
 
   const created = await notifyUsers(ctx, content.schemeId, resolved.inApp, content.inApp);
 
@@ -378,6 +376,26 @@ export async function handleEventForNotifications(
           url: schemeUrl(schemeId, "maintenance"),
         }),
         smsBody: `GoodStrata: ${title}`,
+      });
+      return { created };
+    }
+
+    case "motion.close.proposed": {
+      // The AI chair thinks discussion is done — nudge the officers to run the
+      // binding close/tally themselves. Bell-only: it is a live-meeting prompt,
+      // not correspondence.
+      const payload = event.payload as { motionId: string; title: string };
+      const committee = await userIdsWithRoles(ctx, schemeId, COMMITTEE_NOTIFY_ROLES);
+      const created = await deliver(ctx, {
+        schemeId,
+        notificationType: "motion.close.proposed",
+        userIds: committee,
+        inApp: {
+          title: `Motion ready to close: ${payload.title}`,
+          body: "The AI chair suggests discussion is finished. Close the motion to tally the votes.",
+          category: "meeting",
+          related: { type: "motion", id: payload.motionId },
+        },
       });
       return { created };
     }

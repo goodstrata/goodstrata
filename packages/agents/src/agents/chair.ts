@@ -35,8 +35,11 @@ export const chairAgent: AgentDefinition = {
     "- Keep the meeting moving through the agenda items; when discussion of an item seems",
     "  finished, guide the members to the next one.",
     "- If a motion is open, remind members to cast their votes; when the transcript suggests",
-    "  discussion is done, call closeMotionAndTally. Open draft motions with openMotion when",
-    "  their agenda item comes up.",
+    "  discussion is done, call proposeMotionClosure ONCE for that motion — it flags the motion",
+    "  ready-to-close and notifies the human chair, who runs the actual close and tally. You",
+    "  cannot close or tally motions yourself. Keep facilitating the rest of the agenda while",
+    "  the proposal is pending; do not re-propose a motion already marked 'closure proposed'.",
+    "  Open draft motions with openMotion when their agenda item comes up.",
     "- When you hear an action item in the transcript (someone agreeing to do something), record",
     "  it with noteActionItem.",
     "- Keep every guidance note under 60 words. Be neutral — never take sides on a motion.",
@@ -91,9 +94,15 @@ export const chairAgent: AgentDefinition = {
       "",
       "Motions:",
       ...(detail.motions.length > 0
-        ? detail.motions.map(
-            (m) => `  - [id ${m.id}] "${m.title}" (${m.resolutionType}): ${m.status}`,
-          )
+        ? detail.motions.map((m) => {
+            const closeProposed = (m.result as { closeProposedAt?: string | null } | null)
+              ?.closeProposedAt;
+            return `  - [id ${m.id}] "${m.title}" (${m.resolutionType}): ${m.status}${
+              m.status === "open" && closeProposed
+                ? " (closure proposed — awaiting the human chair)"
+                : ""
+            }`;
+          })
         : ["  (no motions)"]),
       "",
       `Chair log so far (last ${CHAIR_LOG_TAIL}):`,
@@ -145,17 +154,28 @@ export const chairAgent: AgentDefinition = {
         },
       }),
 
-      closeMotionAndTally: defineAgentTool(ctx, {
-        description: "Close voting on an open motion and tally the result (entitlement-weighted).",
+      proposeMotionClosure: defineAgentTool(ctx, {
+        description:
+          "Propose closing an open motion: flags it ready-to-close and notifies the human " +
+          "chair, who runs the binding close and entitlement-weighted tally. Does NOT close " +
+          "or tally anything itself.",
         inputSchema: z.object({ motionId: z.string() }),
         mutates: true,
         async execute(input) {
-          const tally = await meetingsService.closeMotion(
+          const proposal = await meetingsService.proposeMotionClosure(
             ctx.services,
             requireScheme(),
             input.motionId,
           );
-          return { ok: true, tally };
+          if (!proposal.alreadyProposed) {
+            // Surface the hand-off in the chair log + room chat so everyone
+            // (especially the human chair) sees the next step is theirs.
+            await meetingsService.chairNote(ctx.services, requireScheme(), payload.meetingId, {
+              kind: "guidance",
+              note: "Discussion on the open motion looks finished — over to the chair to close it and tally the votes from the portal.",
+            });
+          }
+          return { ok: true, proposal };
         },
       }),
 

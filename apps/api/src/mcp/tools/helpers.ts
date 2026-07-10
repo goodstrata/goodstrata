@@ -80,6 +80,7 @@ export function isUpcoming(m: { scheduledAt: Date; status: string }, now: Date):
   return (
     m.scheduledAt.getTime() >= now.getTime() &&
     m.status !== "closed" &&
+    m.status !== "minutes_draft" &&
     m.status !== "minutes_distributed"
   );
 }

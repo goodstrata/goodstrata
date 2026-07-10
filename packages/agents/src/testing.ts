@@ -32,7 +32,16 @@ export function scriptedModel(script: ScriptStep[]): LanguageModel {
       return {
         content,
         finishReason: step.toolCalls?.length ? "tool-calls" : "stop",
-        usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+        // LanguageModelV3Usage shape (nested totals): 10 in + 10 out per step.
+        usage: {
+          inputTokens: {
+            total: 10,
+            noCache: undefined,
+            cacheRead: undefined,
+            cacheWrite: undefined,
+          },
+          outputTokens: { total: 10, text: 10, reasoning: undefined },
+        },
         warnings: [],
       };
     },
