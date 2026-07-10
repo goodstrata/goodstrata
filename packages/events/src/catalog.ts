@@ -222,6 +222,27 @@ export const eventDefs = {
     kind: z.enum(CHAIR_NOTE_KINDS),
     note: z.string(),
   }),
+  /** An owner proposed a motion/agenda item for an upcoming meeting (pending officer review). */
+  "agenda_item.submitted": z.object({
+    agendaItemId: z.string(),
+    meetingId: z.string(),
+    title: z.string(),
+    submittedByPersonId: z.string(),
+  }),
+  /** An officer accepted a pending submission — now a real agenda item + draft motion. */
+  "agenda_item.accepted": z.object({
+    agendaItemId: z.string(),
+    meetingId: z.string(),
+    motionId: z.string(),
+    submittedByPersonId: z.string().nullable(),
+  }),
+  /** An officer rejected a pending submission (reason recorded; submitter notified). */
+  "agenda_item.rejected": z.object({
+    agendaItemId: z.string(),
+    meetingId: z.string(),
+    reason: z.string(),
+    submittedByPersonId: z.string().nullable(),
+  }),
 
   // documents / compliance / comms
   "document.uploaded": lax,

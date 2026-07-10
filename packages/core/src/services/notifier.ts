@@ -32,6 +32,9 @@ export const NOTIFIER_EVENT_TYPES = [
   "maintenance.request.created",
   "community.comment.created",
   "compliance.obligation.due",
+  "agenda_item.submitted",
+  "agenda_item.accepted",
+  "agenda_item.rejected",
 ] as const;
 
 /** Roles considered "the committee" for notification fan-out. */
@@ -565,6 +568,94 @@ export async function handleEventForNotifications(
           url: schemeUrl(schemeId, "community"),
         }),
         smsBody: `GoodStrata: ${body}`,
+      });
+      return { created };
+    }
+
+    case "agenda_item.submitted": {
+      const payload = event.payload as {
+        agendaItemId: string;
+        meetingId: string;
+        title: string;
+        submittedByPersonId: string;
+      };
+      // The officers review owner-submitted motions. Don't ping the submitter
+      // about their own proposal if they happen to hold an officer role.
+      const officers = await userIdsWithRoles(ctx, schemeId, COMMITTEE_NOTIFY_ROLES);
+      const submitter = await ctx.db.query.people.findFirst({
+        where: eq(people.id, payload.submittedByPersonId),
+      });
+      const recipients = officers.filter((id) => id !== submitter?.userId);
+      const title = `Motion proposed: ${payload.title}`;
+      const body =
+        "An owner has proposed a motion for an upcoming meeting. Review it to accept it onto the agenda or reject it with a reason.";
+      const created = await deliver(ctx, {
+        schemeId,
+        notificationType: "agenda_item.submitted",
+        userIds: recipients,
+        inApp: {
+          title,
+          body,
+          category: "meeting",
+          related: { type: "meeting", id: payload.meetingId },
+        },
+        email: genericEmail({
+          subject: title,
+          preheader: body,
+          heading: "An owner proposed a motion",
+          intro: `A motion has been proposed for an upcoming meeting: ${payload.title}.`,
+          body: "Open the meeting to review the proposal and accept or reject it.",
+          ctaLabel: "Review proposal",
+          url: schemeUrl(schemeId, "meetings"),
+        }),
+        smsBody: `GoodStrata: ${title}`,
+      });
+      return { created };
+    }
+
+    case "agenda_item.accepted":
+    case "agenda_item.rejected": {
+      const payload = event.payload as {
+        agendaItemId: string;
+        meetingId: string;
+        reason?: string;
+        submittedByPersonId: string | null;
+      };
+      // Tell the submitter what became of their proposal — only if their
+      // person record links to a login.
+      const submitter = payload.submittedByPersonId
+        ? await ctx.db.query.people.findFirst({
+            where: eq(people.id, payload.submittedByPersonId),
+          })
+        : null;
+      if (!submitter?.userId) return { created: 0 };
+      const accepted = event.type === "agenda_item.accepted";
+      const title = accepted
+        ? "Your proposed motion was accepted"
+        : "Your proposed motion was declined";
+      const body = accepted
+        ? "Your proposal is on the meeting agenda and will be put as a motion."
+        : `The committee declined your proposal${payload.reason ? `: ${payload.reason}` : "."}`;
+      const created = await deliver(ctx, {
+        schemeId,
+        notificationType: event.type,
+        userIds: [submitter.userId],
+        inApp: {
+          title,
+          body,
+          category: "meeting",
+          related: { type: "meeting", id: payload.meetingId },
+        },
+        email: genericEmail({
+          subject: title,
+          preheader: body,
+          heading: title,
+          intro: body,
+          body: "Open the meeting to see the agenda and what happens next.",
+          ctaLabel: "Open meeting",
+          url: schemeUrl(schemeId, "meetings"),
+        }),
+        smsBody: `GoodStrata: ${title}`,
       });
       return { created };
     }

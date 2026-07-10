@@ -308,8 +308,10 @@ export async function sendMeetingNotice(ctx: ServiceContext, schemeId: string, m
   }
 
   const scheme = await ctx.db.query.schemes.findFirst({ where: eq(schemes.id, schemeId) });
+  // Only ACCEPTED items ride the statutory notice — a pending owner submission
+  // is not yet on the agenda (and a rejected one never will be).
   const agenda = await ctx.db.query.agendaItems.findMany({
-    where: eq(agendaItems.meetingId, meetingId),
+    where: and(eq(agendaItems.meetingId, meetingId), eq(agendaItems.status, "accepted")),
     orderBy: (t, { asc }) => asc(t.order),
   });
   const owners = await ctx.db
@@ -703,15 +705,19 @@ export const addMotionInput = z.object({
   resolutionType: z.enum(["ordinary", "special", "unanimous"]).default("ordinary"),
   /** s 89C(7): mark a motion to appoint/pay/remove the manager. */
   managerAppointment: z.boolean().optional(),
+  /** Set when the motion realises an accepted owner-submitted agenda item. */
+  agendaItemId: z.string().optional(),
 });
 export type AddMotionInput = z.infer<typeof addMotionInput>;
 
-export async function addMotion(ctx: ServiceContext, schemeId: string, input: AddMotionInput) {
-  const rows = await ctx.db
+/** The single motion-insert path; shared by addMotion and acceptAgendaItem. */
+async function insertMotion(db: DbHandle, schemeId: string, input: AddMotionInput) {
+  const rows = await db
     .insert(motions)
     .values({
       schemeId,
       meetingId: input.meetingId ?? null,
+      agendaItemId: input.agendaItemId ?? null,
       title: input.title,
       text: input.text,
       resolutionType: input.resolutionType,
@@ -724,6 +730,10 @@ export async function addMotion(ctx: ServiceContext, schemeId: string, input: Ad
     })
     .returning();
   return rows[0]!;
+}
+
+export async function addMotion(ctx: ServiceContext, schemeId: string, input: AddMotionInput) {
+  return await insertMotion(ctx.db, schemeId, input);
 }
 
 /** Standing (s 89(3)): a poll may only be demanded by a lot owner or a proxy. */
@@ -1586,9 +1596,18 @@ export async function meetingDetail(ctx: ServiceContext, schemeId: string, meeti
     where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
   });
   if (!meeting) throw notFound("Meeting");
+  // The agenda proper is accepted items only; owner submissions still under
+  // (or past) review are returned separately so the UI can show them as such.
   const agenda = await ctx.db.query.agendaItems.findMany({
-    where: eq(agendaItems.meetingId, meetingId),
+    where: and(eq(agendaItems.meetingId, meetingId), eq(agendaItems.status, "accepted")),
     orderBy: (t, { asc }) => asc(t.order),
+  });
+  const submissions = await ctx.db.query.agendaItems.findMany({
+    where: and(
+      eq(agendaItems.meetingId, meetingId),
+      inArray(agendaItems.status, ["pending", "rejected"]),
+    ),
+    orderBy: (t, { asc }) => asc(t.createdAt),
   });
   const motionRows = await ctx.db.query.motions.findMany({
     where: and(eq(motions.schemeId, schemeId), eq(motions.meetingId, meetingId)),
@@ -1598,6 +1617,7 @@ export async function meetingDetail(ctx: ServiceContext, schemeId: string, meeti
   return {
     meeting,
     agenda,
+    submissions,
     motions: motionRows,
     quorum,
     chairLog: meeting.chairLog,
@@ -1609,5 +1629,235 @@ export async function listMeetings(ctx: ServiceContext, schemeId: string) {
   return await ctx.db.query.meetings.findMany({
     where: eq(meetings.schemeId, schemeId),
     orderBy: (t, { desc }) => desc(t.scheduledAt),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Owner-submitted agenda items (proposed motions): pending → accept / reject.
+// Any lot owner/occupier may put an item on an upcoming meeting's agenda (the
+// statutory owner right); it lands as a PENDING agenda item, the officers are
+// notified, and an officer either accepts it (it becomes a real agenda item
+// with a draft motion, via the same insert path as addMotion) or rejects it
+// with a reason (the submitter is notified).
+// ---------------------------------------------------------------------------
+
+export const submitAgendaItemInput = z.object({
+  // Same bounds as addMotionInput, so an accepted submission always yields a
+  // motion that would have passed addMotion's own validation.
+  title: z.string().min(3).max(200),
+  /** The text of the motion the owner proposes to be moved. */
+  motionText: z.string().min(3).max(5000),
+  /** Optional supporting rationale, stored as the agenda item body. */
+  rationale: z.string().max(5000).optional(),
+});
+export type SubmitAgendaItemInput = z.infer<typeof submitAgendaItemInput>;
+
+export const acceptAgendaItemInput = z.object({
+  /** The accepting officer classifies the resolution; defaults to ordinary. */
+  resolutionType: z.enum(["ordinary", "special", "unanimous"]).optional(),
+});
+export type AcceptAgendaItemInput = z.infer<typeof acceptAgendaItemInput>;
+
+export const rejectAgendaItemInput = z.object({
+  reason: z.string().min(3).max(2000),
+});
+export type RejectAgendaItemInput = z.infer<typeof rejectAgendaItemInput>;
+
+/**
+ * The window in which a meeting's agenda may still change. For a general
+ * meeting (AGM/SGM) that window closes when the notice goes out: ss 72(2)/76
+ * require the notice to carry the agenda and the text of any resolution, so an
+ * item added later could not lawfully be moved — the same notice discipline
+ * sendMeetingNotice enforces. Committee meetings keep accepting items until
+ * the meeting begins.
+ */
+function assertAgendaOpen(meeting: typeof meetings.$inferSelect) {
+  if (meeting.status !== "draft" && meeting.status !== "notice_sent") {
+    throw new DomainError(
+      "MEETING_NOT_OPEN",
+      "This meeting is no longer accepting agenda items",
+      409,
+    );
+  }
+  if ((meeting.kind === "agm" || meeting.kind === "sgm") && meeting.status !== "draft") {
+    throw new DomainError(
+      "NOTICE_SENT",
+      "The notice for this general meeting has already gone out with its agenda (ss 72(2)/76) — propose the item for a later meeting instead",
+      409,
+    );
+  }
+}
+
+/**
+ * A scheme member proposes a motion/agenda item for an upcoming meeting.
+ * Stored as a PENDING agenda item carrying the submitter; officers are
+ * notified via the agenda_item.submitted event.
+ */
+export async function submitAgendaItem(
+  ctx: ServiceContext,
+  schemeId: string,
+  meetingId: string,
+  personId: string,
+  input: SubmitAgendaItemInput,
+) {
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting) throw notFound("Meeting");
+  assertAgendaOpen(meeting);
+
+  return await ctx.db.transaction(async (tx) => {
+    const maxOrderRows = await tx
+      .select({ max: sql<number | null>`max(${agendaItems.order})` })
+      .from(agendaItems)
+      .where(eq(agendaItems.meetingId, meetingId));
+    const order = (maxOrderRows[0]?.max ?? 0) + 1;
+
+    const rows = await tx
+      .insert(agendaItems)
+      .values({
+        meetingId,
+        order,
+        title: input.title,
+        body: input.rationale ?? null,
+        motionText: input.motionText,
+        submittedByPersonId: personId,
+        status: "pending",
+      })
+      .returning();
+    const item = rows[0]!;
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `meeting:${meetingId}`,
+      type: "agenda_item.submitted",
+      payload: {
+        agendaItemId: item.id,
+        meetingId,
+        title: item.title,
+        submittedByPersonId: personId,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return item;
+  });
+}
+
+/**
+ * Load an agenda item together with its (scheme-scoped) meeting. agenda_items
+ * carries no schemeId of its own, so tenancy scoping goes through the meeting —
+ * an item under another scheme's meeting reads as NOT_FOUND.
+ */
+async function agendaItemWithMeeting(ctx: ServiceContext, schemeId: string, agendaItemId: string) {
+  const item = await ctx.db.query.agendaItems.findFirst({
+    where: eq(agendaItems.id, agendaItemId),
+  });
+  if (!item) throw notFound("Agenda item");
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, item.meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting) throw notFound("Agenda item");
+  return { item, meeting };
+}
+
+/**
+ * Accept a pending owner submission: the item becomes a real (accepted) agenda
+ * item and a draft motion is created for it through the same insert path as
+ * addMotion — one transaction, so a lost race can't double-create the motion.
+ */
+export async function acceptAgendaItem(
+  ctx: ServiceContext,
+  schemeId: string,
+  agendaItemId: string,
+  input: AcceptAgendaItemInput = {},
+) {
+  const { item, meeting } = await agendaItemWithMeeting(ctx, schemeId, agendaItemId);
+  if (item.status !== "pending") {
+    throw new DomainError("BAD_STATUS", "Only a pending submission can be accepted", 409);
+  }
+  assertAgendaOpen(meeting);
+
+  return await ctx.db.transaction(async (tx) => {
+    // Compare-and-set: only the invocation that wins the pending→accepted flip
+    // creates the motion; a concurrent accept/reject loses and 409s.
+    const updated = await tx
+      .update(agendaItems)
+      .set({ status: "accepted" })
+      .where(and(eq(agendaItems.id, agendaItemId), eq(agendaItems.status, "pending")))
+      .returning();
+    const accepted = updated[0];
+    if (!accepted) {
+      throw new DomainError("BAD_STATUS", "Only a pending submission can be accepted", 409);
+    }
+
+    const motion = await insertMotion(tx, schemeId, {
+      meetingId: meeting.id,
+      agendaItemId: accepted.id,
+      title: accepted.title,
+      text: accepted.motionText ?? accepted.title,
+      resolutionType: input.resolutionType ?? "ordinary",
+    });
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `meeting:${meeting.id}`,
+      type: "agenda_item.accepted",
+      payload: {
+        agendaItemId: accepted.id,
+        meetingId: meeting.id,
+        motionId: motion.id,
+        submittedByPersonId: accepted.submittedByPersonId,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return { agendaItem: accepted, motion };
+  });
+}
+
+/**
+ * Reject a pending owner submission with a reason. The reason is recorded on
+ * the row and the submitter is notified via the agenda_item.rejected event.
+ */
+export async function rejectAgendaItem(
+  ctx: ServiceContext,
+  schemeId: string,
+  agendaItemId: string,
+  input: RejectAgendaItemInput,
+) {
+  const { item, meeting } = await agendaItemWithMeeting(ctx, schemeId, agendaItemId);
+  if (item.status !== "pending") {
+    throw new DomainError("BAD_STATUS", "Only a pending submission can be rejected", 409);
+  }
+
+  return await ctx.db.transaction(async (tx) => {
+    const updated = await tx
+      .update(agendaItems)
+      .set({ status: "rejected", rejectedReason: input.reason })
+      .where(and(eq(agendaItems.id, agendaItemId), eq(agendaItems.status, "pending")))
+      .returning();
+    const rejected = updated[0];
+    if (!rejected) {
+      throw new DomainError("BAD_STATUS", "Only a pending submission can be rejected", 409);
+    }
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `meeting:${meeting.id}`,
+      type: "agenda_item.rejected",
+      payload: {
+        agendaItemId: rejected.id,
+        meetingId: meeting.id,
+        reason: input.reason,
+        submittedByPersonId: rejected.submittedByPersonId,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return { agendaItem: rejected };
   });
 }
