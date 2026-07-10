@@ -5,6 +5,12 @@ export * from "./engines/interest.js";
 export * from "./engines/levy-calc.js";
 export * from "./engines/reconcile.js";
 export * from "./errors.js";
+export type { AnnouncementView } from "./services/announcements.js";
+export * as announcementsService from "./services/announcements.js";
+export {
+  createAnnouncementInput,
+  updateAnnouncementInput,
+} from "./services/announcements.js";
 export * as arrearsService from "./services/arrears.js";
 export * as budgetsService from "./services/budgets.js";
 export { createBudgetInput } from "./services/budgets.js";

@@ -1,4 +1,5 @@
-import type { ServiceContext } from "@goodstrata/core";
+import type { Causation, ServiceContext } from "@goodstrata/core";
+import { schemes } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import { loadEvent, publishEvent } from "@goodstrata/events";
 import { integrationsFromEnv } from "@goodstrata/integrations";
@@ -25,11 +26,14 @@ function makeDeps(script: Parameters<typeof scriptedModel>[0]): RuntimeDeps {
     SMS_PROVIDER: "memory",
     STORAGE_PROVIDER: "memory",
   });
-  const serviceContext = (actor: Actor): ServiceContext => ({
+  // Mirrors the API's factory: causation (when given) rides the context so
+  // service-published events stay causally linked to the trigger.
+  const serviceContext = (actor: Actor, causation?: Causation): ServiceContext => ({
     db: tdb.db,
     clock: fixedClock("2026-07-01T00:00:00Z"),
     integrations,
     actor,
+    causation,
   });
   return {
     resolveModel: createModelResolver({ AI_PROVIDER: "mock" }, () => scriptedModel(script)),
@@ -38,9 +42,23 @@ function makeDeps(script: Parameters<typeof scriptedModel>[0]): RuntimeDeps {
 }
 
 async function triggerEvent() {
+  // A real scheme row: the welcome announcement the tool creates references it.
+  const schemeRows = await tdb.db
+    .insert(schemes)
+    .values({
+      name: "Echo Test OC",
+      planOfSubdivision: "PS999999Z",
+      addressLine1: "1 Echo Lane",
+      suburb: "Fitzroy",
+      postcode: "3065",
+      tier: 5,
+      status: "active",
+    })
+    .returning();
+  const schemeId = schemeRows[0]!.id;
   const published = await publishEvent(tdb.db, {
-    schemeId: null,
-    stream: "scheme:test",
+    schemeId,
+    stream: `scheme:${schemeId}`,
     type: "scheme.created",
     payload: { name: "Echo Test OC", planOfSubdivision: "PS999999Z", tier: 5 },
     actor: systemActor("test"),
@@ -73,6 +91,19 @@ describe("echo agent via runtime", () => {
     expect(note.correlationId).toBe(event.correlationId);
     expect(note.causationDepth).toBe(event.causationDepth + 1);
     expect((note.actor as Actor).kind).toBe("agent");
+    expect(note.schemeId).toBe(event.schemeId);
+    expect(note.payload).toMatchObject({
+      title: "Welcome to GoodStrata",
+      audience: "all",
+      body: "Welcome, Echo Test OC!",
+    });
+
+    // …and the announcement is a real published row, not just an event.
+    const posted = await tdb.db.query.announcements.findMany({
+      where: (t, { eq }) => eq(t.schemeId, event.schemeId!),
+    });
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.publishedAt).not.toBeNull();
 
     // Transcript persisted.
     const run = await tdb.db.query.agentRuns.findFirst({

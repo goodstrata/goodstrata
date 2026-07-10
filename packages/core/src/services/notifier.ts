@@ -32,6 +32,7 @@ export const NOTIFIER_EVENT_TYPES = [
   "maintenance.request.created",
   "community.comment.created",
   "compliance.obligation.due",
+  "announcement.published",
 ] as const;
 
 /** Roles considered "the committee" for notification fan-out. */
@@ -614,6 +615,51 @@ export async function handleEventForNotifications(
           url: schemeUrl(schemeId, "compliance"),
         }),
         smsBody: `GoodStrata: ${title}`,
+      });
+      return { created };
+    }
+
+    case "announcement.published": {
+      const payload = event.payload as {
+        id: string;
+        title: string;
+        audience: string;
+        body: string;
+      };
+      // Audience → recipients: committee notices reach the officer tier;
+      // owner notices reach lot owners (plus the officers, who can read
+      // everything anyway); building-wide notices reach every member.
+      const recipients =
+        payload.audience === "committee"
+          ? await userIdsWithRoles(ctx, schemeId, COMMITTEE_NOTIFY_ROLES)
+          : payload.audience === "owners"
+            ? await userIdsWithRoles(ctx, schemeId, ["owner", ...COMMITTEE_NOTIFY_ROLES])
+            : await allMemberUserIds(ctx, schemeId);
+      const preview = payload.body.length > 180 ? `${payload.body.slice(0, 177)}…` : payload.body;
+      // The email carries the full notice: one paragraph per blank-line-
+      // separated block (paragraph blocks HTML-escape their text).
+      const { html, text } = renderEmail({
+        preheader: preview,
+        heading: payload.title,
+        intro: "A new announcement was posted for your owners corporation.",
+        blocks: payload.body
+          .split(/\n{2,}/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .map(paragraph),
+        cta: { label: "Open announcements", url: schemeUrl(schemeId, "announcements") },
+      });
+      const created = await deliver(ctx, {
+        schemeId,
+        notificationType: "announcement.published",
+        userIds: recipients,
+        inApp: {
+          title: payload.title,
+          body: preview,
+          category: "general",
+          related: { type: "announcement", id: payload.id },
+        },
+        email: { subject: `Announcement: ${payload.title}`, html, text },
       });
       return { created };
     }
