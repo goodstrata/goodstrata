@@ -52,7 +52,14 @@ export const eventDefs = {
     totalCents: z.number().int(),
   }),
   "budget.adopted": z.object({ budgetId: z.string() }),
-  "levy.period.opened": lax,
+  /** A levy instalment run opened: notices for every lot are about to issue. */
+  "levy.period.opened": z.object({
+    levyScheduleId: z.string(),
+    budgetId: z.string(),
+    instalment: z.number().int(),
+    dueOn: z.string(),
+    noticeCount: z.number().int(),
+  }),
   "levy.notice.issued": z.object({
     levyNoticeId: z.string(),
     lotId: z.string(),
@@ -62,6 +69,19 @@ export const eventDefs = {
     payid: z.string().nullable(),
   }),
   "levy.notice.overdue": z.object({ levyNoticeId: z.string(), lotId: z.string() }),
+  /**
+   * A treasurer/officer wrote off an uncollectible levy notice. The balancing
+   * ledger adjustment is posted in the same transaction.
+   */
+  "levy.notice.written_off": z.object({
+    levyNoticeId: z.string(),
+    lotId: z.string(),
+    noticeNumber: z.string(),
+    writtenOffCents: z.number().int(),
+    /** Stranded penalty interest cleared alongside (0 when none). */
+    interestWrittenOffCents: z.number().int(),
+    reason: z.string(),
+  }),
   "payment.received": z.object({
     paymentId: z.string(),
     amountCents: z.number().int(),
@@ -87,6 +107,17 @@ export const eventDefs = {
     paymentId: z.string(),
     receiptNumber: z.string(),
   }),
+  /**
+   * A recorded payment was refunded/reversed: allocations, lot-ledger credits
+   * and fund splits are reversed in the same transaction.
+   */
+  "payment.refunded": z.object({
+    paymentId: z.string(),
+    amountCents: z.number().int(),
+    reason: z.string(),
+    /** Notices whose allocations were reversed (empty for a parked payment). */
+    levyNoticeIds: z.array(z.string()),
+  }),
   "arrears.stage.reached": z.object({
     lotId: z.string(),
     stage: z.number().int().min(1).max(4),
@@ -98,6 +129,20 @@ export const eventDefs = {
     earliestDueOn: z.string(),
   }),
   "arrears.recovery.commenced": z.object({ lotId: z.string(), decisionId: z.string() }),
+  /**
+   * The daily sweep posted accrued penalty interest to a lot's ledger. The
+   * ledger entry (kind "interest") is inserted in the same transaction; the
+   * dedupeKey makes the posting once-per-lot-per-day.
+   */
+  "arrears.interest.posted": z.object({
+    lotId: z.string(),
+    /** The increment posted by this sweep. */
+    amountCents: z.number().int(),
+    /** Cumulative interest posted for the current arrears episode. */
+    totalInterestPostedCents: z.number().int(),
+    daysOverdue: z.number().int(),
+    earliestDueOn: z.string(),
+  }),
   "invoice.received": lax,
   "invoice.approved": lax,
   "payout.executed": lax,
