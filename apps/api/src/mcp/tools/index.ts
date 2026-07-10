@@ -1,10 +1,15 @@
 /**
- * MCP tool registry. Phase 1 (this file) ships only the `whoami` scaffold that
- * proves the auth + scope wiring end-to-end; the read-only domain tools land in
- * the next phase.
+ * MCP tool registry, in three scope tiers:
+ * - `mcp:read`  — the read-only domain tools (schemes, portfolio, health,
+ *   financial position) plus the `whoami` scaffold;
+ * - `mcp:write` — the safe mutating tools in ./writes.ts (create records or
+ *   open a human decision gate; never money/statutory effects);
+ * - `mcp:govern` — the money-moving / statutory tools in ./governed.ts, each
+ *   two-phase (dry-run preview → signed confirm token, see ../confirm.ts).
  *
  * ── How to add a tool ──────────────────────────────────────────────────────
- * MVP is READ-ONLY: gate every tool on `ctx.requireScope("mcp:read")`.
+ * Gate on the scope FIRST (`ctx.requireScope(...)` — a missing scope must fail
+ * before any scheme lookup), then on membership/role:
  *
  *   server.registerTool(
  *     "list_levies",
@@ -22,11 +27,12 @@
  *
  * `ctx.actor(schemeId, [roles])` enforces membership/role (manager_admin
  * bypasses); pass its returned `svc` ServiceContext to @goodstrata/core
- * services. Officer-only reads use `ctx.actor(schemeId, ["chair","secretary","treasurer"])`.
+ * services. Officer-only tools use `ctx.actor(schemeId, ["chair","secretary","treasurer"])`.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpToolContext } from "../server.js";
 import { registerFinancialPositionTool } from "./financial.js";
+import { registerGovernedTools } from "./governed.js";
 import { registerPortfolioTools } from "./portfolio.js";
 import { registerSchemeHealthTool } from "./scheme-health.js";
 import { registerSchemeTools } from "./schemes.js";
@@ -43,6 +49,11 @@ export function registerTools(server: McpServer, ctx: McpToolContext): void {
   // create_scheme, create_maintenance_request, create_community_post,
   // add_community_comment, invite_person, draft_budget (opens a decision gate).
   registerWriteTools(server, ctx);
+
+  // Governed money-moving / statutory tools — gated on `mcp:govern` + officer
+  // tier, each two-phase preview→confirm (see governed.ts): issue_levy_run,
+  // send_meeting_notice, resolve_decision, cast_motion_vote, close_meeting.
+  registerGovernedTools(server, ctx);
 
   // Scaffold/health tool: confirms the OAuth token resolved and reports the
   // granted scopes.
