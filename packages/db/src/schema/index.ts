@@ -11,6 +11,7 @@ export * from "./maintenance.js";
 export * from "./manager.js";
 export * from "./mcp.js";
 export * from "./meetings.js";
+export * from "./messaging.js";
 export * from "./notifications.js";
 export * from "./spine.js";
 export * from "./tenancy.js";

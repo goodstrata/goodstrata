@@ -7,7 +7,7 @@
  * unit (the coarse `category` lumps compliance and community together).
  */
 
-/** The eight notifier event types users can tune (the matrix rows). */
+/** The notifier event types users can tune (the matrix rows). */
 export const NOTIFICATION_TYPES = [
   "maintenance.request.created",
   "work_order.dispatched",
@@ -17,6 +17,7 @@ export const NOTIFICATION_TYPES = [
   "decision.requested",
   "minutes.drafted",
   "community.comment.created",
+  "conversation.message.sent",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -52,6 +53,7 @@ export const NOTIFICATION_DEFAULTS: Record<
   "maintenance.request.created": { in_app: true, email: true, sms: false },
   "work_order.dispatched": { in_app: true, email: false, sms: false },
   "community.comment.created": { in_app: true, email: false, sms: false },
+  "conversation.message.sent": { in_app: true, email: true, sms: false },
 };
 
 /**
@@ -91,6 +93,11 @@ export const NOTIFICATION_GROUPS = [
     key: "community",
     label: "Community",
     types: ["community.comment.created"],
+  },
+  {
+    key: "messages",
+    label: "Messages",
+    types: ["conversation.message.sent"],
   },
 ] as const satisfies readonly {
   key: string;
@@ -142,5 +149,10 @@ export const NOTIFICATION_TYPE_META: Record<
     label: "Community replies",
     help: "When someone replies to your board post.",
     group: "community",
+  },
+  "conversation.message.sent": {
+    label: "Private messages",
+    help: "When someone sends you a private message.",
+    group: "messages",
   },
 };

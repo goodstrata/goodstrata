@@ -18,6 +18,7 @@ import { grievancesRoutes } from "./routes/grievances.js";
 import { maintenanceRoutes } from "./routes/maintenance.js";
 import { managerRoutes } from "./routes/manager.js";
 import { meetingsRoutes } from "./routes/meetings.js";
+import { messagingRoutes } from "./routes/messaging.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import {
   activationRoutes,
@@ -61,6 +62,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", complianceRoutes(deps))
     .route("/schemes", communityRoutes(deps))
     .route("/schemes", meetingsRoutes(deps))
+    .route("/schemes", messagingRoutes(deps))
     .route("/schemes", notificationsRoutes(deps))
     .route("/schemes", agentRunsRoutes(deps))
     .route("/schemes", managerRoutes(deps))
