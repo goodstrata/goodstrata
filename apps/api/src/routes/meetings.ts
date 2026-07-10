@@ -1,8 +1,11 @@
 import {
+  acceptAgendaItemInput,
   addMotionInput,
   castVoteInput,
   createMeetingInput,
   meetingsService,
+  rejectAgendaItemInput,
+  submitAgendaItemInput,
   submitProxyInput,
 } from "@goodstrata/core";
 import { people } from "@goodstrata/db";
@@ -137,6 +140,73 @@ export function meetingsRoutes(deps: AppDeps) {
       );
       return c.json({ url: result.url, token: result.token });
     })
+    // Statutory owner right: ANY scheme member linked to a person on the roll
+    // may propose a motion/agenda item for an upcoming meeting. It lands as a
+    // pending agenda item; the officers are notified and accept or reject it.
+    .post(
+      "/:schemeId/meetings/:meetingId/agenda-items",
+      requireSchemeMember(deps),
+      zv("json", submitAgendaItemInput),
+      async (c) => {
+        const person = await personForUser(deps, c.get("schemeId"), c.get("user").id);
+        if (!person) {
+          return c.json(
+            {
+              error: {
+                code: "NO_PERSON",
+                message:
+                  "Your login isn't linked to an owner or occupier in this owners corporation yet, so you can't take part in this meeting action. Ask your committee or manager to link your account to your lot on the People page.",
+              },
+            },
+            422,
+          );
+        }
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const agendaItem = await meetingsService.submitAgendaItem(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("meetingId"),
+          person.id,
+          c.req.valid("json"),
+        );
+        return c.json({ agendaItem }, 201);
+      },
+    )
+    // Officer review of a pending owner submission: accept turns it into a
+    // real agenda item + draft motion; reject records the reason (submitter
+    // is notified either way via the notifier).
+    .post(
+      "/:schemeId/agenda-items/:agendaItemId/accept",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      zv("json", acceptAgendaItemInput),
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const result = await meetingsService.acceptAgendaItem(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("agendaItemId"),
+          c.req.valid("json"),
+        );
+        return c.json(result);
+      },
+    )
+    .post(
+      "/:schemeId/agenda-items/:agendaItemId/reject",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      zv("json", rejectAgendaItemInput),
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const result = await meetingsService.rejectAgendaItem(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("agendaItemId"),
+          c.req.valid("json"),
+        );
+        return c.json(result);
+      },
+    )
     .post(
       "/:schemeId/motions",
       requireSchemeMember(deps),

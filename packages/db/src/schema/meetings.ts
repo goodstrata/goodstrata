@@ -1,4 +1,5 @@
 import {
+  AGENDA_ITEM_STATUSES,
   type ChairLogEntry,
   MEETING_KINDS,
   MEETING_STATUSES,
@@ -27,6 +28,7 @@ export const meetingKindEnum = pgEnum("meeting_kind", MEETING_KINDS);
 export const meetingStatusEnum = pgEnum("meeting_status", MEETING_STATUSES);
 export const resolutionTypeEnum = pgEnum("resolution_type", RESOLUTION_TYPES);
 export const motionStatusEnum = pgEnum("motion_status", MOTION_STATUSES);
+export const agendaItemStatusEnum = pgEnum("agenda_item_status", AGENDA_ITEM_STATUSES);
 export const voteChoiceEnum = pgEnum("vote_choice", VOTE_CHOICES);
 export const proxyScopeEnum = pgEnum("proxy_scope", ["meeting", "standing"]);
 export const attendanceModeEnum = pgEnum("attendance_mode", ["in_person", "online", "proxy"]);
@@ -68,6 +70,16 @@ export const agendaItems = pgTable(
     title: text().notNull(),
     body: text(),
     submittedByPersonId: uuid().references(() => people.id),
+    /**
+     * Officer-created items are "accepted" at birth (the default backfills
+     * every pre-existing row); owner-submitted proposals arrive "pending"
+     * until an officer accepts (→ real agenda item + draft motion) or rejects.
+     */
+    status: agendaItemStatusEnum().notNull().default("accepted"),
+    /** The proposed motion text carried by an owner submission (used at accept). */
+    motionText: text(),
+    /** Officer's reason recorded when a pending submission is rejected. */
+    rejectedReason: text(),
     createdAt: createdAt(),
   },
   (t) => [index("agenda_items_meeting_idx").on(t.meetingId)],

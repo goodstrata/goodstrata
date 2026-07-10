@@ -8,7 +8,11 @@ import {
 } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import { storageKey } from "@goodstrata/integrations";
-import type { CommunityPostStatus } from "@goodstrata/shared";
+import {
+  COMMUNITY_POST_VISIBILITIES,
+  type CommunityPostStatus,
+  type CommunityPostVisibility,
+} from "@goodstrata/shared";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
@@ -18,8 +22,26 @@ import { DomainError, notFound } from "../errors.js";
 // Inputs
 // ---------------------------------------------------------------------------
 
-export const createPostInput = z.object({ body: z.string().min(1).max(5000) });
+export const createPostInput = z.object({
+  body: z.string().min(1).max(5000),
+  /** Omitted = "scheme" (the open board). "committee" is officer-tier only. */
+  visibility: z.enum(COMMUNITY_POST_VISIBILITIES).optional(),
+});
 export type CreatePostInput = z.infer<typeof createPostInput>;
+
+/**
+ * Who is reading (or writing). `isOfficer` = the officer tier (chair /
+ * secretary / treasurer / committee_member / manager_admin) — the same tier
+ * that may moderate. Committee-visibility posts are invisible and inaccessible
+ * to everyone else, on every path: the feed, the thread, comments, likes and
+ * image bytes. Defaults to the least-privileged view so a call site that
+ * forgets to pass it can only ever hide too much, never leak.
+ */
+export interface CommunityViewer {
+  isOfficer: boolean;
+}
+
+const PUBLIC_VIEWER: CommunityViewer = { isOfficer: false };
 
 export const createCommentInput = z.object({ body: z.string().min(1).max(5000) });
 export type CreateCommentInput = z.infer<typeof createCommentInput>;
@@ -58,6 +80,7 @@ export interface PostSummary {
   id: string;
   body: string;
   status: CommunityPostStatus;
+  visibility: CommunityPostVisibility;
   author: PostAuthor;
   images: PostImageView[];
   likeCount: number;
@@ -104,10 +127,19 @@ export async function createPost(
   schemeId: string,
   input: CreatePostInput,
   files: PostImageUpload[] = [],
+  viewer: CommunityViewer = PUBLIC_VIEWER,
 ): Promise<PostSummary> {
   const authorUserId = requireUserActor(ctx);
   if (files.length > MAX_IMAGES_PER_POST) {
     throw new DomainError("TOO_MANY_IMAGES", `At most ${MAX_IMAGES_PER_POST} images per post`, 422);
+  }
+  const visibility: CommunityPostVisibility = input.visibility ?? "scheme";
+  if (visibility === "committee" && !viewer.isOfficer) {
+    throw new DomainError(
+      "FORBIDDEN",
+      "Only committee members and officers can post to the committee channel",
+      403,
+    );
   }
 
   const stored = await Promise.all(
@@ -127,7 +159,7 @@ export async function createPost(
     const post = (
       await tx
         .insert(communityPosts)
-        .values({ schemeId, authorUserId, body: input.body })
+        .values({ schemeId, authorUserId, body: input.body, visibility })
         .returning()
     )[0]!;
 
@@ -156,6 +188,7 @@ export async function createPost(
     id: post.id,
     body: post.body,
     status: post.status,
+    visibility: post.visibility,
     author,
     images: imageRows.map((r) => ({ id: r.id, mime: r.mime })),
     likeCount: 0,
@@ -176,29 +209,37 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * clients from before the cursor became an id).
  *
  * The anchor lookup is scheme-scoped so a cursor can't be used to probe
- * whether a post id exists in some other scheme.
+ * whether a post id exists in some other scheme — and, for non-officers,
+ * visibility-scoped too, so a committee post id can't be used as an anchor to
+ * confirm it exists.
  */
-function feedCursorFilter(schemeId: string, cursor: string | undefined) {
+function feedCursorFilter(schemeId: string, cursor: string | undefined, viewer: CommunityViewer) {
   if (!cursor) return undefined;
   if (UUID_RE.test(cursor)) {
-    return sql`(${communityPosts.createdAt}, ${communityPosts.id}) < (select p.created_at, p.id from ${communityPosts} as p where p.id = ${cursor} and p.scheme_id = ${schemeId})`;
+    const visibilityScope = viewer.isOfficer ? sql`` : sql` and p.visibility = 'scheme'`;
+    return sql`(${communityPosts.createdAt}, ${communityPosts.id}) < (select p.created_at, p.id from ${communityPosts} as p where p.id = ${cursor} and p.scheme_id = ${schemeId}${visibilityScope})`;
   }
   const asDate = new Date(cursor);
   return Number.isNaN(asDate.getTime()) ? undefined : lt(communityPosts.createdAt, asDate);
 }
 
-/** Newest-first scheme feed, keyset-paginated on (createdAt, id). */
+/**
+ * Newest-first scheme feed, keyset-paginated on (createdAt, id). Committee
+ * posts are filtered out at the query for non-officers.
+ */
 export async function listFeed(
   ctx: ServiceContext,
   schemeId: string,
   currentUserId: string,
   cursor?: string,
+  viewer: CommunityViewer = PUBLIC_VIEWER,
 ): Promise<{ posts: PostSummary[]; nextCursor?: string }> {
   const rows = await ctx.db
     .select({
       id: communityPosts.id,
       body: communityPosts.body,
       status: communityPosts.status,
+      visibility: communityPosts.visibility,
       createdAt: communityPosts.createdAt,
       authorUserId: communityPosts.authorUserId,
       authorName: users.name,
@@ -210,7 +251,8 @@ export async function listFeed(
       and(
         eq(communityPosts.schemeId, schemeId),
         eq(communityPosts.status, "visible"),
-        feedCursorFilter(schemeId, cursor),
+        viewer.isOfficer ? undefined : eq(communityPosts.visibility, "scheme"),
+        feedCursorFilter(schemeId, cursor, viewer),
       ),
     )
     .orderBy(desc(communityPosts.createdAt), desc(communityPosts.id))
@@ -232,6 +274,7 @@ export async function listFeed(
     id: p.id,
     body: p.body,
     status: p.status,
+    visibility: p.visibility,
     author: { userId: p.authorUserId!, name: p.authorName, image: p.authorImage },
     images: images.get(p.id) ?? [],
     likeCount: likeCounts.get(p.id) ?? 0,
@@ -244,18 +287,23 @@ export async function listFeed(
   return { posts, nextCursor };
 }
 
-/** A single post with its full comment thread. */
+/**
+ * A single post with its full comment thread. A committee post reads as
+ * NOT_FOUND (not 403) to a non-officer, so its existence never leaks.
+ */
 export async function getThread(
   ctx: ServiceContext,
   schemeId: string,
   postId: string,
   currentUserId: string,
+  viewer: CommunityViewer = PUBLIC_VIEWER,
 ): Promise<{ post: ThreadView }> {
   const postRows = await ctx.db
     .select({
       id: communityPosts.id,
       body: communityPosts.body,
       status: communityPosts.status,
+      visibility: communityPosts.visibility,
       createdAt: communityPosts.createdAt,
       authorUserId: communityPosts.authorUserId,
       authorName: users.name,
@@ -268,6 +316,7 @@ export async function getThread(
         eq(communityPosts.id, postId),
         eq(communityPosts.schemeId, schemeId),
         eq(communityPosts.status, "visible"),
+        viewer.isOfficer ? undefined : eq(communityPosts.visibility, "scheme"),
       ),
     )
     .limit(1);
@@ -314,6 +363,7 @@ export async function getThread(
       id: p.id,
       body: p.body,
       status: p.status,
+      visibility: p.visibility,
       author: { userId: p.authorUserId!, name: p.authorName, image: p.authorImage },
       images: images.get(p.id) ?? [],
       likeCount: likeCounts.get(p.id) ?? 0,
@@ -325,12 +375,27 @@ export async function getThread(
   };
 }
 
-/** Load an image row (scheme-scoped) plus its bytes, for the content endpoint. */
-export async function getPostImage(ctx: ServiceContext, schemeId: string, imageId: string) {
+/**
+ * Load an image row (scheme-scoped) plus its bytes, for the content endpoint.
+ * An image belonging to a committee post is NOT_FOUND to non-officers — the
+ * bytes must not leak through the sub-resource when the post itself is hidden.
+ */
+export async function getPostImage(
+  ctx: ServiceContext,
+  schemeId: string,
+  imageId: string,
+  viewer: CommunityViewer = PUBLIC_VIEWER,
+) {
   const row = await ctx.db.query.communityPostImages.findFirst({
     where: and(eq(communityPostImages.id, imageId), eq(communityPostImages.schemeId, schemeId)),
   });
   if (!row) throw notFound("Image");
+  if (!viewer.isOfficer) {
+    const post = await ctx.db.query.communityPosts.findFirst({
+      where: eq(communityPosts.id, row.postId),
+    });
+    if (!post || post.visibility === "committee") throw notFound("Image");
+  }
   const bytes = await ctx.integrations.storage.get(row.storageKey);
   return { row, bytes };
 }
@@ -373,6 +438,7 @@ export async function addComment(
   schemeId: string,
   postId: string,
   input: CreateCommentInput,
+  viewer: CommunityViewer = PUBLIC_VIEWER,
 ): Promise<{ comment: CommentView }> {
   const authorUserId = requireUserActor(ctx);
 
@@ -381,6 +447,8 @@ export async function addComment(
       where: and(eq(communityPosts.id, postId), eq(communityPosts.schemeId, schemeId)),
     });
     if (!post || post.status === "removed") throw notFound("Post");
+    // A committee post is NOT_FOUND (never 403) to non-officers.
+    if (post.visibility === "committee" && !viewer.isOfficer) throw notFound("Post");
 
     const comment = (
       await tx
@@ -459,12 +527,15 @@ export async function togglePostLike(
   schemeId: string,
   postId: string,
   userId: string,
+  viewer: CommunityViewer = PUBLIC_VIEWER,
 ): Promise<{ liked: boolean; likeCount: number }> {
   return await ctx.db.transaction(async (tx) => {
     const post = await tx.query.communityPosts.findFirst({
       where: and(eq(communityPosts.id, postId), eq(communityPosts.schemeId, schemeId)),
     });
     if (!post || post.status === "removed") throw notFound("Post");
+    // A committee post is NOT_FOUND (never 403) to non-officers.
+    if (post.visibility === "committee" && !viewer.isOfficer) throw notFound("Post");
 
     const existing = await tx.query.communityPostLikes.findFirst({
       where: and(eq(communityPostLikes.postId, postId), eq(communityPostLikes.userId, userId)),
@@ -501,12 +572,20 @@ export async function toggleCommentLike(
   schemeId: string,
   commentId: string,
   userId: string,
+  viewer: CommunityViewer = PUBLIC_VIEWER,
 ): Promise<{ liked: boolean; likeCount: number }> {
   return await ctx.db.transaction(async (tx) => {
     const comment = await tx.query.communityComments.findFirst({
       where: and(eq(communityComments.id, commentId), eq(communityComments.schemeId, schemeId)),
     });
     if (!comment || comment.status === "removed") throw notFound("Comment");
+    // A comment on a committee post is NOT_FOUND (never 403) to non-officers.
+    if (!viewer.isOfficer) {
+      const post = await tx.query.communityPosts.findFirst({
+        where: eq(communityPosts.id, comment.postId),
+      });
+      if (!post || post.visibility === "committee") throw notFound("Comment");
+    }
 
     const existing = await tx.query.communityCommentLikes.findFirst({
       where: and(

@@ -161,6 +161,14 @@ export type ResolutionType = (typeof RESOLUTION_TYPES)[number];
 export const MOTION_STATUSES = ["draft", "open", "carried", "lost", "withdrawn"] as const;
 export type MotionStatus = (typeof MOTION_STATUSES)[number];
 
+/**
+ * Review state of an agenda item. Officer-created items are accepted at birth
+ * (the implicit status of every pre-existing row); an owner-submitted proposal
+ * starts pending until an officer accepts or rejects it.
+ */
+export const AGENDA_ITEM_STATUSES = ["pending", "accepted", "rejected"] as const;
+export type AgendaItemStatus = (typeof AGENDA_ITEM_STATUSES)[number];
+
 export const VOTE_CHOICES = ["for", "against", "abstain"] as const;
 export type VoteChoice = (typeof VOTE_CHOICES)[number];
 
@@ -184,6 +192,13 @@ export type DocumentAccessLevel = (typeof DOCUMENT_ACCESS_LEVELS)[number];
 /** Community board moderation status. "removed" is the soft-delete tombstone. */
 export const COMMUNITY_POST_STATUSES = ["visible", "hidden", "removed"] as const;
 export type CommunityPostStatus = (typeof COMMUNITY_POST_STATUSES)[number];
+
+/**
+ * Who can see a community post: the whole scheme (the default board) or the
+ * committee only (a private officer-tier discussion channel).
+ */
+export const COMMUNITY_POST_VISIBILITIES = ["scheme", "committee"] as const;
+export type CommunityPostVisibility = (typeof COMMUNITY_POST_VISIBILITIES)[number];
 
 export const COMPLIANCE_KINDS = [
   "agm_due",

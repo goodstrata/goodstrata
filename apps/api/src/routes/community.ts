@@ -12,6 +12,10 @@ import type { AppDeps } from "../deps.js";
 import { type AppEnv, requireSchemeMember } from "../middleware.js";
 import { zv } from "../validate.js";
 
+/**
+ * The officer tier: may moderate the board AND is the audience of the private
+ * committee-visibility channel (create + read committee posts).
+ */
 const MODERATOR_ROLES: MembershipRole[] = [
   "chair",
   "secretary",
@@ -19,6 +23,11 @@ const MODERATOR_ROLES: MembershipRole[] = [
   "committee_member",
   "manager_admin",
 ];
+
+/** Viewer descriptor the community service uses to scope committee posts. */
+function viewerFrom(roles: MembershipRole[]) {
+  return { isOfficer: roles.some((r) => MODERATOR_ROLES.includes(r)) };
+}
 
 const cursorQuery = z.object({ cursor: z.string().optional() });
 
@@ -57,6 +66,7 @@ export function communityRoutes(deps: AppDeps) {
             c.get("schemeId"),
             c.get("user").id,
             c.req.valid("query").cursor,
+            viewerFrom(c.get("roles")),
           );
           return c.json(feed);
         },
@@ -68,6 +78,7 @@ export function communityRoutes(deps: AppDeps) {
           c.get("schemeId"),
           c.req.param("postId"),
           c.get("user").id,
+          viewerFrom(c.get("roles")),
         );
         return c.json(thread);
       })
@@ -78,6 +89,7 @@ export function communityRoutes(deps: AppDeps) {
         const contentType = c.req.header("content-type") ?? "";
 
         let body: string;
+        let visibility: "scheme" | "committee" | undefined;
         const files: PostImageUpload[] = [];
 
         if (contentType.includes("application/json")) {
@@ -86,11 +98,14 @@ export function communityRoutes(deps: AppDeps) {
             return c.json({ error: { code: "VALIDATION", message: "Invalid request" } }, 422);
           }
           body = parsed.data.body;
+          visibility = parsed.data.visibility;
         } else {
           const form = await c.req.parseBody({ all: true });
           const rawBody = form.body;
+          const rawVisibility = form.visibility;
           const parsed = createPostInput.safeParse({
             body: typeof rawBody === "string" ? rawBody : "",
+            visibility: typeof rawVisibility === "string" ? rawVisibility : undefined,
           });
           if (!parsed.success) {
             return c.json(
@@ -99,6 +114,7 @@ export function communityRoutes(deps: AppDeps) {
             );
           }
           body = parsed.data.body;
+          visibility = parsed.data.visibility;
 
           const field = form.images;
           const candidates = Array.isArray(field) ? field : field ? [field] : [];
@@ -139,7 +155,13 @@ export function communityRoutes(deps: AppDeps) {
           }
         }
 
-        const post = await communityService.createPost(ctx, c.get("schemeId"), { body }, files);
+        const post = await communityService.createPost(
+          ctx,
+          c.get("schemeId"),
+          { body, visibility },
+          files,
+          viewerFrom(c.get("roles")),
+        );
         return c.json({ post }, 201);
       })
       .post(
@@ -153,6 +175,7 @@ export function communityRoutes(deps: AppDeps) {
             c.get("schemeId"),
             c.req.param("postId"),
             c.req.valid("json"),
+            viewerFrom(c.get("roles")),
           );
           return c.json(result, 201);
         },
@@ -164,6 +187,7 @@ export function communityRoutes(deps: AppDeps) {
           c.get("schemeId"),
           c.req.param("postId"),
           c.get("user").id,
+          viewerFrom(c.get("roles")),
         );
         return c.json(result);
       })
@@ -177,6 +201,7 @@ export function communityRoutes(deps: AppDeps) {
             c.get("schemeId"),
             c.req.param("commentId"),
             c.get("user").id,
+            viewerFrom(c.get("roles")),
           );
           return c.json(result);
         },
@@ -187,6 +212,7 @@ export function communityRoutes(deps: AppDeps) {
           ctx,
           c.get("schemeId"),
           c.req.param("imageId"),
+          viewerFrom(c.get("roles")),
         );
         // Defense in depth: only ever emit a known-safe image content-type. Legacy
         // or otherwise-unexpected stored mimes are served as a non-renderable

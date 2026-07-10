@@ -1,4 +1,4 @@
-import { COMMUNITY_POST_STATUSES } from "@goodstrata/shared";
+import { COMMUNITY_POST_STATUSES, COMMUNITY_POST_VISIBILITIES } from "@goodstrata/shared";
 import {
   bigint,
   index,
@@ -14,6 +14,10 @@ import { users } from "./auth.js";
 import { schemes } from "./tenancy.js";
 
 export const communityPostStatusEnum = pgEnum("community_post_status", COMMUNITY_POST_STATUSES);
+export const communityPostVisibilityEnum = pgEnum(
+  "community_post_visibility",
+  COMMUNITY_POST_VISIBILITIES,
+);
 
 /**
  * A Facebook-group-style post on a scheme's community board. Author is a login
@@ -31,6 +35,12 @@ export const communityPosts = pgTable(
     authorUserId: text().references(() => users.id, { onDelete: "set null" }),
     body: text().notNull(),
     status: communityPostStatusEnum().notNull().default("visible"),
+    /**
+     * "scheme" (default, and the backfilled value for every pre-existing row)
+     * = the whole community board; "committee" = officer-tier only, filtered
+     * out of every non-officer read path.
+     */
+    visibility: communityPostVisibilityEnum().notNull().default("scheme"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

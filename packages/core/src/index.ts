@@ -18,6 +18,7 @@ export * as committeeService from "./services/committee.js";
 export * as commsService from "./services/comms.js";
 export type {
   CommentView,
+  CommunityViewer,
   PostImageUpload,
   PostSummary,
   ThreadView,
@@ -56,9 +57,12 @@ export {
 } from "./services/managerRegistration.js";
 export * as meetingsService from "./services/meetings.js";
 export {
+  acceptAgendaItemInput,
   addMotionInput,
   castVoteInput,
   createMeetingInput,
+  rejectAgendaItemInput,
+  submitAgendaItemInput,
   submitProxyInput,
 } from "./services/meetings.js";
 export type {
