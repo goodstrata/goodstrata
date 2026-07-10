@@ -15,6 +15,7 @@ import {
   useTheme,
 } from "../../src/components";
 import { authClient } from "../../src/lib/auth";
+import { unregisterPushToken } from "../../src/lib/pushNotifications";
 
 const SITE = "https://goodstrata.com.au";
 
@@ -102,6 +103,8 @@ export default function More() {
           full
           label="Sign out"
           onPress={async () => {
+            // Before signOut: the token DELETE needs the session cookie.
+            await unregisterPushToken();
             await authClient.signOut();
             router.replace("/sign-in");
           }}

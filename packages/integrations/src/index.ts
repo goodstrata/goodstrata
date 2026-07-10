@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export * from "./email.js";
 export * from "./payments.js";
+export * from "./push.js";
 export * from "./sms.js";
 export * from "./storage.js";
 export * from "./tradeMarket.js";
@@ -19,6 +20,12 @@ import {
   monoovaPaymentsProvider,
   type PaymentsProvider,
 } from "./payments.js";
+import {
+  consolePushProvider,
+  expoPushProvider,
+  memoryPushProvider,
+  type PushProvider,
+} from "./push.js";
 import {
   consoleSmsProvider,
   memorySmsProvider,
@@ -42,6 +49,7 @@ import { consoleVideoProvider, dailyVideoProvider, type VideoProvider } from "./
 export interface Integrations {
   email: EmailProvider;
   sms: SmsProvider;
+  push: PushProvider;
   storage: StorageProvider;
   payments: PaymentsProvider;
   video: VideoProvider;
@@ -58,6 +66,7 @@ export interface Integrations {
 export interface IntegrationsEnv {
   EMAIL_PROVIDER?: string;
   SMS_PROVIDER?: string;
+  PUSH_PROVIDER?: string;
   STORAGE_PROVIDER?: string;
   PAYMENTS_PROVIDER?: string;
   VIDEO_PROVIDER?: string;
@@ -88,6 +97,8 @@ export interface IntegrationsEnv {
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_PHONE_NUMBER?: string;
+  // Expo push (PUSH_PROVIDER=expo) — optional enhanced-security bearer.
+  EXPO_ACCESS_TOKEN?: string;
   // Daily.co (VIDEO_PROVIDER=daily)
   DAILY_API_KEY?: string;
   // Monoova NPP / PayID (PAYMENTS_PROVIDER=monoova)
@@ -176,6 +187,19 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
     }
   })();
 
+  const push = (() => {
+    switch (env.PUSH_PROVIDER ?? "console") {
+      case "memory":
+        return memoryPushProvider();
+      case "expo":
+        // No required config: the Expo push endpoint is public per project;
+        // EXPO_ACCESS_TOKEN only applies when enhanced push security is on.
+        return expoPushProvider({ accessToken: env.EXPO_ACCESS_TOKEN });
+      default:
+        return consolePushProvider();
+    }
+  })();
+
   const storage = (() => {
     switch (env.STORAGE_PROVIDER ?? "local") {
       case "memory":
@@ -244,7 +268,7 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
       }
     });
 
-  return { email, sms, storage, payments, video, tradeMarkets, appUrl };
+  return { email, sms, push, storage, payments, video, tradeMarkets, appUrl };
 }
 
 /** Look up an enabled trade-market provider by its name (e.g. from an rfq_channels row). */

@@ -21,10 +21,12 @@ export const NOTIFICATION_TYPES = [
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /**
- * Deliverable channels for a preference. A subset of `MESSAGE_CHANNELS` —
- * "post" is not a live notifier channel and is excluded.
+ * Deliverable channels for a preference. Overlaps `MESSAGE_CHANNELS` ("post"
+ * is not a live notifier channel and is excluded) plus "push" — OS push to the
+ * member app's registered devices, resolved at send time like SMS's
+ * phone-on-file gate: the pref can be on, but nothing sends without a token.
  */
-export const NOTIFICATION_PREF_CHANNELS = ["in_app", "email", "sms"] as const;
+export const NOTIFICATION_PREF_CHANNELS = ["in_app", "email", "sms", "push"] as const;
 export type NotificationPrefChannel = (typeof NOTIFICATION_PREF_CHANNELS)[number];
 
 /**
@@ -39,19 +41,22 @@ export type NotificationPrefChannel = (typeof NOTIFICATION_PREF_CHANNELS)[number
  *    so urgent/decision/compliance/arrears default SMS-on; chatty/informational
  *    default SMS-off (and email-off where it's noise). SMS still cannot fire
  *    without a phone on file (resolved at send time).
+ *  - Push mirrors in_app (ON for every type today): registering a device is
+ *    itself the opt-in signal, and like SMS it cannot fire without a token on
+ *    file — so a push-on default only reaches people who installed the app.
  */
 export const NOTIFICATION_DEFAULTS: Record<
   NotificationType,
   Record<NotificationPrefChannel, boolean>
 > = {
-  "decision.requested": { in_app: true, email: true, sms: true },
-  "compliance.obligation.due": { in_app: true, email: true, sms: true },
-  "arrears.stage.reached": { in_app: true, email: true, sms: true },
-  "levy.notice.issued": { in_app: true, email: true, sms: false },
-  "minutes.drafted": { in_app: true, email: true, sms: false },
-  "maintenance.request.created": { in_app: true, email: true, sms: false },
-  "work_order.dispatched": { in_app: true, email: false, sms: false },
-  "community.comment.created": { in_app: true, email: false, sms: false },
+  "decision.requested": { in_app: true, email: true, sms: true, push: true },
+  "compliance.obligation.due": { in_app: true, email: true, sms: true, push: true },
+  "arrears.stage.reached": { in_app: true, email: true, sms: true, push: true },
+  "levy.notice.issued": { in_app: true, email: true, sms: false, push: true },
+  "minutes.drafted": { in_app: true, email: true, sms: false, push: true },
+  "maintenance.request.created": { in_app: true, email: true, sms: false, push: true },
+  "work_order.dispatched": { in_app: true, email: false, sms: false, push: true },
+  "community.comment.created": { in_app: true, email: false, sms: false, push: true },
 };
 
 /**

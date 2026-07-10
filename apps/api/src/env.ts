@@ -21,6 +21,7 @@ const envSchema = z.object({
 
   EMAIL_PROVIDER: z.string().default("console"),
   SMS_PROVIDER: z.string().default("console"),
+  PUSH_PROVIDER: z.string().default("console"),
   STORAGE_PROVIDER: z.string().default("local"),
   PAYMENTS_PROVIDER: z.string().default("mock"),
   VIDEO_PROVIDER: z.string().default("console"),
@@ -56,6 +57,13 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
+
+  /**
+   * Expo push (PUSH_PROVIDER=expo). The access token is only needed when the
+   * project enables Expo's enhanced push security; the endpoint is otherwise
+   * open per project.
+   */
+  EXPO_ACCESS_TOKEN: z.string().optional(),
 
   /** Daily.co (VIDEO_PROVIDER=daily). */
   DAILY_API_KEY: z.string().optional(),

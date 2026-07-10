@@ -5,9 +5,11 @@ import {
   memberships,
   ownerships,
   people,
+  pushTokens,
   schemes,
 } from "@goodstrata/db";
 import type { EventRecord } from "@goodstrata/events";
+import type { OutboundPush } from "@goodstrata/integrations";
 import { formatCents, type MembershipRole } from "@goodstrata/shared";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { ServiceContext } from "../context.js";
@@ -76,11 +78,43 @@ function genericEmail(opts: {
 }
 
 /**
- * One delivery: resolve the candidate recipients into the channels each opted
- * into, write in-app rows for the in_app subset, then best-effort email/SMS the
- * subsets who chose those channels. Returns the count of in-app rows written
- * (the historical meaning of `created`). A failed email/SMS only logs — the
+ * Best-effort OS push to a batch of already-resolved device tokens. One
+ * provider call for the whole fan-out (the expo driver chunks ≤100 itself);
+ * tokens Expo reports DeviceNotRegistered are pruned here so the next
+ * delivery never retries a dead device. Transport failures only log — the
  * bell row already exists.
+ */
+async function sendPush(ctx: ServiceContext, messages: OutboundPush[]): Promise<void> {
+  if (messages.length === 0) return;
+  try {
+    const outcome = await ctx.integrations.push.send(messages);
+    if (outcome.invalidTokens.length > 0) {
+      await ctx.db.delete(pushTokens).where(inArray(pushTokens.token, outcome.invalidTokens));
+    }
+  } catch (err) {
+    console.error("[notifier] push send failed", err);
+  }
+}
+
+/**
+ * The push `data` payload: the same deep-link anchor the in-app row carries
+ * ({ schemeId, category, related }), so the app's tap handler can route with
+ * the shared notification-target resolver.
+ */
+function pushData(
+  schemeId: string | null,
+  category: string,
+  related: { type: string; id: string } | null,
+): Record<string, unknown> {
+  return { schemeId, category, related };
+}
+
+/**
+ * One delivery: resolve the candidate recipients into the channels each opted
+ * into, write in-app rows for the in_app subset, then best-effort email/SMS/
+ * push the subsets who chose those channels. Returns the count of in-app rows
+ * written (the historical meaning of `created`). A failed email/SMS/push only
+ * logs — the bell row already exists.
  */
 async function deliver(
   ctx: ServiceContext,
@@ -130,6 +164,18 @@ async function deliver(
       }
     }
   }
+
+  // Push mirrors the in-app content — every registered device of each
+  // recipient who kept the push channel on.
+  await sendPush(
+    ctx,
+    resolved.push.map((r) => ({
+      to: r.token,
+      title: content.inApp.title,
+      body: content.inApp.body,
+      data: pushData(content.schemeId, content.inApp.category, content.inApp.related ?? null),
+    })),
+  );
 
   return created.length;
 }
@@ -300,6 +346,21 @@ async function handleOrgObligationDue(
       console.error(`[notifier] sms to ${r.phone} failed`, err);
     }
   }
+
+  // Push: every registered device of each opted-in admin, anchored (like the
+  // email CTA) to a scheme they administer so the tap has somewhere to land.
+  await sendPush(
+    ctx,
+    resolved.push.map((r) => ({
+      to: r.token,
+      title,
+      body,
+      data: pushData(anchorScheme.get(r.userId) ?? null, "general", {
+        type: "compliance_obligation",
+        id: payload.obligationId,
+      }),
+    })),
+  );
 
   return { created };
 }

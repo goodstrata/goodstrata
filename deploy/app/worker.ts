@@ -41,6 +41,10 @@ interface Env {
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_PHONE_NUMBER?: string;
+  // Expo push enhanced security (optional). The expo push provider itself is
+  // always on in prod — it needs no credentials; this bearer only applies once
+  // "enhanced push security" is enabled for the EAS project.
+  EXPO_ACCESS_TOKEN?: string;
 }
 
 const APP_URL = "https://my.goodstrata.com.au";
@@ -151,6 +155,10 @@ export class GoodstrataApp extends Container<Env> {
         ...google,
         ...payments,
         ...sms,
+        // Expo push: credential-free (the per-project endpoint is open), so the
+        // member app's device tokens get real pushes from day one.
+        PUSH_PROVIDER: "expo",
+        ...(env.EXPO_ACCESS_TOKEN ? { EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN } : {}),
       },
     });
   }

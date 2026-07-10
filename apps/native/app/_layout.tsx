@@ -13,6 +13,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { RootErrorBoundary } from "../src/components/ui/RootErrorBoundary";
+import { usePushNotifications } from "../src/lib/pushNotifications";
 import { useTheme } from "../src/theme/useTheme";
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ export default function RootLayout() {
   // Themed ground from the first frame — dark-mode users never see a
   // paper-white flash on launch or between stack transitions.
   const theme = useTheme();
+  usePushNotifications();
   const [fontsLoaded] = useFonts({
     PublicSans_400Regular,
     PublicSans_600SemiBold,

@@ -49,10 +49,11 @@ const CHANNEL_LABELS: Record<NotificationPrefChannel, string> = {
   in_app: "In-app",
   email: "Email",
   sms: "SMS",
+  push: "Push",
 };
 
 /** Single fixed grid track so column headers align down every group. */
-const GRID = "grid grid-cols-[1fr_2.75rem_2.75rem_2.75rem] gap-x-2 gap-y-3 items-center";
+const GRID = "grid grid-cols-[1fr_2.75rem_2.75rem_2.75rem_2.75rem] gap-x-2 gap-y-3 items-center";
 
 async function fetchPrefs(): Promise<PrefsPayload> {
   const res = await fetch("/api/profile/notification-preferences", { credentials: "include" });
@@ -375,7 +376,7 @@ function MatrixSkeleton() {
           {[0, 1].map((r) => (
             <div key={r} className={GRID}>
               <Skeleton className="h-4 w-40" />
-              {[0, 1, 2].map((c) => (
+              {[0, 1, 2, 3].map((c) => (
                 <Skeleton key={c} className="mx-auto h-5 w-9 rounded-full" />
               ))}
             </div>
