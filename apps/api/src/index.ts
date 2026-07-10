@@ -9,6 +9,7 @@ import {
   type AppDeps,
   buildModelResolver,
   buildServiceContextFactory,
+  deliveryProviderWarnings,
   integrationsFromEnv,
 } from "./deps.js";
 import { loadEnv } from "./env.js";
@@ -22,7 +23,18 @@ async function main() {
   // of concurrent reads (e.g. the Finance tab's fan-out) multiplex instead of
   // exhausting the session pooler. LISTEN + pg-boss keep their session pooler.
   const { db } = createDb(env.DATABASE_URL, { transactionPool: true });
-  const integrations = integrationsFromEnv(env);
+  const integrations = integrationsFromEnv({
+    ...env,
+    // Unsubscribe links must always be mintable — fall back to the auth secret.
+    UNSUBSCRIBE_SECRET: env.UNSUBSCRIBE_SECRET ?? env.BETTER_AUTH_SECRET,
+  });
+
+  // Silent-no-op guard: in production a "console" email/SMS provider only
+  // logs — nothing is delivered. Shout once at boot (and via /api/health);
+  // never crash, a self-host may legitimately run without SMS.
+  for (const warning of deliveryProviderWarnings(env, integrations)) {
+    console.error(`[boot] ${warning}`);
+  }
   const auth = createAuth({
     db,
     secret: env.BETTER_AUTH_SECRET,

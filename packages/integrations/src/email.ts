@@ -9,6 +9,13 @@ export interface OutboundEmail {
   text: string;
   html?: string;
   attachments?: { filename: string; content: Uint8Array; contentType: string }[];
+  /**
+   * Per-recipient one-click unsubscribe URL. When set, SES/SMTP senders emit
+   * RFC 8058 `List-Unsubscribe: <url>` + `List-Unsubscribe-Post:
+   * List-Unsubscribe=One-Click` headers so inbox providers surface their
+   * native unsubscribe affordance.
+   */
+  listUnsubscribeUrl?: string;
 }
 
 const emailAddressSchema = z.string().email();
@@ -16,8 +23,9 @@ const emailAddressSchema = z.string().email();
 /**
  * Guard the recipient/header boundary before a message reaches SES or SMTP:
  * a malformed `to` yields an opaque provider 400, and a CR/LF smuggled into
- * `to`/`subject` is an SMTP header-injection vector. Reject both up front with
- * a message naming the bad field instead of leaking to the provider.
+ * `to`/`subject` (or a header-borne URL) is an SMTP header-injection vector.
+ * Reject both up front with a message naming the bad field instead of leaking
+ * to the provider.
  */
 function assertSendableEmail(email: OutboundEmail): void {
   if (!emailAddressSchema.safeParse(email.to).success) {
@@ -26,6 +34,19 @@ function assertSendableEmail(email: OutboundEmail): void {
   if (/[\r\n]/.test(email.subject)) {
     throw new Error("email: subject must not contain line breaks (header injection)");
   }
+  if (email.listUnsubscribeUrl && /[\r\n<>]/.test(email.listUnsubscribeUrl)) {
+    throw new Error(
+      "email: listUnsubscribeUrl must not contain line breaks or angle brackets (header injection)",
+    );
+  }
+}
+
+/** RFC 8058 one-click unsubscribe header pair for a per-recipient URL. */
+function listUnsubscribeHeaders(url: string): { name: string; value: string }[] {
+  return [
+    { name: "List-Unsubscribe", value: `<${url}>` },
+    { name: "List-Unsubscribe-Post", value: "List-Unsubscribe=One-Click" },
+  ];
 }
 
 export interface EmailProvider {
@@ -89,6 +110,14 @@ export function sesEmailProvider(cfg: SesEmailConfig): EmailProvider {
                 Text: { Data: email.text, Charset: "UTF-8" },
                 ...(email.html ? { Html: { Data: email.html, Charset: "UTF-8" } } : {}),
               },
+              ...(email.listUnsubscribeUrl
+                ? {
+                    Headers: listUnsubscribeHeaders(email.listUnsubscribeUrl).map((h) => ({
+                      Name: h.name,
+                      Value: h.value,
+                    })),
+                  }
+                : {}),
             },
           },
         }),
@@ -105,6 +134,7 @@ export interface SmtpMessage {
   subject: string;
   text: string;
   html?: string;
+  headers?: Record<string, string>;
   attachments?: { filename: string; content: Buffer; contentType: string }[];
 }
 
@@ -154,6 +184,13 @@ export function smtpEmailProvider(cfg: SmtpEmailConfig): EmailProvider {
         subject: email.subject,
         text: email.text,
         ...(email.html ? { html: email.html } : {}),
+        ...(email.listUnsubscribeUrl
+          ? {
+              headers: Object.fromEntries(
+                listUnsubscribeHeaders(email.listUnsubscribeUrl).map((h) => [h.name, h.value]),
+              ),
+            }
+          : {}),
         ...(email.attachments && email.attachments.length > 0
           ? {
               attachments: email.attachments.map((a) => ({

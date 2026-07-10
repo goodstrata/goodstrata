@@ -14,6 +14,8 @@ export interface SendEmailInput {
   html?: string;
   template?: string;
   related?: { type: string; id: string };
+  /** Per-recipient one-click unsubscribe URL → List-Unsubscribe headers. */
+  listUnsubscribeUrl?: string;
 }
 
 /**
@@ -63,6 +65,77 @@ export async function sendEmail(ctx: ServiceContext, input: SendEmailInput) {
       subject: input.subject,
       text: input.body,
       ...(input.html ? { html: input.html } : {}),
+      ...(input.listUnsubscribeUrl ? { listUnsubscribeUrl: input.listUnsubscribeUrl } : {}),
+    });
+    await ctx.db
+      .update(messages)
+      .set({ status: "sent", providerMessageId, sentAt: ctx.clock.now() })
+      .where(eq(messages.id, message.id));
+  } catch (err) {
+    await ctx.db.update(messages).set({ status: "failed" }).where(eq(messages.id, message.id));
+    throw err;
+  }
+
+  return message;
+}
+
+export interface SendSmsInput {
+  schemeId: string;
+  personId?: string;
+  /** Destination phone in E.164 format. */
+  to: string;
+  body: string;
+  template?: string;
+  related?: { type: string; id: string };
+}
+
+/**
+ * Send an SMS through the correspondence log — the exact twin of `sendEmail`:
+ * a `messages` row (channel "sms") is written queued-first, a `message.sent`
+ * event lands on the log, then the provider send flips the row to sent (with
+ * providerMessageId) or failed. Throws on provider failure after recording it.
+ */
+export async function sendSms(ctx: ServiceContext, input: SendSmsInput) {
+  const message = await ctx.db.transaction(async (tx) => {
+    const rows = await tx
+      .insert(messages)
+      .values({
+        schemeId: input.schemeId,
+        channel: "sms",
+        direction: "outbound",
+        personId: input.personId ?? null,
+        toAddress: input.to,
+        subject: null,
+        body: input.body,
+        template: input.template ?? null,
+        related: input.related ?? null,
+        status: "queued",
+      })
+      .returning();
+    const msg = rows[0]!;
+
+    await publishEvent(tx, {
+      schemeId: input.schemeId,
+      stream: `message:${msg.id}`,
+      type: "message.sent",
+      payload: {
+        messageId: msg.id,
+        channel: "sms",
+        to: input.to,
+        subject: null,
+        template: input.template ?? null,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return msg;
+  });
+
+  try {
+    const { providerMessageId } = await ctx.integrations.sms.send({
+      to: input.to,
+      body: input.body,
     });
     await ctx.db
       .update(messages)

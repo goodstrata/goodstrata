@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
-import type { AppDeps } from "./deps.js";
+import { type AppDeps, deliveryProviderWarnings } from "./deps.js";
 import { mcpRoutes } from "./mcp/index.js";
 import { type AppEnv, requireAuth } from "./middleware.js";
 import { agentRunsRoutes } from "./routes/agents.js";
@@ -34,6 +34,7 @@ import { profileRoutes } from "./routes/profile.js";
 import { rfqsRoutes } from "./routes/rfqs.js";
 import { schemesRoutes } from "./routes/schemes.js";
 import { trustRoutes } from "./routes/trust.js";
+import { unsubscribeRoutes } from "./routes/unsubscribe.js";
 import { securityHeaders } from "./security-headers.js";
 import { type SseHub, sseRoutes } from "./sse.js";
 import { paymentWebhookRoutes } from "./webhooks.js";
@@ -83,7 +84,11 @@ export function createApp(deps: AppDeps, hub: SseHub) {
       }),
     )
     .route("/api", estimatorRoutes(deps))
-    .get("/api/health", (c) => c.json({ ok: true }))
+    // Health also surfaces delivery misconfiguration (console providers in
+    // production) so a silent no-op is visible to monitoring, not just logs.
+    .get("/api/health", (c) =>
+      c.json({ ok: true, deliveryWarnings: deliveryProviderWarnings(deps.env, deps.integrations) }),
+    )
     // Public auth-page descriptor: one-click demo entry buttons (only ever
     // populated when DEMO_MODE=1) plus which social sign-in providers this
     // deployment has configured — a runtime capability, so one web build
@@ -119,6 +124,9 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     // cookie). Host-aware, degrades to same-origin locally.
     .route("/", mcpRoutes(deps))
     .route("/api/invites", publicInviteRoutes(deps))
+    // One-click unsubscribe — token-authenticated, pre-auth (email footer +
+    // List-Unsubscribe target).
+    .route("/api/unsubscribe", unsubscribeRoutes(deps))
     // Public contractor self-service portal — token-authenticated, pre-auth.
     .route("/api/quote", publicQuoteRoutes(deps))
     .route("/api/work-order", publicWorkOrderRoutes(deps))

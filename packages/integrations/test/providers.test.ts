@@ -53,6 +53,49 @@ describe("sesEmailProvider", () => {
     await provider.send({ to: "a@example.com", subject: "Hi", text: "Plain" });
     const input = send.mock.calls[0]![0].input;
     expect(input.Content?.Simple?.Body?.Html).toBeUndefined();
+    expect(input.Content?.Simple?.Headers).toBeUndefined();
+  });
+
+  it("emits RFC 8058 List-Unsubscribe headers when a URL is supplied", async () => {
+    const send = vi.fn(async (_cmd: SendEmailCommand) => ({ MessageId: "ses-msg-3" }));
+    const provider = sesEmailProvider({
+      region: "ap-southeast-2",
+      accessKeyId: "AKIA_TEST",
+      secretAccessKey: "secret",
+      from: "notices@example.com",
+      client: { send },
+    });
+    await provider.send({
+      to: "a@example.com",
+      subject: "Hi",
+      text: "Plain",
+      listUnsubscribeUrl: "https://my.example.com/api/unsubscribe?token=abc",
+    });
+    const input = send.mock.calls[0]![0].input;
+    expect(input.Content?.Simple?.Headers).toEqual([
+      { Name: "List-Unsubscribe", Value: "<https://my.example.com/api/unsubscribe?token=abc>" },
+      { Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click" },
+    ]);
+  });
+
+  it("rejects a header-injecting unsubscribe URL before it reaches the provider", async () => {
+    const send = vi.fn(async (_cmd: SendEmailCommand) => ({ MessageId: "nope" }));
+    const provider = sesEmailProvider({
+      region: "ap-southeast-2",
+      accessKeyId: "AKIA_TEST",
+      secretAccessKey: "secret",
+      from: "notices@example.com",
+      client: { send },
+    });
+    await expect(
+      provider.send({
+        to: "a@example.com",
+        subject: "Hi",
+        text: "Plain",
+        listUnsubscribeUrl: "https://x.example\r\nBcc: victim@example.com",
+      }),
+    ).rejects.toThrow(/listUnsubscribeUrl/);
+    expect(send).not.toHaveBeenCalled();
   });
 });
 
@@ -114,6 +157,31 @@ describe("smtpEmailProvider", () => {
     const msg = sendMail.mock.calls[0]![0];
     expect(msg.html).toBeUndefined();
     expect(msg.attachments).toBeUndefined();
+    expect(msg.headers).toBeUndefined();
+  });
+
+  it("emits RFC 8058 List-Unsubscribe headers when a URL is supplied", async () => {
+    const sendMail = vi.fn(async (_msg: SmtpMessage) => ({ messageId: "smtp-msg-3" }));
+    const provider = smtpEmailProvider({
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      user: "u",
+      pass: "p",
+      from: "notices@example.com",
+      transport: { sendMail },
+    });
+    await provider.send({
+      to: "a@example.com",
+      subject: "Hi",
+      text: "Plain",
+      listUnsubscribeUrl: "https://my.example.com/api/unsubscribe?token=abc",
+    });
+    const msg = sendMail.mock.calls[0]![0];
+    expect(msg.headers).toEqual({
+      "List-Unsubscribe": "<https://my.example.com/api/unsubscribe?token=abc>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
   });
 });
 

@@ -76,3 +76,4 @@ export {
 } from "./services/trustAccounts.js";
 export * as trustReconciliationService from "./services/trustReconciliation.js";
 export { reconciliationPeriodInput } from "./services/trustReconciliation.js";
+export * as unsubscribeService from "./services/unsubscribe.js";

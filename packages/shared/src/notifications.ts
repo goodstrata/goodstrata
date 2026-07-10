@@ -7,7 +7,7 @@
  * unit (the coarse `category` lumps compliance and community together).
  */
 
-/** The eight notifier event types users can tune (the matrix rows). */
+/** The notifier event types users can tune (the matrix rows). Append-only. */
 export const NOTIFICATION_TYPES = [
   "maintenance.request.created",
   "work_order.dispatched",
@@ -17,6 +17,14 @@ export const NOTIFICATION_TYPES = [
   "decision.requested",
   "minutes.drafted",
   "community.comment.created",
+  "work_order.completed",
+  "payment.received",
+  "meeting.scheduled",
+  "meeting.notice.issued",
+  "decision.resolved",
+  "decision.expired",
+  "complaint.filed",
+  "agent.run.failed",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -52,6 +60,20 @@ export const NOTIFICATION_DEFAULTS: Record<
   "maintenance.request.created": { in_app: true, email: true, sms: false },
   "work_order.dispatched": { in_app: true, email: false, sms: false },
   "community.comment.created": { in_app: true, email: false, sms: false },
+  // Personally-addressed confirmations default to email-on (people expect a
+  // receipt / "your job is done" in their inbox); SMS stays opt-in.
+  "work_order.completed": { in_app: true, email: true, sms: false },
+  "payment.received": { in_app: true, email: true, sms: false },
+  // Calendar heads-ups default to bell-only: the statutory meeting notice is
+  // already a mandatory email blast (meetings.sendMeetingNotice), so the
+  // notifier's email for these two is strictly opt-in — no double letterbox.
+  "meeting.scheduled": { in_app: true, email: false, sms: false },
+  "meeting.notice.issued": { in_app: true, email: false, sms: false },
+  "decision.resolved": { in_app: true, email: true, sms: false },
+  "decision.expired": { in_app: true, email: true, sms: false },
+  "complaint.filed": { in_app: true, email: true, sms: false },
+  // Ops signal for admins — the bell + email, never a text.
+  "agent.run.failed": { in_app: true, email: true, sms: false },
 };
 
 /**
@@ -75,22 +97,39 @@ export const NOTIFICATION_GROUPS = [
   {
     key: "building",
     label: "Your building",
-    types: ["maintenance.request.created", "work_order.dispatched"],
+    types: ["maintenance.request.created", "work_order.dispatched", "work_order.completed"],
   },
   {
     key: "money",
     label: "Money & compliance",
-    types: ["levy.notice.issued", "arrears.stage.reached", "compliance.obligation.due"],
+    types: [
+      "levy.notice.issued",
+      "payment.received",
+      "arrears.stage.reached",
+      "compliance.obligation.due",
+    ],
   },
   {
     key: "meetings",
     label: "Meetings & decisions",
-    types: ["decision.requested", "minutes.drafted"],
+    types: [
+      "meeting.scheduled",
+      "meeting.notice.issued",
+      "decision.requested",
+      "decision.resolved",
+      "decision.expired",
+      "minutes.drafted",
+    ],
   },
   {
     key: "community",
     label: "Community",
-    types: ["community.comment.created"],
+    types: ["community.comment.created", "complaint.filed"],
+  },
+  {
+    key: "operations",
+    label: "Running the scheme",
+    types: ["agent.run.failed"],
   },
 ] as const satisfies readonly {
   key: string;
@@ -142,5 +181,45 @@ export const NOTIFICATION_TYPE_META: Record<
     label: "Community replies",
     help: "When someone replies to your board post.",
     group: "community",
+  },
+  "work_order.completed": {
+    label: "Jobs completed",
+    help: "When work you reported is marked done.",
+    group: "building",
+  },
+  "payment.received": {
+    label: "Payments received",
+    help: "Receipt confirmations when your levy payment arrives.",
+    group: "money",
+  },
+  "meeting.scheduled": {
+    label: "Meetings scheduled",
+    help: "When a new meeting is put on the calendar.",
+    group: "meetings",
+  },
+  "meeting.notice.issued": {
+    label: "Meeting notices",
+    help: "When the formal notice of a meeting goes out.",
+    group: "meetings",
+  },
+  "decision.resolved": {
+    label: "Decision outcomes",
+    help: "When a decision you voted on is resolved.",
+    group: "meetings",
+  },
+  "decision.expired": {
+    label: "Decisions expired",
+    help: "When a decision lapses without a resolution.",
+    group: "meetings",
+  },
+  "complaint.filed": {
+    label: "New complaints",
+    help: "When a grievance is lodged with the owners corporation.",
+    group: "community",
+  },
+  "agent.run.failed": {
+    label: "Failed automation runs",
+    help: "When an assistant run fails and needs a look.",
+    group: "operations",
   },
 };

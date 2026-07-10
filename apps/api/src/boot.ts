@@ -68,12 +68,21 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
   };
 
   // The notifier consumes domain events and writes in-app notifications
-  // (plus email/SMS for decision requests). Pure code, never an LLM.
+  // (plus email/SMS per recipient preferences). Pure code, never an LLM.
   const notifierSubscription: Subscription = {
     name: "notifier",
     queue: NOTIFY_QUEUE,
     types: notifierService.NOTIFIER_EVENT_TYPES,
   };
+
+  // Notify jobs retry on transient failure (DB blip mid fan-out). Redelivery
+  // is safe: the notifier is idempotent per (event, recipient) via the
+  // notifications dedupeKey, so a retry only completes what's missing.
+  // createQueue is ON CONFLICT DO NOTHING (the dispatcher may have made the
+  // queue on an earlier boot), so updateQueue asserts the retry policy.
+  const notifyRetry = { retryLimit: 3, retryDelay: 30, retryBackoff: true };
+  await boss.createQueue(NOTIFY_QUEUE, notifyRetry).catch(() => {});
+  await boss.updateQueue(NOTIFY_QUEUE, notifyRetry).catch(() => {});
 
   // The conductor kickoff reacts to a video meeting starting by scheduling
   // the first meeting.conduct tick. The loop itself is code (below); the
