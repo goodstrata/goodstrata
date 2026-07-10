@@ -1,4 +1,4 @@
-import { CHAIR_NOTE_KINDS, COMMENT_ENTITY_TYPES } from "@goodstrata/shared";
+import { ANNOUNCEMENT_AUDIENCES, CHAIR_NOTE_KINDS, COMMENT_ENTITY_TYPES } from "@goodstrata/shared";
 import { z } from "zod";
 
 /**
@@ -304,7 +304,15 @@ export const eventDefs = {
     subject: z.string().nullable(),
     template: z.string().nullable(),
   }),
-  "announcement.published": lax,
+  /** A committee notice went out; the notifier fans it out to the audience. */
+  "announcement.published": z.object({
+    id: z.string(),
+    schemeId: z.string(),
+    title: z.string(),
+    audience: z.enum(ANNOUNCEMENT_AUDIENCES),
+    /** Full body — the notifier's email carries it without a re-read. */
+    body: z.string(),
+  }),
 
   // community board
   "community.post.created": z.object({

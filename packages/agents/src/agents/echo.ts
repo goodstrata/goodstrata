@@ -1,11 +1,13 @@
+import { announcementsService } from "@goodstrata/core";
 import { z } from "zod";
-import { agentPublish, defineAgentTool } from "../tool-factory.js";
+import { defineAgentTool } from "../tool-factory.js";
 import type { AgentDefinition } from "../types.js";
 
 /**
- * The tracer-bullet agent: reacts to scheme.created, writes a welcome note
- * onto the event log via a mutating tool. Proves the full loop —
- * event → dispatcher → pg-boss → runtime → tool → new event — end to end.
+ * The tracer-bullet agent: reacts to scheme.created and posts a real welcome
+ * announcement through the announcements service (row + announcement.published
+ * on the event log, in one transaction). Proves the full loop —
+ * event → dispatcher → pg-boss → runtime → tool → service → new event.
  */
 export const echoAgent: AgentDefinition = {
   name: "echo",
@@ -22,17 +24,24 @@ export const echoAgent: AgentDefinition = {
   tools(ctx) {
     return {
       postNote: defineAgentTool(ctx, {
-        description: "Post a note acknowledging the new scheme",
+        description: "Post a welcome announcement acknowledging the new scheme",
         inputSchema: z.object({ note: z.string().max(500) }),
         mutates: true,
         async execute(input) {
-          await agentPublish(ctx, {
-            schemeId: ctx.schemeId,
-            stream: ctx.triggerEvent.stream,
-            type: "announcement.published",
-            payload: { title: "Welcome to GoodStrata", body: input.note, audience: "all" },
-          });
-          return { ok: true };
+          if (!ctx.schemeId) {
+            return { ok: false, error: "trigger event carries no scheme" };
+          }
+          const announcement = await announcementsService.createAnnouncement(
+            ctx.services,
+            ctx.schemeId,
+            {
+              title: "Welcome to GoodStrata",
+              body: input.note,
+              audience: "all",
+              publish: true,
+            },
+          );
+          return { ok: true, announcementId: announcement.id };
         },
       }),
     };

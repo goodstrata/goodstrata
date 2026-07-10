@@ -266,6 +266,14 @@ export const COMPLAINT_EVENT_KINDS = [
 ] as const;
 export type ComplaintEventKind = (typeof COMPLAINT_EVENT_KINDS)[number];
 
+/**
+ * Who a committee announcement is addressed to (and who may read it):
+ * "all" — every scheme member; "owners" — lot owners (plus the officer tier);
+ * "committee" — the officer tier only.
+ */
+export const ANNOUNCEMENT_AUDIENCES = ["all", "owners", "committee"] as const;
+export type AnnouncementAudience = (typeof ANNOUNCEMENT_AUDIENCES)[number];
+
 export const MESSAGE_CHANNELS = ["email", "sms", "in_app", "post"] as const;
 export type MessageChannel = (typeof MESSAGE_CHANNELS)[number];
 

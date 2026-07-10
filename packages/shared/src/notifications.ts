@@ -7,7 +7,6 @@
  * unit (the coarse `category` lumps compliance and community together).
  */
 
-/** The nine notifier event types users can tune (the matrix rows). */
 /** The notifier event types users can tune (the matrix rows). */
 export const NOTIFICATION_TYPES = [
   "maintenance.request.created",
@@ -20,6 +19,7 @@ export const NOTIFICATION_TYPES = [
   "community.comment.created",
   "entity.comment.created",
   "conversation.message.sent",
+  "announcement.published",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -58,6 +58,7 @@ export const NOTIFICATION_DEFAULTS: Record<
   // A reply on a matter you raised (or are handling) is actionable — email on.
   "entity.comment.created": { in_app: true, email: true, sms: false },
   "conversation.message.sent": { in_app: true, email: true, sms: false },
+  "announcement.published": { in_app: true, email: true, sms: false },
 };
 
 /**
@@ -96,7 +97,7 @@ export const NOTIFICATION_GROUPS = [
   {
     key: "community",
     label: "Community",
-    types: ["community.comment.created"],
+    types: ["community.comment.created", "announcement.published"],
   },
   {
     key: "messages",
@@ -163,5 +164,10 @@ export const NOTIFICATION_TYPE_META: Record<
     label: "Private messages",
     help: "When someone sends you a private message.",
     group: "messages",
+  },
+  "announcement.published": {
+    label: "Committee announcements",
+    help: "When the committee posts a notice to your building.",
+    group: "community",
   },
 };

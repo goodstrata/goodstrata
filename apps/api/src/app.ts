@@ -7,6 +7,7 @@ import type { AppDeps } from "./deps.js";
 import { mcpRoutes } from "./mcp/index.js";
 import { type AppEnv, requireAuth } from "./middleware.js";
 import { agentRunsRoutes } from "./routes/agents.js";
+import { announcementsRoutes } from "./routes/announcements.js";
 import { communityRoutes } from "./routes/community.js";
 import { complianceRoutes } from "./routes/compliance.js";
 import { devRoutes } from "./routes/dev.js";
@@ -61,6 +62,7 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", grievancesRoutes(deps))
     .route("/schemes", complianceRoutes(deps))
     .route("/schemes", communityRoutes(deps))
+    .route("/schemes", announcementsRoutes(deps))
     .route("/schemes", meetingsRoutes(deps))
     .route("/schemes", messagingRoutes(deps))
     .route("/schemes", notificationsRoutes(deps))
