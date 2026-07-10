@@ -14,11 +14,13 @@ import {
   ownerships,
   paymentAllocations,
   people,
+  pushTokens,
   schemes,
   users,
   workOrders,
 } from "@goodstrata/db";
 import type { EventRecord } from "@goodstrata/events";
+import type { OutboundPush } from "@goodstrata/integrations";
 import {
   type CommentEntityType,
   formatCents,
@@ -203,16 +205,48 @@ async function sendNotifierSms(
 }
 
 /**
+ * Best-effort OS push to a batch of already-resolved device tokens. One
+ * provider call for the whole fan-out (the expo driver chunks ≤100 itself);
+ * tokens Expo reports DeviceNotRegistered are pruned here so the next
+ * delivery never retries a dead device. Transport failures only log — the
+ * bell row already exists.
+ */
+async function sendPush(ctx: ServiceContext, messages: OutboundPush[]): Promise<void> {
+  if (messages.length === 0) return;
+  try {
+    const outcome = await ctx.integrations.push.send(messages);
+    if (outcome.invalidTokens.length > 0) {
+      await ctx.db.delete(pushTokens).where(inArray(pushTokens.token, outcome.invalidTokens));
+    }
+  } catch (err) {
+    console.error("[notifier] push send failed", err);
+  }
+}
+
+/**
+ * The push `data` payload: the same deep-link anchor the in-app row carries
+ * ({ schemeId, category, related }), so the app's tap handler can route with
+ * the shared notification-target resolver.
+ */
+function pushData(
+  schemeId: string | null,
+  category: string,
+  related: { type: string; id: string } | null,
+): Record<string, unknown> {
+  return { schemeId, category, related };
+}
+
+/**
  * One delivery: resolve the candidate recipients into the channels each opted
  * into, write in-app rows for the in_app subset (idempotent on
- * `eventId:userId`), then email/SMS the subsets who chose those channels
- * through the comms log. Returns the count of in-app rows actually written
- * (the historical meaning of `created` — a redelivered event returns 0).
+ * `eventId:userId`), then email/SMS/push the subsets who chose those channels
+ * (email/SMS through the comms log). Returns the count of in-app rows actually
+ * written (the historical meaning of `created` — a redelivered event returns 0).
  *
  * Idempotency gate: an in-app recipient whose bell insert was absorbed by the
  * dedupe key was already delivered by an earlier attempt of this same event,
- * so their email/SMS are skipped too. (A recipient who opted OUT of in-app has
- * no token; their email/SMS stay best-effort.)
+ * so their email/SMS/push are skipped too. (A recipient who opted OUT of
+ * in-app has no token; their email/SMS stay best-effort.)
  */
 async function deliver(
   ctx: ServiceContext,
@@ -266,6 +300,21 @@ async function deliver(
       });
     }
   }
+
+  // Push mirrors the in-app content — every registered device of each
+  // recipient who kept the push channel on (redelivered events skip, same
+  // gate as email/SMS).
+  await sendPush(
+    ctx,
+    resolved.push
+      .filter((r) => !alreadyDelivered(r.userId))
+      .map((r) => ({
+        to: r.token,
+        title: content.inApp.title,
+        body: content.inApp.body,
+        data: pushData(content.schemeId, content.inApp.category, content.inApp.related ?? null),
+      })),
+  );
 
   return created.length;
 }
@@ -484,6 +533,21 @@ async function handleOrgObligationDue(
       related,
     });
   }
+
+  // Push: every registered device of each opted-in admin, anchored (like the
+  // email CTA) to a scheme they administer so the tap has somewhere to land.
+  await sendPush(
+    ctx,
+    resolved.push.map((r) => ({
+      to: r.token,
+      title,
+      body,
+      data: pushData(anchorScheme.get(r.userId) ?? null, "general", {
+        type: "compliance_obligation",
+        id: payload.obligationId,
+      }),
+    })),
+  );
 
   return { created };
 }

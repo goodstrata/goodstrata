@@ -81,3 +81,31 @@ export const notificationPreferences = pgTable(
     index("notification_preferences_user_idx").on(t.userId),
   ],
 );
+
+/**
+ * Expo push tokens, one row per device install. Per-USER (not per-scheme):
+ * a device belongs to a person, and the notifier fans out to every device a
+ * recipient has registered. The token itself is unique — a shared device that
+ * signs into another account re-points the existing row at the new user
+ * (upsert on token), so a stale account can never keep receiving pushes.
+ * Rows are pruned when Expo reports DeviceNotRegistered or on sign-out.
+ */
+export const pushTokens = pgTable(
+  "push_tokens",
+  {
+    id: pk(),
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Expo push token, e.g. "ExponentPushToken[…]" — one per device install. */
+    token: text().notNull().unique(),
+    /** ios | android — validated in the app layer, text like other enums. */
+    platform: text().notNull(),
+    /** Human device label ("Kim's iPhone") for a future device-management UI. */
+    deviceName: text(),
+    createdAt: createdAt(),
+    /** Bumped on every re-registration — a liveness signal for stale-token sweeps. */
+    lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("push_tokens_user_idx").on(t.userId)],
+);

@@ -1,4 +1,4 @@
-import { notificationPreferences, people, users } from "@goodstrata/db";
+import { notificationPreferences, people, pushTokens, users } from "@goodstrata/db";
 import {
   effectiveNotificationChannel,
   NOTIFICATION_DEFAULTS,
@@ -28,6 +28,11 @@ export interface ResolvedRecipients {
   email: Array<{ userId: string; email: string }>;
   /** users to SMS, with a resolved phone (pref on AND a number on file). */
   sms: Array<{ userId: string; phone: string }>;
+  /**
+   * Devices to push to — one entry per registered token (pref on AND at least
+   * one token on file), so a user with two devices appears twice.
+   */
+  push: Array<{ userId: string; token: string }>;
 }
 
 /**
@@ -101,7 +106,7 @@ export async function resolveRecipientChannels(
   notificationType: string,
 ): Promise<ResolvedRecipients> {
   const unique = [...new Set(userIds)];
-  if (unique.length === 0) return { inApp: [], email: [], sms: [] };
+  if (unique.length === 0) return { inApp: [], email: [], sms: [], push: [] };
 
   const overrides = await loadOverrides(ctx, unique, notificationType);
   const wants = (userId: string, channel: NotificationPrefChannel) =>
@@ -129,7 +134,19 @@ export async function resolveRecipientChannels(
     .filter((id) => phones.has(id))
     .map((id) => ({ userId: id, phone: phones.get(id)! }));
 
-  return { inApp, email, sms };
+  // Push: only for those who want push AND registered at least one device —
+  // the token-on-file gate, exactly parallel to SMS's phone-on-file gate.
+  const pushWanted = unique.filter((id) => wants(id, "push"));
+  const push: ResolvedRecipients["push"] = [];
+  if (pushWanted.length > 0) {
+    const tokenRows = await ctx.db.query.pushTokens.findMany({
+      where: inArray(pushTokens.userId, pushWanted),
+      columns: { userId: true, token: true },
+    });
+    for (const row of tokenRows) push.push({ userId: row.userId, token: row.token });
+  }
+
+  return { inApp, email, sms, push };
 }
 
 /** The effective (pref ⋁ default) matrix for one user across every type/channel. */
@@ -224,4 +241,61 @@ export async function resolveUserPhone(
   const phones = await resolvePhones(ctx, [userId]);
   const phone = phones.get(userId) ?? null;
   return { phone, hasPhone: phone !== null };
+}
+
+export interface RegisterPushTokenInput {
+  /** The device's Expo push token — the natural key. */
+  token: string;
+  platform: "ios" | "android";
+  deviceName?: string | null;
+}
+
+/**
+ * Register (or refresh) one device's push token for the session user. Upserts
+ * on the TOKEN, not the user: a shared device that signs into a different
+ * account re-points the row, so the previous account stops receiving pushes on
+ * that device immediately. `userId` is always the caller's session id.
+ */
+export async function registerPushToken(
+  ctx: ServiceContext,
+  userId: string,
+  input: RegisterPushTokenInput,
+) {
+  const now = ctx.clock.now();
+  const rows = await ctx.db
+    .insert(pushTokens)
+    .values({
+      userId,
+      token: input.token,
+      platform: input.platform,
+      deviceName: input.deviceName ?? null,
+    })
+    .onConflictDoUpdate({
+      target: pushTokens.token,
+      set: {
+        userId,
+        platform: input.platform,
+        deviceName: input.deviceName ?? null,
+        lastSeenAt: now,
+      },
+    })
+    .returning();
+  return rows[0]!;
+}
+
+/**
+ * Forget one device token (the sign-out path). Scoped to the session user so
+ * nobody can delete another account's registration; removing an unknown token
+ * is a no-op ({ removed: 0 }), which keeps sign-out idempotent.
+ */
+export async function removePushToken(
+  ctx: ServiceContext,
+  userId: string,
+  token: string,
+): Promise<{ removed: number }> {
+  const rows = await ctx.db
+    .delete(pushTokens)
+    .where(and(eq(pushTokens.userId, userId), eq(pushTokens.token, token)))
+    .returning({ id: pushTokens.id });
+  return { removed: rows.length };
 }

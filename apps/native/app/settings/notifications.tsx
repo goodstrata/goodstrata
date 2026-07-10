@@ -13,7 +13,7 @@ import {
 import { api, apiPatch } from "../../src/lib/api";
 
 // Mirrors GET/PATCH /profile/notification-preferences (apps/web NotificationsSection).
-type Channel = "in_app" | "email" | "sms";
+type Channel = "in_app" | "email" | "sms" | "push";
 interface PrefType {
   type: string;
   label: string;
@@ -36,10 +36,16 @@ const CHANNELS: { key: Channel; label: string }[] = [
   { key: "in_app", label: "In-app" },
   { key: "email", label: "Email" },
   { key: "sms", label: "SMS" },
+  { key: "push", label: "Push" },
 ];
 
 /** Immutably flip one (type, channel) in the cached payload for optimistic UI. */
-function withChannel(p: PrefsPayload, type: string, channel: Channel, enabled: boolean): PrefsPayload {
+function withChannel(
+  p: PrefsPayload,
+  type: string,
+  channel: Channel,
+  enabled: boolean,
+): PrefsPayload {
   return {
     ...p,
     groups: p.groups.map((g) => ({
@@ -67,7 +73,8 @@ export default function NotificationSettings() {
     onMutate: async (v) => {
       await queryClient.cancelQueries({ queryKey: PREFS_KEY });
       const prev = queryClient.getQueryData<PrefsPayload>(PREFS_KEY);
-      if (prev) queryClient.setQueryData(PREFS_KEY, withChannel(prev, v.type, v.channel, v.enabled));
+      if (prev)
+        queryClient.setQueryData(PREFS_KEY, withChannel(prev, v.type, v.channel, v.enabled));
       return { prev };
     },
     onError: (_e, _v, ctx) => {
@@ -115,7 +122,9 @@ export default function NotificationSettings() {
                     type={ty}
                     smsAvailable={data.smsAvailable}
                     divider={i < group.types.length - 1}
-                    onToggle={(channel, enabled) => patch.mutate({ type: ty.type, channel, enabled })}
+                    onToggle={(channel, enabled) =>
+                      patch.mutate({ type: ty.type, channel, enabled })
+                    }
                   />
                 ))}
               </Card>

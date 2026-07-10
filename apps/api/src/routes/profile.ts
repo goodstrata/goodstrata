@@ -62,6 +62,15 @@ const prefPatchSchema = z.union([
   z.object({ updates: z.array(prefUpdateSchema).min(1).max(64) }),
 ]);
 
+/** One device registration: the Expo token is the natural key (upsert target). */
+const pushTokenRegisterSchema = z.object({
+  token: z.string().min(1).max(4096),
+  platform: z.enum(["ios", "android"]),
+  deviceName: z.string().max(200).nullish(),
+});
+
+const pushTokenDeleteSchema = z.object({ token: z.string().min(1).max(4096) });
+
 /**
  * Compose the settings payload from the shared registry (groups/labels/help) +
  * the user's effective matrix (pref row ⋁ default) + their phone-on-file state.
@@ -239,6 +248,35 @@ export function profileRoutes(deps: AppDeps) {
           });
         }
         return c.json(await notificationPreferencesPayload(deps, user.id));
+      })
+      // Register (or refresh) this device's Expo push token for the SESSION
+      // user. Tokens are per-user, never scheme-scoped — the notifier fans out
+      // to every device of a recipient. Upsert on token: a shared device that
+      // signs into another account re-points the row (see the service note).
+      .post("/push-tokens", zv("json", pushTokenRegisterSchema), async (c) => {
+        const user = c.get("user");
+        const body = c.req.valid("json");
+        const ctx = deps.serviceContext(userActor(user.id));
+        const row = await notificationPreferencesService.registerPushToken(ctx, user.id, {
+          token: body.token,
+          platform: body.platform,
+          deviceName: body.deviceName ?? null,
+        });
+        return c.json({ id: row.id, platform: row.platform }, 201);
+      })
+      // Forget this device (the sign-out path). Only the session user's own
+      // registration can be removed; an unknown token is a no-op, so sign-out
+      // stays idempotent even after a server-side prune.
+      .delete("/push-tokens", zv("json", pushTokenDeleteSchema), async (c) => {
+        const user = c.get("user");
+        const body = c.req.valid("json");
+        const ctx = deps.serviceContext(userActor(user.id));
+        const { removed } = await notificationPreferencesService.removePushToken(
+          ctx,
+          user.id,
+          body.token,
+        );
+        return c.json({ ok: true, removed });
       })
   );
 }

@@ -36,10 +36,12 @@ export const NOTIFICATION_TYPES = [
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /**
- * Deliverable channels for a preference. A subset of `MESSAGE_CHANNELS` —
- * "post" is not a live notifier channel and is excluded.
+ * Deliverable channels for a preference. Overlaps `MESSAGE_CHANNELS` ("post"
+ * is not a live notifier channel and is excluded) plus "push" — OS push to the
+ * member app's registered devices, resolved at send time like SMS's
+ * phone-on-file gate: the pref can be on, but nothing sends without a token.
  */
-export const NOTIFICATION_PREF_CHANNELS = ["in_app", "email", "sms"] as const;
+export const NOTIFICATION_PREF_CHANNELS = ["in_app", "email", "sms", "push"] as const;
 export type NotificationPrefChannel = (typeof NOTIFICATION_PREF_CHANNELS)[number];
 
 /**
@@ -54,43 +56,47 @@ export type NotificationPrefChannel = (typeof NOTIFICATION_PREF_CHANNELS)[number
  *    so urgent/decision/compliance/arrears default SMS-on; chatty/informational
  *    default SMS-off (and email-off where it's noise). SMS still cannot fire
  *    without a phone on file (resolved at send time).
+ *  - Push mirrors in_app (ON for every type today): registering a device is
+ *    itself the opt-in signal, and like SMS it cannot fire without a token on
+ *    file — so a push-on default only reaches people who installed the app.
  */
 export const NOTIFICATION_DEFAULTS: Record<
   NotificationType,
   Record<NotificationPrefChannel, boolean>
 > = {
-  "decision.requested": { in_app: true, email: true, sms: true },
-  "compliance.obligation.due": { in_app: true, email: true, sms: true },
-  "arrears.stage.reached": { in_app: true, email: true, sms: true },
-  "levy.notice.issued": { in_app: true, email: true, sms: false },
-  "minutes.drafted": { in_app: true, email: true, sms: false },
-  "maintenance.request.created": { in_app: true, email: true, sms: false },
-  "work_order.dispatched": { in_app: true, email: false, sms: false },
-  "community.comment.created": { in_app: true, email: false, sms: false },
+  "decision.requested": { in_app: true, email: true, sms: true, push: true },
+  "compliance.obligation.due": { in_app: true, email: true, sms: true, push: true },
+  "arrears.stage.reached": { in_app: true, email: true, sms: true, push: true },
+  "levy.notice.issued": { in_app: true, email: true, sms: false, push: true },
+  "minutes.drafted": { in_app: true, email: true, sms: false, push: true },
+  "maintenance.request.created": { in_app: true, email: true, sms: false, push: true },
+  "work_order.dispatched": { in_app: true, email: false, sms: false, push: true },
+  "community.comment.created": { in_app: true, email: false, sms: false, push: true },
   // A reply on a matter you raised (or are handling) is actionable — email on.
-  "entity.comment.created": { in_app: true, email: true, sms: false },
-  "conversation.message.sent": { in_app: true, email: true, sms: false },
-  "announcement.published": { in_app: true, email: true, sms: false },
+  "entity.comment.created": { in_app: true, email: true, sms: false, push: true },
+  "conversation.message.sent": { in_app: true, email: true, sms: false, push: true },
+  "announcement.published": { in_app: true, email: true, sms: false, push: true },
   // Personally-addressed confirmations default to email-on (people expect a
   // receipt / "your job is done" in their inbox); SMS stays opt-in.
-  "work_order.completed": { in_app: true, email: true, sms: false },
-  "payment.received": { in_app: true, email: true, sms: false },
+  "work_order.completed": { in_app: true, email: true, sms: false, push: true },
+  "payment.received": { in_app: true, email: true, sms: false, push: true },
   // Calendar heads-ups default to bell-only: the statutory meeting notice is
   // already a mandatory email blast (meetings.sendMeetingNotice), so the
   // notifier's email for these two is strictly opt-in — no double letterbox.
-  "meeting.scheduled": { in_app: true, email: false, sms: false },
-  "meeting.notice.issued": { in_app: true, email: false, sms: false },
-  "decision.resolved": { in_app: true, email: true, sms: false },
-  "decision.expired": { in_app: true, email: true, sms: false },
-  "complaint.filed": { in_app: true, email: true, sms: false },
+  "meeting.scheduled": { in_app: true, email: false, sms: false, push: true },
+  "meeting.notice.issued": { in_app: true, email: false, sms: false, push: true },
+  "decision.resolved": { in_app: true, email: true, sms: false, push: true },
+  "decision.expired": { in_app: true, email: true, sms: false, push: true },
+  "complaint.filed": { in_app: true, email: true, sms: false, push: true },
   // Ops signal for admins — the bell + email, never a text.
-  "agent.run.failed": { in_app: true, email: true, sms: false },
+  "agent.run.failed": { in_app: true, email: true, sms: false, push: true },
   // Owner motion submissions: actionable for officers / the submitter — email on.
-  "agenda_item.submitted": { in_app: true, email: true, sms: false },
-  "agenda_item.accepted": { in_app: true, email: true, sms: false },
-  "agenda_item.rejected": { in_app: true, email: true, sms: false },
-  // A live-meeting prompt for officers, not correspondence — bell only.
-  "motion.close.proposed": { in_app: true, email: false, sms: false },
+  "agenda_item.submitted": { in_app: true, email: true, sms: false, push: true },
+  "agenda_item.accepted": { in_app: true, email: true, sms: false, push: true },
+  "agenda_item.rejected": { in_app: true, email: true, sms: false, push: true },
+  // A live-meeting prompt for officers, not correspondence — bell only (+push:
+  // it mirrors the bell and is exactly the surface a live nudge should reach).
+  "motion.close.proposed": { in_app: true, email: false, sms: false, push: true },
 };
 
 /**
