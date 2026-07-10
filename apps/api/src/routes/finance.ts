@@ -7,6 +7,8 @@ import {
   leviesService,
   paymentsService,
   recordManualPaymentInput,
+  refundPaymentInput,
+  writeOffNoticeInput,
 } from "@goodstrata/core";
 import { userActor } from "@goodstrata/shared";
 import { Hono } from "hono";
@@ -78,6 +80,24 @@ export function financeRoutes(deps: AppDeps) {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({ notices: await leviesService.listNotices(ctx, c.get("schemeId")) });
       })
+      // Write off an uncollectible levy notice: status transition, balancing
+      // ledger adjustment and a typed event, all committed together.
+      .post(
+        "/:schemeId/levy-notices/:noticeId/write-off",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", writeOffNoticeInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const result = await leviesService.writeOffLevyNotice(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("noticeId"),
+            c.req.valid("json").reason,
+          );
+          return c.json(result);
+        },
+      )
       .get("/:schemeId/payments", requireSchemeMember(deps), async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({ payments: await paymentsService.listPayments(ctx, c.get("schemeId")) });
@@ -118,6 +138,24 @@ export function financeRoutes(deps: AppDeps) {
             c.get("schemeId"),
             c.req.param("paymentId"),
             c.req.valid("json").levyNoticeId,
+          );
+          return c.json(result);
+        },
+      )
+      // Refund/reverse a recorded payment: allocations, ledger credits and
+      // fund splits are unwound and a typed event published, idempotently.
+      .post(
+        "/:schemeId/payments/:paymentId/refund",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", refundPaymentInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const result = await paymentsService.refundPayment(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("paymentId"),
+            c.req.valid("json").reason,
           );
           return c.json(result);
         },

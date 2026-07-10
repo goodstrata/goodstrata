@@ -22,7 +22,7 @@ import {
   type SchemeParty,
   type StatementDoc,
 } from "@goodstrata/integrations/pdf";
-import { toDateOnly, userActor } from "@goodstrata/shared";
+import { formatCents, toDateOnly, userActor } from "@goodstrata/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -146,6 +146,27 @@ export function documentsPdfRoutes(deps: AppDeps) {
 
           const { billTo } = await billToForLot(deps, ctx, schemeId, notice.lotId);
 
+          // Ledger-derived arrears context: what the lot owes BEYOND this
+          // notice (older notices, adjustments, posted penalty interest), and
+          // how much of that is interest — so the printed notice reconciles
+          // exactly with the lot statement.
+          const allocs = await deps.db.query.paymentAllocations.findMany({
+            where: eq(paymentAllocations.levyNoticeId, notice.id),
+          });
+          const allocated = allocs.reduce((a, r) => a + r.amountCents, 0);
+          const noticeOpen = ["issued", "partially_paid", "overdue"].includes(notice.status);
+          const noticeOutstanding = noticeOpen ? Math.max(0, notice.totalCents - allocated) : 0;
+          const statement = await arrearsService.lotStatement(ctx, schemeId, notice.lotId);
+          const priorBalanceCents = Math.max(0, statement.balanceCents - noticeOutstanding);
+          const postedInterestCents = statement.entries
+            .filter((e) => e.kind === "interest")
+            .reduce((a, e) => a + e.amountCents, 0);
+          const unpaidInterestCents = Math.min(priorBalanceCents, Math.max(0, postedInterestCents));
+          const interestNote =
+            unpaidInterestCents > 0
+              ? `The prior balance includes ${formatCents(unpaidInterestCents)} of penalty interest charged on overdue levies (Owners Corporations Act 2006 (Vic) s 29).`
+              : null;
+
           const doc: LevyNoticeDoc = {
             scheme: mapScheme(scheme),
             billTo,
@@ -173,6 +194,8 @@ export function documentsPdfRoutes(deps: AppDeps) {
               payid: trust?.payidRoot ?? null,
               accountName: scheme.name,
             },
+            priorBalanceCents,
+            interestNote,
           };
 
           const pdf = await buildLevyNoticePdf(doc);

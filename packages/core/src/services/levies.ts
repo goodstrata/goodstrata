@@ -6,12 +6,14 @@ import {
   lotLedgerEntries,
   lots,
   ownerships,
+  paymentAllocations,
   people,
   schemes,
 } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
+import { buildLevyNoticePdf, type LevyNoticeDoc } from "@goodstrata/integrations/pdf";
 import { addMonthsDateOnly, formatCents, type LevyFrequency, toDateOnly } from "@goodstrata/shared";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import {
@@ -26,6 +28,7 @@ import { calculateLevyRun } from "../engines/levy-calc.js";
 import { DomainError, notFound } from "../errors.js";
 import { getAdoptedBudgetFunds } from "./budgets.js";
 import { sendEmail } from "./comms.js";
+import { uploadDocument } from "./documents.js";
 import { ensureSchemeTrustAccount } from "./trustAccounts.js";
 
 const INSTALMENTS: Record<LevyFrequency, number> = {
@@ -140,6 +143,7 @@ export async function issueLevyRun(
     lotId: string;
     totalCents: number;
     payid: string | null;
+    lines: { fundKind: string; description: string; amountCents: number }[];
     recipientEmail: string | null;
     recipientName: string | null;
     recipientPersonId: string | null;
@@ -179,6 +183,22 @@ export async function issueLevyRun(
   );
 
   await ctx.db.transaction(async (tx) => {
+    // The instalment period opens once per run, ahead of the per-lot notices.
+    await publishEvent(tx, {
+      schemeId,
+      stream: `levy_schedule:${scheduleId}`,
+      type: "levy.period.opened",
+      payload: {
+        levyScheduleId: scheduleId,
+        budgetId: schedule.budgetId,
+        instalment,
+        dueOn,
+        noticeCount: prepared.length,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
     for (const { entry, noticeNumber, payid } of prepared) {
       const noticeRows = await tx
         .insert(levyNotices)
@@ -197,14 +217,13 @@ export async function issueLevyRun(
         .returning();
       const notice = noticeRows[0]!;
 
-      await tx.insert(levyNoticeLines).values(
-        entry.lines.map((line) => ({
-          levyNoticeId: notice.id,
-          fundKind: line.fundKind,
-          description: `${line.fundKind === "admin" ? "Administration" : "Maintenance"} fund levy`,
-          amountCents: line.amountCents,
-        })),
-      );
+      const lineRows = entry.lines.map((line) => ({
+        levyNoticeId: notice.id,
+        fundKind: line.fundKind,
+        description: `${line.fundKind === "admin" ? "Administration" : "Maintenance"} fund levy`,
+        amountCents: line.amountCents,
+      }));
+      await tx.insert(levyNoticeLines).values(lineRows);
 
       // The charge hits the lot ledger the moment the notice issues.
       await tx.insert(lotLedgerEntries).values({
@@ -239,12 +258,69 @@ export async function issueLevyRun(
         lotId: entry.lotId,
         totalCents: entry.totalCents,
         payid,
+        lines: lineRows.map((l) => ({
+          fundKind: l.fundKind,
+          description: l.description,
+          amountCents: l.amountCents,
+        })),
         recipientEmail: recipient?.email ?? null,
         recipientName: recipient?.name ?? null,
         recipientPersonId: recipient?.personId ?? null,
       });
     }
   });
+
+  // Persist each notice as a stored PDF (audit copy) after commit — the notice
+  // and its ledger charge exist regardless of PDF fate; the on-demand PDF
+  // route still renders live. Stored at accessLevel "admin": a levy notice is
+  // one lot's personal financial record, and "owners" would expose it to EVERY
+  // owner in the scheme (s146 access tiers).
+  for (const notice of issued) {
+    try {
+      const lot = lotRows.find((l) => l.id === notice.lotId)!;
+      const pdf = await buildLevyNoticePdf({
+        scheme: schemeParty(scheme),
+        billTo: {
+          name: notice.recipientName ?? "Lot owner",
+          email: notice.recipientEmail,
+        },
+        lot: {
+          lotNumber: lot.lotNumber,
+          unitNumber: lot.unitNumber,
+          streetAddress: lot.streetAddress,
+        },
+        notice: {
+          noticeNumber: notice.noticeNumber,
+          issuedAt: ctx.clock.now(),
+          dueOn,
+          instalment,
+          totalCents: notice.totalCents,
+        },
+        lines: notice.lines,
+        payment: {
+          reference: notice.payid,
+          bsb: account.bsb || null,
+          accountNumber: account.accountNumber || null,
+          payid: account.payidRoot,
+          accountName: scheme.name,
+        },
+      });
+      const doc = await uploadDocument(ctx, schemeId, {
+        filename: `Levy-Notice-${notice.noticeNumber}.pdf`,
+        contentType: "application/pdf",
+        content: new Uint8Array(pdf),
+        category: "levy_notice",
+        accessLevel: "admin",
+        title: `Levy notice ${notice.noticeNumber}`,
+      });
+      await ctx.db
+        .update(levyNotices)
+        .set({ documentId: doc.id })
+        .where(eq(levyNotices.id, notice.levyNoticeId));
+    } catch (err) {
+      console.error(`[levies] failed to persist PDF for ${notice.noticeNumber}`, err);
+    }
+  }
 
   // Emails after commit — the notice exists regardless of email fate.
   const financeUrl = `${emailBrand.urls.app}/schemes/${schemeId}?section=finance`;
@@ -334,9 +410,170 @@ async function levyRecipientForLot(
   };
 }
 
+/** Map a scheme row onto the PDF renderer's issuer party. */
+function schemeParty(scheme: typeof schemes.$inferSelect): LevyNoticeDoc["scheme"] {
+  return {
+    name: scheme.name,
+    planOfSubdivision: scheme.planOfSubdivision,
+    addressLine1: scheme.addressLine1,
+    addressLine2: scheme.addressLine2,
+    suburb: scheme.suburb,
+    state: scheme.state,
+    postcode: scheme.postcode,
+    abn: scheme.abn,
+    gstRegistered: scheme.gstRegistered,
+  };
+}
+
 export async function listNotices(ctx: ServiceContext, schemeId: string) {
   return await ctx.db.query.levyNotices.findMany({
     where: eq(levyNotices.schemeId, schemeId),
     orderBy: (t, { desc }) => desc(t.createdAt),
+  });
+}
+
+export const writeOffNoticeInput = z.object({
+  /** Why the debt is uncollectible — goes on the ledger and the event log. */
+  reason: z.string().trim().min(1).max(500),
+});
+export type WriteOffNoticeInput = z.infer<typeof writeOffNoticeInput>;
+
+export interface WriteOffResult {
+  levyNoticeId: string;
+  /** Unpaid levy principal cleared by the balancing adjustment. */
+  writtenOffCents: number;
+  /** Stranded penalty interest cleared alongside (0 when none). */
+  interestWrittenOffCents: number;
+  /** True when the notice was already written off — the call was a no-op. */
+  alreadyWrittenOff: boolean;
+}
+
+/**
+ * Write off an uncollectible levy notice: transition it to `written_off`,
+ * post a balancing lot-ledger adjustment for the unpaid remainder, and — when
+ * the lot has no other open notices — clear any stranded penalty interest so
+ * the lot account squares to zero instead of carrying an uncollectible tail.
+ * Idempotent: a repeat call on a written-off notice is a no-op; the
+ * compare-and-set status flip serializes concurrent write-offs.
+ */
+export async function writeOffLevyNotice(
+  ctx: ServiceContext,
+  schemeId: string,
+  noticeId: string,
+  reason: string,
+): Promise<WriteOffResult> {
+  const notice = await ctx.db.query.levyNotices.findFirst({
+    where: and(eq(levyNotices.id, noticeId), eq(levyNotices.schemeId, schemeId)),
+  });
+  if (!notice) throw notFound("Levy notice");
+
+  const today = toDateOnly(ctx.clock.now());
+
+  return await ctx.db.transaction(async (tx) => {
+    // Compare-and-set: only an OPEN notice flips. Concurrent write-offs (or a
+    // racing payment application) serialize on the row lock — the loser sees
+    // 0 rows and never double-posts the adjustment.
+    const flipped = await tx
+      .update(levyNotices)
+      .set({ status: "written_off" })
+      .where(
+        and(
+          eq(levyNotices.id, notice.id),
+          inArray(levyNotices.status, ["issued", "partially_paid", "overdue"]),
+        ),
+      )
+      .returning({ id: levyNotices.id });
+    if (flipped.length === 0) {
+      const current = await tx.query.levyNotices.findFirst({
+        where: eq(levyNotices.id, notice.id),
+      });
+      if (current?.status === "written_off") {
+        return {
+          levyNoticeId: notice.id,
+          writtenOffCents: 0,
+          interestWrittenOffCents: 0,
+          alreadyWrittenOff: true,
+        };
+      }
+      throw new DomainError(
+        "NOTICE_NOT_OPEN",
+        `Notice ${notice.noticeNumber} is ${current?.status ?? "unknown"} — only an open notice can be written off`,
+        422,
+      );
+    }
+
+    const allocations = await tx.query.paymentAllocations.findMany({
+      where: eq(paymentAllocations.levyNoticeId, notice.id),
+    });
+    const allocated = allocations.reduce((a, r) => a + r.amountCents, 0);
+    const outstanding = Math.max(0, notice.totalCents - allocated);
+
+    if (outstanding > 0) {
+      await tx.insert(lotLedgerEntries).values({
+        schemeId,
+        lotId: notice.lotId,
+        kind: "adjustment",
+        amountCents: -outstanding,
+        levyNoticeId: notice.id,
+        note: `Levy notice ${notice.noticeNumber} written off: ${reason}`,
+        effectiveOn: today,
+      });
+    }
+
+    // If this was the lot's last open notice, any remaining positive balance
+    // is penalty interest accrued on the debt just written off — equally
+    // uncollectible, so clear it rather than stranding it on the account.
+    let interestWrittenOff = 0;
+    const otherOpen = await tx.query.levyNotices.findFirst({
+      where: and(
+        eq(levyNotices.schemeId, schemeId),
+        eq(levyNotices.lotId, notice.lotId),
+        inArray(levyNotices.status, ["issued", "partially_paid", "overdue"]),
+      ),
+    });
+    if (!otherOpen) {
+      const balanceRows = await tx
+        .select({ balance: sql<string>`coalesce(sum(${lotLedgerEntries.amountCents}), 0)` })
+        .from(lotLedgerEntries)
+        .where(
+          and(eq(lotLedgerEntries.schemeId, schemeId), eq(lotLedgerEntries.lotId, notice.lotId)),
+        );
+      const remaining = Number(balanceRows[0]?.balance ?? 0);
+      if (remaining > 0) {
+        interestWrittenOff = remaining;
+        await tx.insert(lotLedgerEntries).values({
+          schemeId,
+          lotId: notice.lotId,
+          kind: "adjustment",
+          amountCents: -remaining,
+          levyNoticeId: notice.id,
+          note: `Accrued penalty interest written off with notice ${notice.noticeNumber}: ${reason}`,
+          effectiveOn: today,
+        });
+      }
+    }
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `levy_notice:${notice.id}`,
+      type: "levy.notice.written_off",
+      payload: {
+        levyNoticeId: notice.id,
+        lotId: notice.lotId,
+        noticeNumber: notice.noticeNumber,
+        writtenOffCents: outstanding,
+        interestWrittenOffCents: interestWrittenOff,
+        reason,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return {
+      levyNoticeId: notice.id,
+      writtenOffCents: outstanding,
+      interestWrittenOffCents: interestWrittenOff,
+      alreadyWrittenOff: false,
+    };
   });
 }
