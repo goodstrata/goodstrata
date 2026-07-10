@@ -4,8 +4,11 @@ import {
   createBudgetInput,
   createLevyScheduleInput,
   decisionsService,
+  executePayoutInput,
+  invoicesService,
   leviesService,
   paymentsService,
+  recordInvoiceInput,
   recordManualPaymentInput,
 } from "@goodstrata/core";
 import { userActor } from "@goodstrata/shared";
@@ -16,6 +19,8 @@ import { type AppEnv, requireRole, requireSchemeMember } from "../middleware.js"
 import { zv } from "../validate.js";
 
 const officerOrAdmin = requireRole("chair", "secretary", "treasurer");
+// Moving money out is the treasurer's act alone (manager_admin always passes).
+const treasurerOrAdmin = requireRole("treasurer");
 
 export function financeRoutes(deps: AppDeps) {
   return (
@@ -118,6 +123,56 @@ export function financeRoutes(deps: AppDeps) {
             c.get("schemeId"),
             c.req.param("paymentId"),
             c.req.valid("json").levyNoticeId,
+          );
+          return c.json(result);
+        },
+      )
+      // Accounts payable — supplier invoices. Member-visible reads (owners can
+      // see where their money goes); recording is an officer act.
+      .get("/:schemeId/invoices", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json({ invoices: await invoicesService.listInvoices(ctx, c.get("schemeId")) });
+      })
+      .post(
+        "/:schemeId/invoices",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", recordInvoiceInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const result = await invoicesService.recordInvoice(
+            ctx,
+            c.get("schemeId"),
+            c.req.valid("json"),
+          );
+          return c.json(result, 201);
+        },
+      )
+      .get("/:schemeId/invoices/:invoiceId", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json(
+          await invoicesService.getInvoice(ctx, c.get("schemeId"), c.req.param("invoiceId")),
+        );
+      })
+      .get("/:schemeId/payouts", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json({ payouts: await invoicesService.listPayouts(ctx, c.get("schemeId")) });
+      })
+      // Manual payout rail: the treasurer records that the approved transfer
+      // was made (bank reference + date). Settles the payout, marks the
+      // invoice paid, posts the fund outflow — the reconciliation's cash-out side.
+      .post(
+        "/:schemeId/payouts/:payoutId/execute",
+        requireSchemeMember(deps),
+        treasurerOrAdmin,
+        zv("json", executePayoutInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const result = await invoicesService.executePayout(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("payoutId"),
+            c.req.valid("json"),
           );
           return c.json(result);
         },
