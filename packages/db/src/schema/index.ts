@@ -4,6 +4,7 @@ export * from "./community.js";
 export * from "./compliance.js";
 export * from "./contractors.js";
 export * from "./documents.js";
+export * from "./entityComments.js";
 export * from "./finance.js";
 export * from "./grievances.js";
 export * from "./insurance.js";

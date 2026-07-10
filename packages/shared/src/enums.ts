@@ -243,6 +243,15 @@ export type BreachNoticeType = (typeof BREACH_NOTICE_TYPES)[number];
 export const BREACH_NOTICE_STATUSES = ["issued", "rectified", "escalated", "withdrawn"] as const;
 export type BreachNoticeStatus = (typeof BREACH_NOTICE_STATUSES)[number];
 
+/**
+ * Entities that carry a member-facing comment thread (entity_comments). A
+ * maintenance-request thread is between the requester and the officers; a
+ * complaint thread is between the complainant and the officers (never the
+ * respondent).
+ */
+export const COMMENT_ENTITY_TYPES = ["maintenance_request", "complaint"] as const;
+export type CommentEntityType = (typeof COMMENT_ENTITY_TYPES)[number];
+
 /** Kinds of entry in a complaint's audit trail. */
 export const COMPLAINT_EVENT_KINDS = [
   "filed",

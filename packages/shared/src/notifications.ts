@@ -7,7 +7,7 @@
  * unit (the coarse `category` lumps compliance and community together).
  */
 
-/** The eight notifier event types users can tune (the matrix rows). */
+/** The nine notifier event types users can tune (the matrix rows). */
 export const NOTIFICATION_TYPES = [
   "maintenance.request.created",
   "work_order.dispatched",
@@ -17,6 +17,7 @@ export const NOTIFICATION_TYPES = [
   "decision.requested",
   "minutes.drafted",
   "community.comment.created",
+  "entity.comment.created",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -52,6 +53,8 @@ export const NOTIFICATION_DEFAULTS: Record<
   "maintenance.request.created": { in_app: true, email: true, sms: false },
   "work_order.dispatched": { in_app: true, email: false, sms: false },
   "community.comment.created": { in_app: true, email: false, sms: false },
+  // A reply on a matter you raised (or are handling) is actionable — email on.
+  "entity.comment.created": { in_app: true, email: true, sms: false },
 };
 
 /**
@@ -75,7 +78,7 @@ export const NOTIFICATION_GROUPS = [
   {
     key: "building",
     label: "Your building",
-    types: ["maintenance.request.created", "work_order.dispatched"],
+    types: ["maintenance.request.created", "work_order.dispatched", "entity.comment.created"],
   },
   {
     key: "money",
@@ -142,5 +145,10 @@ export const NOTIFICATION_TYPE_META: Record<
     label: "Community replies",
     help: "When someone replies to your board post.",
     group: "community",
+  },
+  "entity.comment.created": {
+    label: "Request & complaint replies",
+    help: "When someone replies on a maintenance request or complaint you're part of.",
+    group: "building",
   },
 };

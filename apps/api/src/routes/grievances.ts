@@ -1,9 +1,13 @@
 import {
   advanceComplaintInput,
+  createEntityCommentInput,
+  entityCommentsService,
   fileComplaintInput,
   grievancesService,
   issueBreachNoticeInput,
+  THREAD_OFFICER_ROLES,
 } from "@goodstrata/core";
+import type { MembershipRole } from "@goodstrata/shared";
 import { userActor } from "@goodstrata/shared";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -13,6 +17,14 @@ import { zv } from "../validate.js";
 
 /** Officers run the grievance procedure; any member may lodge a complaint. */
 const officerOrAdmin = requireRole("chair", "secretary", "treasurer");
+
+/**
+ * Officer verdict for the comment-thread endpoints. Middleware can't express
+ * "complainant OR officer", so the service enforces it (non-participants —
+ * the respondent included — get 404, never 403).
+ */
+const isThreadOfficer = (roles: MembershipRole[]) =>
+  roles.some((r) => THREAD_OFFICER_ROLES.includes(r));
 
 const reportQuery = z.object({
   from: z.string().optional(),
@@ -83,6 +95,47 @@ export function grievancesRoutes(deps: AppDeps) {
           return c.json({ complaint });
         },
       )
+      // Comment thread on a complaint — the complainant and the officer tier
+      // only; participation (and 404 confidentiality) enforced in the service.
+      .get("/:schemeId/complaints/:complaintId/comments", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const comments = await entityCommentsService.listComments(
+          ctx,
+          c.get("schemeId"),
+          "complaint",
+          c.req.param("complaintId"),
+          { userId: c.get("user").id, isOfficer: isThreadOfficer(c.get("roles")) },
+        );
+        return c.json({ comments });
+      })
+      .post(
+        "/:schemeId/complaints/:complaintId/comments",
+        requireSchemeMember(deps),
+        zv("json", createEntityCommentInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const result = await entityCommentsService.addComment(
+            ctx,
+            c.get("schemeId"),
+            "complaint",
+            c.req.param("complaintId"),
+            { userId: c.get("user").id, isOfficer: isThreadOfficer(c.get("roles")) },
+            c.req.valid("json"),
+          );
+          return c.json(result, 201);
+        },
+      )
+      // Soft-delete: the author retracts their own; officers moderate any.
+      .delete("/:schemeId/complaints/comments/:commentId", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const result = await entityCommentsService.deleteComment(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("commentId"),
+          { userId: c.get("user").id, isOfficer: isThreadOfficer(c.get("roles")) },
+        );
+        return c.json(result);
+      })
       .get("/:schemeId/breach-notices", requireSchemeMember(deps), officerOrAdmin, async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({

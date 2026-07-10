@@ -22,6 +22,9 @@ export * as complianceService from "./services/compliance.js";
 export { raiseObligationInput } from "./services/compliance.js";
 export * as decisionsService from "./services/decisions.js";
 export * as documentsService from "./services/documents.js";
+export type { EntityCommentView, ThreadAccess } from "./services/entityComments.js";
+export * as entityCommentsService from "./services/entityComments.js";
+export { createEntityCommentInput, THREAD_OFFICER_ROLES } from "./services/entityComments.js";
 export * as grievancesService from "./services/grievances.js";
 export {
   advanceComplaintInput,
