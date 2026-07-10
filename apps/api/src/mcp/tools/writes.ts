@@ -11,14 +11,10 @@
  * These are the SAFE writes: they create records or open a human decision gate,
  * but none of them move money, issue a statutory notice, or resolve a vote.
  *
- * TODO(v1.1): the money-moving / statutory tools still need the two-phase
- *   preview→confirm pattern (a dry-run that returns what WOULD happen, then an
- *   explicit confirm token) plus the `mcp:govern` scope before they can ship:
- *     - issue_levy_run     (leviesService.issueLevyRun — charges owners)
- *     - send_meeting_notice (statutory notice with legal timing effects)
- *     - resolve_decision   (decisionsService.resolveDecision — executes follow-up)
- *     - cast_motion_vote   (decisionsService.castDecisionVote — records a vote)
- *     - close_meeting      (finalises minutes / statutory record)
+ * The money-moving / statutory tools live in ./governed.ts: gated on the
+ * stronger `mcp:govern` scope and a two-phase preview→confirm flow (dry-run +
+ * signed confirm token — see ../confirm.ts): issue_levy_run,
+ * send_meeting_notice, resolve_decision, cast_motion_vote, close_meeting.
  */
 import {
   budgetsService,

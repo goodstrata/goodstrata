@@ -13,6 +13,13 @@ const envSchema = z.object({
    * locally everything is same-origin, so it defaults to APP_URL.
    */
   MCP_URL: z.string().url().optional(),
+  /**
+   * HMAC secret signing the two-phase confirm tokens for the governed MCP
+   * tools (`mcp:govern` scope — see src/mcp/confirm.ts). Optional: falls back
+   * to BETTER_AUTH_SECRET, so no extra deployment config is required; set it
+   * to rotate confirm tokens independently of session/OAuth material.
+   */
+  MCP_CONFIRM_SECRET: z.string().min(16).optional(),
 
   AI_PROVIDER: z.enum(["anthropic", "local", "mock"]).default("mock"),
   AI_DEFAULT_MODEL: z.string().optional(),
