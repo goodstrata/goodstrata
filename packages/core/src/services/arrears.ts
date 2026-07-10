@@ -1,4 +1,5 @@
 import {
+  type DbHandle,
   eventLog,
   levyNotices,
   lotLedgerEntries,
@@ -17,21 +18,26 @@ import { interestAccrued } from "../engines/interest.js";
 export interface LotArrears {
   lotId: string;
   lotNumber: string;
+  /** Levy/adjustment balance owing, EXCLUDING posted penalty interest. */
   outstandingCents: number;
   daysOverdue: number;
   stage: number;
+  /**
+   * Unpaid penalty interest POSTED to the lot ledger (kind "interest"). Every
+   * figure here is ledger-derived, so outstanding + interest always equals the
+   * lot's statement balance — an owner who pays the quoted total is square.
+   */
   interestAccruedCents: number;
   earliestDueOn: string;
 }
 
-/** Current arrears picture for a scheme (pure read). */
+/** Current arrears picture for a scheme (pure read, ledger-derived). */
 export async function arrearsForScheme(
   ctx: ServiceContext,
   schemeId: string,
 ): Promise<LotArrears[]> {
   const scheme = await ctx.db.query.schemes.findFirst({ where: eq(schemes.id, schemeId) });
   if (!scheme) return [];
-  const settings = scheme.settings;
 
   const overdue = await ctx.db
     .select({
@@ -62,15 +68,17 @@ export async function arrearsForScheme(
 
   const results: LotArrears[] = [];
   for (const [lotId, info] of byLot) {
-    const balanceRows = await ctx.db
-      .select({ balance: sql<string>`coalesce(sum(${lotLedgerEntries.amountCents}), 0)` })
-      .from(lotLedgerEntries)
-      .where(and(eq(lotLedgerEntries.schemeId, schemeId), eq(lotLedgerEntries.lotId, lotId)));
-    const outstandingCents = Number(balanceRows[0]?.balance ?? 0);
-    if (outstandingCents <= 0) continue;
+    const { balanceCents, postedInterestCents } = await lotLedgerTotals(ctx.db, schemeId, lotId);
+    if (balanceCents <= 0) continue;
 
     const daysOverdue = daysBetween(fromDateOnly(info.earliestDueOn), now);
     if (daysOverdue <= 0) continue;
+
+    // Split the ledger balance into levy principal vs unpaid posted interest,
+    // treating payments as settling principal first (never over-attributes to
+    // interest). The two figures always sum back to the statement balance.
+    const outstandingCents = Math.max(0, balanceCents - postedInterestCents);
+    const interestOwedCents = balanceCents - outstandingCents;
 
     results.push({
       lotId,
@@ -78,28 +86,85 @@ export async function arrearsForScheme(
       outstandingCents,
       daysOverdue,
       stage: arrearsStage(daysOverdue),
-      interestAccruedCents: interestAccrued(
-        outstandingCents,
-        settings.penaltyInterestBps,
-        daysOverdue,
-        settings.interestGraceDays,
-      ),
+      interestAccruedCents: interestOwedCents,
       earliestDueOn: info.earliestDueOn,
     });
   }
   return results;
 }
 
+/** Ledger balance + gross posted penalty interest for one lot. */
+async function lotLedgerTotals(
+  db: ServiceContext["db"] | DbHandle,
+  schemeId: string,
+  lotId: string,
+): Promise<{ balanceCents: number; postedInterestCents: number }> {
+  const rows = await db
+    .select({
+      balance: sql<string>`coalesce(sum(${lotLedgerEntries.amountCents}), 0)`,
+      interest: sql<string>`coalesce(sum(${lotLedgerEntries.amountCents}) filter (where ${lotLedgerEntries.kind} = 'interest'), 0)`,
+    })
+    .from(lotLedgerEntries)
+    .where(and(eq(lotLedgerEntries.schemeId, schemeId), eq(lotLedgerEntries.lotId, lotId)));
+  return {
+    balanceCents: Number(rows[0]?.balance ?? 0),
+    postedInterestCents: Number(rows[0]?.interest ?? 0),
+  };
+}
+
 /**
- * The daily arrears sweep (pure code — cron never calls an LLM). Emits an
- * `arrears.stage.reached` event exactly once per lot per stage; the finance
- * agent reacts to those events with drafted reminders or a decision gate.
+ * The daily arrears sweep (pure code — cron never calls an LLM). For every lot
+ * in arrears it: flips past-due notices to `overdue` (publishing
+ * `levy.notice.overdue` once per notice), POSTS accrued penalty interest to
+ * the lot ledger (kind "interest", once per lot per day — the dedupeKey makes
+ * re-runs a no-op), and emits an `arrears.stage.reached` event exactly once
+ * per lot per stage; the finance agent reacts to those events with drafted
+ * reminders or a decision gate. Because interest posts BEFORE the stage event,
+ * the amounts the event (and the emails built from it) quotes are exactly the
+ * lot's ledger balance — an owner who pays the quoted total is square.
  */
 export async function scanArrears(ctx: ServiceContext, schemeId: string) {
+  const scheme = await ctx.db.query.schemes.findFirst({ where: eq(schemes.id, schemeId) });
+  if (!scheme) return { scanned: 0, emitted: [], interestPosted: [] };
+  const settings = scheme.settings;
+
   const arrears = await arrearsForScheme(ctx, schemeId);
   const emitted: { lotId: string; stage: number }[] = [];
+  const interestPosted: { lotId: string; amountCents: number }[] = [];
+  const today = toDateOnly(ctx.clock.now());
 
   for (const lot of arrears) {
+    // 1. Flip past-due notices + accrue interest, committed together per lot.
+    const posted = await ctx.db.transaction(async (tx) => {
+      const flipped = await tx
+        .update(levyNotices)
+        .set({ status: "overdue" })
+        .where(
+          and(
+            eq(levyNotices.schemeId, schemeId),
+            eq(levyNotices.lotId, lot.lotId),
+            inArray(levyNotices.status, ["issued", "partially_paid"]),
+            sql`${levyNotices.dueOn} < ${today}`,
+          ),
+        )
+        .returning({ id: levyNotices.id });
+      // The status transition happens exactly once per notice (the update's
+      // WHERE excludes already-overdue rows), so each notice gets one event.
+      for (const notice of flipped) {
+        await publishEvent(tx, {
+          schemeId,
+          stream: `levy_notice:${notice.id}`,
+          type: "levy.notice.overdue",
+          payload: { levyNoticeId: notice.id, lotId: lot.lotId },
+          actor: ctx.actor,
+          ...causationFields(ctx),
+        });
+      }
+
+      return await accrueInterestForLot(ctx, tx, schemeId, settings, lot, today);
+    });
+    if (posted > 0) interestPosted.push({ lotId: lot.lotId, amountCents: posted });
+
     if (lot.stage === 0) continue;
 
     // Event-sourced dedupe: what stage have we already announced for this lot
@@ -123,18 +188,6 @@ export async function scanArrears(ctx: ServiceContext, schemeId: string) {
     if (lot.stage <= effectiveLast) continue;
 
     const published = await ctx.db.transaction(async (tx) => {
-      await tx
-        .update(levyNotices)
-        .set({ status: "overdue" })
-        .where(
-          and(
-            eq(levyNotices.schemeId, schemeId),
-            eq(levyNotices.lotId, lot.lotId),
-            inArray(levyNotices.status, ["issued", "partially_paid"]),
-            sql`${levyNotices.dueOn} < ${toDateOnly(ctx.clock.now())}`,
-          ),
-        );
-
       return await publishEvent(tx, {
         schemeId,
         stream: `lot:${lot.lotId}`,
@@ -144,8 +197,10 @@ export async function scanArrears(ctx: ServiceContext, schemeId: string) {
           stage: lot.stage,
           kind: stageKind(lot.stage) ?? "unknown",
           daysOverdue: lot.daysOverdue,
+          // Ledger-derived, including the interest just posted above — the
+          // quoted total (outstanding + interest) is the statement balance.
           outstandingCents: lot.outstandingCents,
-          interestAccruedCents: lot.interestAccruedCents,
+          interestAccruedCents: lot.interestAccruedCents + posted,
           earliestDueOn: lot.earliestDueOn,
         },
         actor: ctx.actor,
@@ -160,7 +215,78 @@ export async function scanArrears(ctx: ServiceContext, schemeId: string) {
     if (!published.deduped) emitted.push({ lotId: lot.lotId, stage: lot.stage });
   }
 
-  return { scanned: arrears.length, emitted };
+  return { scanned: arrears.length, emitted, interestPosted };
+}
+
+/**
+ * Post the penalty interest that has accrued but not yet been charged for a
+ * lot's current arrears episode. The engine gives cumulative interest to date
+ * on the outstanding levy principal (simple, non-compounding — interest never
+ * accrues on interest); what lands on the ledger is the DELTA over what this
+ * episode has already posted, so a daily sweep posts one increment per day and
+ * a re-run posts nothing. Two overlapping sweeps serialize on the event's
+ * unique dedupeKey (once per lot per day): the loser's publish dedupes and it
+ * skips the ledger insert. Returns the cents posted (0 when up to date).
+ */
+async function accrueInterestForLot(
+  ctx: ServiceContext,
+  tx: DbHandle,
+  schemeId: string,
+  settings: { penaltyInterestBps: number; interestGraceDays: number },
+  lot: Pick<LotArrears, "lotId" | "daysOverdue" | "earliestDueOn">,
+  today: string,
+): Promise<number> {
+  // Re-read inside the transaction so the delta is computed against committed
+  // state, and scope posted interest to the current episode (entries on/after
+  // its earliest due date) so a past, settled episode never suppresses accrual.
+  const totals = await tx
+    .select({
+      balance: sql<string>`coalesce(sum(${lotLedgerEntries.amountCents}), 0)`,
+      episodeInterest: sql<string>`coalesce(sum(${lotLedgerEntries.amountCents}) filter (where ${lotLedgerEntries.kind} = 'interest' and ${lotLedgerEntries.effectiveOn} >= ${lot.earliestDueOn}), 0)`,
+      grossInterest: sql<string>`coalesce(sum(${lotLedgerEntries.amountCents}) filter (where ${lotLedgerEntries.kind} = 'interest'), 0)`,
+    })
+    .from(lotLedgerEntries)
+    .where(and(eq(lotLedgerEntries.schemeId, schemeId), eq(lotLedgerEntries.lotId, lot.lotId)));
+  const balance = Number(totals[0]?.balance ?? 0);
+  const episodeInterest = Number(totals[0]?.episodeInterest ?? 0);
+  const grossInterest = Number(totals[0]?.grossInterest ?? 0);
+
+  const principal = Math.max(0, balance - grossInterest);
+  const accruedToDate = interestAccrued(
+    principal,
+    settings.penaltyInterestBps,
+    lot.daysOverdue,
+    settings.interestGraceDays,
+  );
+  const delta = accruedToDate - episodeInterest;
+  if (delta <= 0) return 0;
+
+  const published = await publishEvent(tx, {
+    schemeId,
+    stream: `lot:${lot.lotId}`,
+    type: "arrears.interest.posted",
+    payload: {
+      lotId: lot.lotId,
+      amountCents: delta,
+      totalInterestPostedCents: episodeInterest + delta,
+      daysOverdue: lot.daysOverdue,
+      earliestDueOn: lot.earliestDueOn,
+    },
+    actor: ctx.actor,
+    dedupeKey: `interest:${lot.lotId}:${today}`,
+    ...causationFields(ctx),
+  });
+  if (published.deduped) return 0;
+
+  await tx.insert(lotLedgerEntries).values({
+    schemeId,
+    lotId: lot.lotId,
+    kind: "interest",
+    amountCents: delta,
+    note: `Penalty interest accrued to ${today} (${lot.daysOverdue} days overdue)`,
+    effectiveOn: today,
+  });
+  return delta;
 }
 
 /** Levy recipient (name/email) for a lot — used by reminder/receipt emails. */

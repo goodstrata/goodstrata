@@ -482,7 +482,7 @@ describe("manual payment rail permutations (partial, overpay, park, match)", () 
 });
 
 describe("arrears read model agrees with the deterministic interest engine", () => {
-  it("shows only the indebted lot, with interest EXACTLY per the engine (10% pa, actual/365)", async () => {
+  it("shows only the indebted lot, with LEDGER-derived figures (no phantom interest)", async () => {
     // Due 2026-07-01; clock at +31 days. Lot 1 sits in CREDIT (overpaid) so it
     // must NOT appear; lot 2 owes 30000 − 5000 − 777 = 24223.
     const ctx = ctxAt("2026-08-01T00:00:00Z");
@@ -493,22 +493,48 @@ describe("arrears read model agrees with the deterministic interest engine", () 
     expect(row.outstandingCents).toBe(24_223);
     expect(row.daysOverdue).toBe(31);
     expect(row.stage).toBe(3); // ≥30 days → final notice
-    // Default scheme settings: penaltyInterestBps 1000, interestGraceDays 0.
-    const expected = interestAccrued(24_223, 1_000, 31, 0);
-    expect(row.interestAccruedCents).toBe(expected);
-    expect(expected).toBe(Math.round((24_223 * 1_000 * 31) / (10_000 * 365))); // = 206
-    expect(expected).toBe(206);
+    // Every quoted figure is LEDGER-derived: no interest has been posted yet
+    // (the sweep hasn't run), so none is quoted — the read model never shows
+    // an amount an owner couldn't actually settle against the ledger.
+    expect(row.interestAccruedCents).toBe(0);
+    const statement = await arrearsService.lotStatement(ctx, schemeId, row.lotId);
+    expect(row.outstandingCents + row.interestAccruedCents).toBe(statement.balanceCents);
   });
 
-  it("scanArrears flips the notice to overdue and emits stage 3 exactly once", async () => {
+  it("scanArrears flips the notice to overdue, POSTS interest per the engine, and emits stage 3 exactly once", async () => {
     const ctx = ctxAt("2026-08-01T00:00:00Z", systemActor("cron"));
     const scan = await arrearsService.scanArrears(ctx, schemeId);
     expect(scan.emitted).toEqual([{ lotId: lotIds[1], stage: 3 }]);
 
     const notices = await listNotices(ctx, schemeId);
     expect(notices.find((n) => n.lotId === lotIds[1])!.status).toBe("overdue");
-    // idempotent within the same stage
+
+    // The sweep posted penalty interest to the lot ledger EXACTLY per the
+    // engine (10% pa, actual/365; default settings penaltyInterestBps 1000,
+    // interestGraceDays 0) on the 24223 principal over 31 days.
+    const expected = interestAccrued(24_223, 1_000, 31, 0);
+    expect(expected).toBe(Math.round((24_223 * 1_000 * 31) / (10_000 * 365))); // = 206
+    expect(expected).toBe(206);
+    expect(scan.interestPosted).toEqual([{ lotId: lotIds[1], amountCents: expected }]);
+
+    const statement = await arrearsService.lotStatement(ctx, schemeId, lotIds[1]!);
+    const interestEntries = statement.entries.filter((e) => e.kind === "interest");
+    expect(interestEntries).toHaveLength(1);
+    expect(interestEntries[0]!.amountCents).toBe(expected);
+    expect(statement.balanceCents).toBe(24_223 + expected);
+
+    // The read model now quotes the posted interest — and the quoted total is
+    // exactly the statement balance an owner would pay.
+    const arrears = await arrearsService.arrearsForScheme(ctx, schemeId);
+    expect(arrears[0]!.outstandingCents).toBe(24_223);
+    expect(arrears[0]!.interestAccruedCents).toBe(expected);
+
+    // Idempotent within the same stage AND the same day: no second stage
+    // event, no double-posted interest.
     const again = await arrearsService.scanArrears(ctx, schemeId);
     expect(again.emitted).toHaveLength(0);
+    expect(again.interestPosted).toHaveLength(0);
+    const statement2 = await arrearsService.lotStatement(ctx, schemeId, lotIds[1]!);
+    expect(statement2.balanceCents).toBe(24_223 + expected);
   });
 });
