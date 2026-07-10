@@ -457,10 +457,16 @@ describe("payments hardening (suspense, manual rail, overpayment)", () => {
     expect(overdue).toHaveLength(1); // the other one is now partially paid
     const notice = overdue[0]!;
 
+    // The arrears sweep has POSTED penalty interest to this lot's ledger, so
+    // the quoted total (levies + posted interest) is the statement balance —
+    // paying it squares the lot exactly.
+    const owing = await arrearsService.lotStatement(ctx, schemeId, notice.lotId);
+    expect(owing.balanceCents).toBeGreaterThan(notice.totalCents); // interest is in the ledger
+
     memoryEmail.sent.length = 0;
     const input = {
       levyNoticeId: notice.id,
-      amountCents: notice.totalCents,
+      amountCents: owing.balanceCents,
       paidAt: "2026-09-02",
       payerName: "Kim Nguyen",
       reference: "BANK-STMT-042",

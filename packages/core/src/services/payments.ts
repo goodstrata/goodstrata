@@ -7,6 +7,7 @@ import {
   levyNoticeLines,
   levyNotices,
   lotLedgerEntries,
+  lots,
   paymentAllocations,
   payments,
   receipts,
@@ -15,19 +16,23 @@ import {
 } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import type { InboundPayment } from "@goodstrata/integrations";
+import { buildReceiptPdf, type ReceiptDoc } from "@goodstrata/integrations/pdf";
 import { allocateByWeight, formatCents, fromDateOnly, toDateOnly } from "@goodstrata/shared";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { matchPayment, type OpenNotice } from "../engines/reconcile.js";
 import { DomainError, notFound } from "../errors.js";
+import { levyRecipient, lotStatement } from "./arrears.js";
 import { sendEmail } from "./comms.js";
+import { uploadDocument } from "./documents.js";
 import { getSchemeTrustAccount, trustAccountForInboundPayment } from "./trustAccounts.js";
 
 export interface RecordPaymentResult {
   paymentId: string;
   matched: boolean;
   levyNoticeId?: string;
+  receiptId?: string;
   receiptNumber?: string;
   duplicate?: boolean;
 }
@@ -108,7 +113,7 @@ async function applyPaymentToNotice(
   noticeId: string,
   paidAt: Date,
   via: "payid" | "amount" | "manual",
-): Promise<{ levyNoticeId: string; receiptNumber: string }> {
+): Promise<{ levyNoticeId: string; receiptId: string; receiptNumber: string }> {
   const { schemeId } = payment;
   const notice = await tx.query.levyNotices.findFirst({
     where: and(eq(levyNotices.id, noticeId), eq(levyNotices.schemeId, schemeId)),
@@ -121,8 +126,12 @@ async function applyPaymentToNotice(
     amountCents: payment.amountCents,
   });
 
-  // Lot ledger credit (payments are negative). An overpayment simply drives
-  // the lot balance negative — a credit the next levy charge absorbs.
+  // Lot ledger credit (payments are negative). The FULL payment amount lands
+  // on the lot ledger, so a payment of the quoted arrears total (levies +
+  // posted penalty interest) settles the interest entries with the same
+  // credit even though the notice itself only carries the levy principal. An
+  // overpayment simply drives the lot balance negative — a credit the next
+  // levy charge absorbs.
   await tx.insert(lotLedgerEntries).values({
     schemeId,
     lotId: notice.lotId,
@@ -201,8 +210,20 @@ async function applyPaymentToNotice(
     ...causationFields(ctx),
   });
 
-  // Receipt.
-  const receiptNumber = `R-${notice.noticeNumber}-${allocations.length}`;
+  // Receipt. Numbered off the receipts already issued for this notice — NOT
+  // the live allocation count: a refund removes allocations but keeps the old
+  // receipt for audit, so a replacement payment would otherwise mint a
+  // duplicate receipt number.
+  const priorReceipts = await tx
+    .select({ count: sql<string>`count(*)` })
+    .from(receipts)
+    .where(
+      and(
+        eq(receipts.schemeId, schemeId),
+        like(receipts.receiptNumber, `R-${notice.noticeNumber}-%`),
+      ),
+    );
+  const receiptNumber = `R-${notice.noticeNumber}-${Number(priorReceipts[0]?.count ?? 0) + 1}`;
   const receiptRows = await tx
     .insert(receipts)
     .values({ schemeId, paymentId: payment.id, receiptNumber })
@@ -220,7 +241,7 @@ async function applyPaymentToNotice(
     ...causationFields(ctx),
   });
 
-  return { levyNoticeId: notice.id, receiptNumber };
+  return { levyNoticeId: notice.id, receiptId: receiptRows[0]!.id, receiptNumber };
 }
 
 /**
@@ -311,14 +332,18 @@ export async function recordInboundPayment(
       paymentId: payment.id,
       matched: true,
       levyNoticeId: applied.levyNoticeId,
+      receiptId: applied.receiptId,
       receiptNumber: applied.receiptNumber,
     } as RecordPaymentResult;
   });
 
-  // Receipt email after commit.
+  // Receipt email + stored receipt PDF after commit.
   if (result.matched && result.levyNoticeId) {
     await sendReceiptEmail(ctx, schemeId, result).catch((err) =>
       console.error("[payments] receipt email failed", err),
+    );
+    await persistReceiptPdf(ctx, schemeId, result).catch((err) =>
+      console.error("[payments] receipt PDF persistence failed", err),
     );
   }
 
@@ -435,6 +460,7 @@ export async function recordManualPayment(
         paymentId: payment.id,
         matched: true,
         levyNoticeId: applied.levyNoticeId,
+        receiptId: applied.receiptId,
         receiptNumber: applied.receiptNumber,
       } as RecordPaymentResult;
     }
@@ -461,6 +487,7 @@ export async function recordManualPayment(
       paymentId: payment.id,
       matched: true,
       levyNoticeId: applied.levyNoticeId,
+      receiptId: applied.receiptId,
       receiptNumber: applied.receiptNumber,
     } as RecordPaymentResult;
   });
@@ -468,6 +495,9 @@ export async function recordManualPayment(
   if (result.matched && result.levyNoticeId) {
     await sendReceiptEmail(ctx, schemeId, result).catch((err) =>
       console.error("[payments] receipt email failed", err),
+    );
+    await persistReceiptPdf(ctx, schemeId, result).catch((err) =>
+      console.error("[payments] receipt PDF persistence failed", err),
     );
   }
   return result;
@@ -520,12 +550,16 @@ export async function matchPaymentToNotice(
       paymentId: payment.id,
       matched: true,
       levyNoticeId: applied.levyNoticeId,
+      receiptId: applied.receiptId,
       receiptNumber: applied.receiptNumber,
     } as RecordPaymentResult;
   });
 
   await sendReceiptEmail(ctx, schemeId, result).catch((err) =>
     console.error("[payments] receipt email failed", err),
+  );
+  await persistReceiptPdf(ctx, schemeId, result).catch((err) =>
+    console.error("[payments] receipt PDF persistence failed", err),
   );
   return result;
 }
@@ -602,6 +636,273 @@ async function sendReceiptEmail(
       "Regards,",
       `${scheme.name} — powered by GoodStrata`,
     ].join("\n"),
+  });
+}
+
+/**
+ * Persist the issued receipt as a stored PDF and link it via
+ * receipts.documentId. Runs AFTER the money transaction commits — a render or
+ * storage failure never rolls back the payment, and the on-demand PDF route
+ * still renders live. Stored at accessLevel "admin": a receipt is one lot's
+ * personal financial record; "owners" would expose it to EVERY owner (s146).
+ * Idempotent: a receipt that already has a documentId is left alone.
+ */
+async function persistReceiptPdf(
+  ctx: ServiceContext,
+  schemeId: string,
+  result: RecordPaymentResult,
+) {
+  if (!result.receiptId) return;
+  const receipt = await ctx.db.query.receipts.findFirst({
+    where: and(eq(receipts.id, result.receiptId), eq(receipts.schemeId, schemeId)),
+  });
+  if (!receipt || receipt.documentId) return;
+
+  const [payment, scheme, allocs] = await Promise.all([
+    ctx.db.query.payments.findFirst({ where: eq(payments.id, receipt.paymentId) }),
+    ctx.db.query.schemes.findFirst({ where: eq(schemes.id, schemeId) }),
+    ctx.db.query.paymentAllocations.findMany({
+      where: eq(paymentAllocations.paymentId, receipt.paymentId),
+    }),
+  ]);
+  if (!payment || !scheme) return;
+
+  const noticeIds = allocs.map((a) => a.levyNoticeId);
+  const notices = noticeIds.length
+    ? await ctx.db.query.levyNotices.findMany({ where: inArray(levyNotices.id, noticeIds) })
+    : [];
+  const appliedTo = allocs.map((a) => ({
+    noticeNumber: notices.find((n) => n.id === a.levyNoticeId)?.noticeNumber ?? "—",
+    amountCents: a.amountCents,
+  }));
+
+  // Fund split — the levy_receipt fund transactions tagged with this payment.
+  const [ftx, fundRows] = await Promise.all([
+    ctx.db.query.fundTransactions.findMany({
+      where: and(
+        eq(fundTransactions.schemeId, schemeId),
+        eq(fundTransactions.kind, "levy_receipt"),
+      ),
+    }),
+    ctx.db.query.funds.findMany({ where: eq(funds.schemeId, schemeId) }),
+  ]);
+  const allocations = ftx
+    .filter((t) => (t.reference as { paymentId?: string } | null)?.paymentId === payment.id)
+    .map((t) => {
+      const fund = fundRows.find((f) => f.id === t.fundId);
+      return {
+        fundKind: fund?.kind ?? "admin",
+        description: fund?.name ?? "Fund",
+        amountCents: t.amountCents,
+      };
+    });
+
+  const lotId = notices[0]?.lotId;
+  const lot = lotId ? await ctx.db.query.lots.findFirst({ where: eq(lots.id, lotId) }) : null;
+  const recipient = lotId ? await levyRecipient(ctx, schemeId, lotId) : null;
+  const running = lotId ? (await lotStatement(ctx, schemeId, lotId)).balanceCents : 0;
+
+  const doc: ReceiptDoc = {
+    scheme: {
+      name: scheme.name,
+      planOfSubdivision: scheme.planOfSubdivision,
+      addressLine1: scheme.addressLine1,
+      addressLine2: scheme.addressLine2,
+      suburb: scheme.suburb,
+      state: scheme.state,
+      postcode: scheme.postcode,
+      abn: scheme.abn,
+      gstRegistered: scheme.gstRegistered,
+    },
+    billTo: { name: recipient?.name ?? payment.payerName ?? "Lot owner", email: recipient?.email },
+    lot: { lotNumber: lot?.lotNumber ?? "—" },
+    receipt: { receiptNumber: receipt.receiptNumber, issuedAt: receipt.createdAt },
+    payment: {
+      amountCents: payment.amountCents,
+      paidAt: payment.paidAt,
+      method: payment.provider,
+      payerName: payment.payerName,
+      providerRef: payment.providerRef,
+    },
+    appliedTo,
+    allocations,
+    runningBalanceCents: running,
+  };
+
+  const pdf = await buildReceiptPdf(doc);
+  const stored = await uploadDocument(ctx, schemeId, {
+    filename: `Receipt-${receipt.receiptNumber}.pdf`,
+    contentType: "application/pdf",
+    content: new Uint8Array(pdf),
+    category: "financial",
+    accessLevel: "admin",
+    title: `Receipt ${receipt.receiptNumber}`,
+  });
+  await ctx.db.update(receipts).set({ documentId: stored.id }).where(eq(receipts.id, receipt.id));
+}
+
+export const refundPaymentInput = z.object({
+  /** Why the payment is being reversed — goes on the ledger and event log. */
+  reason: z.string().trim().min(1).max(500),
+});
+export type RefundPaymentInput = z.infer<typeof refundPaymentInput>;
+
+export interface RefundPaymentResult {
+  paymentId: string;
+  status: "refunded";
+  /** True when the payment was already refunded — the call was a no-op. */
+  alreadyRefunded: boolean;
+  /** Notices whose allocations were reversed. */
+  levyNoticeIds: string[];
+}
+
+/**
+ * Refund/reverse a recorded payment: flip it to `refunded` and unwind every
+ * effect its application had — allocations removed, an offsetting lot-ledger
+ * adjustment posted per notice, the pro-rata fund split reversed, and notice
+ * statuses recomputed from the remaining allocations. Publishes a typed
+ * `payment.refunded` event in the same transaction. Idempotent: the
+ * compare-and-set status flip runs the reversal exactly once; a repeat call
+ * (or a concurrent one) is a no-op. NOTE: this reverses the LEDGER — moving
+ * actual money back to the payer happens outside (bank transfer / provider).
+ */
+export async function refundPayment(
+  ctx: ServiceContext,
+  schemeId: string,
+  paymentId: string,
+  reason: string,
+): Promise<RefundPaymentResult> {
+  const payment = await ctx.db.query.payments.findFirst({
+    where: and(eq(payments.id, paymentId), eq(payments.schemeId, schemeId)),
+  });
+  if (!payment) throw notFound("Payment");
+
+  const today = toDateOnly(ctx.clock.now());
+
+  return await ctx.db.transaction(async (tx) => {
+    // Compare-and-set: only a matched/unmatched payment flips to refunded.
+    // Concurrent refunds serialize on the row lock — the loser sees 0 rows and
+    // performs no reversal, so the unwind happens exactly once.
+    const flipped = await tx
+      .update(payments)
+      .set({ status: "refunded" })
+      .where(and(eq(payments.id, payment.id), inArray(payments.status, ["matched", "unmatched"])))
+      .returning({ id: payments.id });
+    if (flipped.length === 0) {
+      const current = await tx.query.payments.findFirst({ where: eq(payments.id, payment.id) });
+      if (current?.status === "refunded") {
+        return {
+          paymentId: payment.id,
+          status: "refunded",
+          alreadyRefunded: true,
+          levyNoticeIds: [],
+        } as RefundPaymentResult;
+      }
+      throw new DomainError(
+        "PAYMENT_NOT_REFUNDABLE",
+        `Payment is ${current?.status ?? "unknown"} — only matched or unmatched payments can be refunded`,
+        409,
+      );
+    }
+
+    const allocs = await tx.query.paymentAllocations.findMany({
+      where: eq(paymentAllocations.paymentId, payment.id),
+    });
+    const noticeIds = [...new Set(allocs.map((a) => a.levyNoticeId))];
+
+    for (const noticeId of noticeIds) {
+      const notice = await tx.query.levyNotices.findFirst({
+        where: eq(levyNotices.id, noticeId),
+      });
+      if (!notice) continue;
+
+      // Offsetting adjustment reverses the original lot-ledger credit; both
+      // entries stay on the statement as the audit trail of the reversal.
+      const reversedCents = allocs
+        .filter((a) => a.levyNoticeId === noticeId)
+        .reduce((s, a) => s + a.amountCents, 0);
+      await tx.insert(lotLedgerEntries).values({
+        schemeId,
+        lotId: notice.lotId,
+        kind: "adjustment",
+        amountCents: reversedCents,
+        levyNoticeId: notice.id,
+        paymentId: payment.id,
+        note: `Payment ${payment.providerRef} refunded: ${reason}`,
+        effectiveOn: today,
+      });
+    }
+
+    // Remove the allocations so notice statuses and outstanding amounts
+    // recompute correctly (the event log + ledger entries keep the history).
+    if (allocs.length > 0) {
+      await tx.delete(paymentAllocations).where(eq(paymentAllocations.paymentId, payment.id));
+    }
+    for (const noticeId of noticeIds) {
+      const notice = await tx.query.levyNotices.findFirst({
+        where: eq(levyNotices.id, noticeId),
+      });
+      if (!notice || notice.status === "written_off") continue;
+      const remaining = await tx.query.paymentAllocations.findMany({
+        where: eq(paymentAllocations.levyNoticeId, noticeId),
+      });
+      const allocated = remaining.reduce((s, a) => s + a.amountCents, 0);
+      const newStatus =
+        allocated >= notice.totalCents
+          ? "paid"
+          : allocated > 0
+            ? "partially_paid"
+            : fromDateOnly(notice.dueOn) < ctx.clock.now()
+              ? "overdue"
+              : "issued";
+      await tx.update(levyNotices).set({ status: newStatus }).where(eq(levyNotices.id, notice.id));
+    }
+
+    // Reverse the pro-rata fund split (money leaves the funds again).
+    const ftx = await tx.query.fundTransactions.findMany({
+      where: and(
+        eq(fundTransactions.schemeId, schemeId),
+        eq(fundTransactions.kind, "levy_receipt"),
+      ),
+    });
+    const mine = ftx.filter(
+      (t) => (t.reference as { paymentId?: string } | null)?.paymentId === payment.id,
+    );
+    for (const t of mine) {
+      await tx.insert(fundTransactions).values({
+        schemeId,
+        fundId: t.fundId,
+        amountCents: -t.amountCents,
+        kind: "adjustment",
+        reference: { paymentId: payment.id, refundOf: t.id },
+        occurredAt: ctx.clock.now(),
+      });
+      await tx
+        .update(funds)
+        .set({ balanceCents: sql`${funds.balanceCents} - ${t.amountCents}` })
+        .where(eq(funds.id, t.fundId));
+    }
+
+    await publishEvent(tx, {
+      schemeId,
+      stream: `payment:${payment.id}`,
+      type: "payment.refunded",
+      payload: {
+        paymentId: payment.id,
+        amountCents: payment.amountCents,
+        reason,
+        levyNoticeIds: noticeIds,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+
+    return {
+      paymentId: payment.id,
+      status: "refunded",
+      alreadyRefunded: false,
+      levyNoticeIds: noticeIds,
+    } as RefundPaymentResult;
   });
 }
 
