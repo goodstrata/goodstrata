@@ -98,9 +98,32 @@ export const eventDefs = {
     earliestDueOn: z.string(),
   }),
   "arrears.recovery.commenced": z.object({ lotId: z.string(), decisionId: z.string() }),
-  "invoice.received": lax,
-  "invoice.approved": lax,
-  "payout.executed": lax,
+  /** A supplier invoice landed in accounts payable (approval gate opens next). */
+  "invoice.received": z.object({
+    invoiceId: z.string(),
+    supplierName: z.string(),
+    invoiceNumber: z.string(),
+    amountCents: z.number().int(),
+    gstCents: z.number().int(),
+    fundKind: z.string(),
+    workOrderId: z.string().nullable(),
+  }),
+  /** The treasurer approved the invoice; a payout was queued by the executor. */
+  "invoice.approved": z.object({
+    invoiceId: z.string(),
+    decisionId: z.string(),
+    payoutId: z.string(),
+    amountCents: z.number().int(),
+  }),
+  /** A payout was executed and recorded (manual rail: bank reference + date). */
+  "payout.executed": z.object({
+    payoutId: z.string(),
+    invoiceId: z.string(),
+    amountCents: z.number().int(),
+    provider: z.string(),
+    providerRef: z.string().nullable(),
+    fundKind: z.string(),
+  }),
 
   // maintenance
   "maintenance.request.created": z.object({
