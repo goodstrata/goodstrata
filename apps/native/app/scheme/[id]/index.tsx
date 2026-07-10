@@ -83,9 +83,7 @@ export default function SchemeHub() {
   const overview = overviewQuery.data;
   const finance = overview?.finance;
 
-  const refetchAll = () => {
-    void queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
-  };
+  const refetchAll = () => queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
   const refreshing = detailQuery.isRefetching || overviewQuery.isRefetching;
   const loading =
     (detailQuery.isPending || overviewQuery.isPending) && !scheme && !finance;

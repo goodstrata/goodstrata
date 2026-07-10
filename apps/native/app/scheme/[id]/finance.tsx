@@ -16,7 +16,6 @@ import {
   StatusPill,
   formatDate,
   formatMoney,
-  humanise,
   space,
   type as t,
   useListEntering,
@@ -70,10 +69,19 @@ interface ArrearsEntry {
   lotNumber: string | number;
   outstandingCents: number;
   daysOverdue: number;
-  stage: string | null;
+  /** Arrears-ladder stage number, 0 = none (SPEC §2.3). */
+  stage: number;
   interestAccruedCents: number;
   earliestDueOn: string;
 }
+
+/** Ladder stage → pill vocabulary, mirroring packages/core arrears-ladder kinds. */
+const ARREARS_STAGE_LABEL: Record<number, string> = {
+  1: "Friendly reminder",
+  2: "Formal reminder",
+  3: "Final notice",
+  4: "Recovery decision",
+};
 
 /** "$1,234.56" as one string — for muted breakdown lines, not Figures. */
 function money(cents: number): string {
@@ -151,9 +159,7 @@ export default function SchemeFinance() {
 
   const entering = useListEntering(paymentsQuery.isSuccess);
 
-  const refetchAll = () => {
-    void queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
-  };
+  const refetchAll = () => queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
   const refreshing =
     overviewQuery.isRefetching ||
     payStatusQuery.isRefetching ||
@@ -338,9 +344,7 @@ export default function SchemeFinance() {
                     <StatusPill
                       tone={entry.daysOverdue >= 60 ? "crit" : "warn"}
                       label={
-                        entry.stage
-                          ? humanise(entry.stage)
-                          : `${entry.daysOverdue} days overdue`
+                        ARREARS_STAGE_LABEL[entry.stage] ?? `${entry.daysOverdue} days overdue`
                       }
                     />
                   </View>

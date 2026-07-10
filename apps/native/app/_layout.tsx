@@ -16,7 +16,17 @@ import { RootErrorBoundary } from "../src/components/ui/RootErrorBoundary";
 import { usePushNotifications } from "../src/lib/pushNotifications";
 import { useTheme } from "../src/theme/useTheme";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Cached data stays fresh across navigations, so moving between screens
+      // doesn't fire a background refetch (which was flashing the pull-to-refresh
+      // spinner). Pull-to-refresh + mutation invalidations still refresh on demand.
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 export default function RootLayout() {
   // Themed ground from the first frame — dark-mode users never see a
