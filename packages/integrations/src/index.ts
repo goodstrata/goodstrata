@@ -53,6 +53,12 @@ export interface Integrations {
    * pages. Optional so hand-built test doubles can omit it.
    */
   appUrl?: string;
+  /**
+   * HMAC secret for per-recipient unsubscribe tokens embedded in notification
+   * email (footer link + List-Unsubscribe header). Optional: when absent the
+   * notifier simply omits the per-recipient links.
+   */
+  unsubscribeSecret?: string;
 }
 
 export interface IntegrationsEnv {
@@ -65,6 +71,8 @@ export interface IntegrationsEnv {
   TRADE_MARKET_PROVIDERS?: string;
   /** Public base URL for links in outbound email (contractor portal, etc.). */
   APP_URL?: string;
+  /** HMAC secret for per-recipient unsubscribe tokens in notification email. */
+  UNSUBSCRIBE_SECRET?: string;
   DATA_DIR?: string;
   MOCK_PAYMENTS_SECRET?: string;
   // S3 / Cloudflare R2 (STORAGE_PROVIDER=r2|s3)
@@ -244,7 +252,16 @@ export function integrationsFromEnv(env: IntegrationsEnv): Integrations {
       }
     });
 
-  return { email, sms, storage, payments, video, tradeMarkets, appUrl };
+  return {
+    email,
+    sms,
+    storage,
+    payments,
+    video,
+    tradeMarkets,
+    appUrl,
+    unsubscribeSecret: env.UNSUBSCRIBE_SECRET,
+  };
 }
 
 /** Look up an enabled trade-market provider by its name (e.g. from an rfq_channels row). */

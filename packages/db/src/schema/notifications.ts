@@ -31,10 +31,21 @@ export const notifications = pgTable(
     category: text().notNull(),
     /** What this notification is about: { type: "decision", id }. */
     related: jsonb().$type<{ type: string; id: string } | null>(),
+    /**
+     * Delivery idempotency token, e.g. "<trigger event id>:<userId>". The
+     * notifier inserts with onConflictDoNothing on this key so a redelivered
+     * pg-boss job can neither duplicate the bell row nor re-send email/SMS
+     * (sends are gated on the insert actually happening). Null for rows
+     * written outside the notifier (unique index ignores NULLs).
+     */
+    dedupeKey: text(),
     readAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [index("notifications_user_read_idx").on(t.userId, t.readAt)],
+  (t) => [
+    index("notifications_user_read_idx").on(t.userId, t.readAt),
+    uniqueIndex("notifications_dedupe_key_idx").on(t.dedupeKey),
+  ],
 );
 
 /**

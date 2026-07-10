@@ -7,7 +7,7 @@
  * unit (the coarse `category` lumps compliance and community together).
  */
 
-/** The notifier event types users can tune (the matrix rows). */
+/** The notifier event types users can tune (the matrix rows). Append-only. */
 export const NOTIFICATION_TYPES = [
   "maintenance.request.created",
   "work_order.dispatched",
@@ -20,6 +20,17 @@ export const NOTIFICATION_TYPES = [
   "entity.comment.created",
   "conversation.message.sent",
   "announcement.published",
+  "work_order.completed",
+  "payment.received",
+  "meeting.scheduled",
+  "meeting.notice.issued",
+  "decision.resolved",
+  "decision.expired",
+  "complaint.filed",
+  "agent.run.failed",
+  "agenda_item.submitted",
+  "agenda_item.accepted",
+  "agenda_item.rejected",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -59,6 +70,24 @@ export const NOTIFICATION_DEFAULTS: Record<
   "entity.comment.created": { in_app: true, email: true, sms: false },
   "conversation.message.sent": { in_app: true, email: true, sms: false },
   "announcement.published": { in_app: true, email: true, sms: false },
+  // Personally-addressed confirmations default to email-on (people expect a
+  // receipt / "your job is done" in their inbox); SMS stays opt-in.
+  "work_order.completed": { in_app: true, email: true, sms: false },
+  "payment.received": { in_app: true, email: true, sms: false },
+  // Calendar heads-ups default to bell-only: the statutory meeting notice is
+  // already a mandatory email blast (meetings.sendMeetingNotice), so the
+  // notifier's email for these two is strictly opt-in — no double letterbox.
+  "meeting.scheduled": { in_app: true, email: false, sms: false },
+  "meeting.notice.issued": { in_app: true, email: false, sms: false },
+  "decision.resolved": { in_app: true, email: true, sms: false },
+  "decision.expired": { in_app: true, email: true, sms: false },
+  "complaint.filed": { in_app: true, email: true, sms: false },
+  // Ops signal for admins — the bell + email, never a text.
+  "agent.run.failed": { in_app: true, email: true, sms: false },
+  // Owner motion submissions: actionable for officers / the submitter — email on.
+  "agenda_item.submitted": { in_app: true, email: true, sms: false },
+  "agenda_item.accepted": { in_app: true, email: true, sms: false },
+  "agenda_item.rejected": { in_app: true, email: true, sms: false },
 };
 
 /**
@@ -82,27 +111,52 @@ export const NOTIFICATION_GROUPS = [
   {
     key: "building",
     label: "Your building",
-    types: ["maintenance.request.created", "work_order.dispatched", "entity.comment.created"],
+    types: [
+      "maintenance.request.created",
+      "work_order.dispatched",
+      "work_order.completed",
+      "entity.comment.created",
+    ],
   },
   {
     key: "money",
     label: "Money & compliance",
-    types: ["levy.notice.issued", "arrears.stage.reached", "compliance.obligation.due"],
+    types: [
+      "levy.notice.issued",
+      "payment.received",
+      "arrears.stage.reached",
+      "compliance.obligation.due",
+    ],
   },
   {
     key: "meetings",
     label: "Meetings & decisions",
-    types: ["decision.requested", "minutes.drafted"],
+    types: [
+      "meeting.scheduled",
+      "meeting.notice.issued",
+      "decision.requested",
+      "decision.resolved",
+      "decision.expired",
+      "minutes.drafted",
+      "agenda_item.submitted",
+      "agenda_item.accepted",
+      "agenda_item.rejected",
+    ],
   },
   {
     key: "community",
     label: "Community",
-    types: ["community.comment.created", "announcement.published"],
+    types: ["community.comment.created", "announcement.published", "complaint.filed"],
   },
   {
     key: "messages",
     label: "Messages",
     types: ["conversation.message.sent"],
+  },
+  {
+    key: "operations",
+    label: "Running the scheme",
+    types: ["agent.run.failed"],
   },
 ] as const satisfies readonly {
   key: string;
@@ -169,5 +223,60 @@ export const NOTIFICATION_TYPE_META: Record<
     label: "Committee announcements",
     help: "When the committee posts a notice to your building.",
     group: "community",
+  },
+  "work_order.completed": {
+    label: "Jobs completed",
+    help: "When work you reported is marked done.",
+    group: "building",
+  },
+  "payment.received": {
+    label: "Payments received",
+    help: "Receipt confirmations when your levy payment arrives.",
+    group: "money",
+  },
+  "meeting.scheduled": {
+    label: "Meetings scheduled",
+    help: "When a new meeting is put on the calendar.",
+    group: "meetings",
+  },
+  "meeting.notice.issued": {
+    label: "Meeting notices",
+    help: "When the formal notice of a meeting goes out.",
+    group: "meetings",
+  },
+  "decision.resolved": {
+    label: "Decision outcomes",
+    help: "When a decision you voted on is resolved.",
+    group: "meetings",
+  },
+  "decision.expired": {
+    label: "Decisions expired",
+    help: "When a decision lapses without a resolution.",
+    group: "meetings",
+  },
+  "complaint.filed": {
+    label: "New complaints",
+    help: "When a grievance is lodged with the owners corporation.",
+    group: "community",
+  },
+  "agent.run.failed": {
+    label: "Failed automation runs",
+    help: "When an assistant run fails and needs a look.",
+    group: "operations",
+  },
+  "agenda_item.submitted": {
+    label: "Motions proposed",
+    help: "When a member proposes a motion or agenda item for a meeting.",
+    group: "meetings",
+  },
+  "agenda_item.accepted": {
+    label: "Your motion accepted",
+    help: "When a motion you proposed is put on the agenda.",
+    group: "meetings",
+  },
+  "agenda_item.rejected": {
+    label: "Your motion declined",
+    help: "When the committee declines a motion you proposed.",
+    group: "meetings",
   },
 };

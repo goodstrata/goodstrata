@@ -1,12 +1,22 @@
 import { randomUUID } from "node:crypto";
 import {
+  budgets,
+  contractors,
+  decisionVotes,
+  levyNotices,
+  levySchedules,
   lots,
+  maintenanceRequests,
+  meetings,
   memberships,
   organizations,
   ownerships,
+  paymentAllocations,
+  payments,
   people,
   schemes,
   users,
+  workOrders,
 } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import type { EventRecord } from "@goodstrata/events";
@@ -22,6 +32,7 @@ import * as notifierService from "../src/services/notifier.js";
 let tdb: TestDatabase;
 let schemeId: string;
 let lotId: string;
+let ownerPersonId: string;
 
 const integrations = {
   ...integrationsFromEnv({
@@ -112,6 +123,7 @@ beforeAll(async () => {
       email: "owner-n@example.com",
     })
     .returning();
+  ownerPersonId = ownerPerson[0]!.id;
   const lotRows = await tdb.db
     .insert(lots)
     .values({ schemeId, lotNumber: "1", entitlement: 10, liability: 10 })
@@ -131,13 +143,14 @@ afterAll(async () => {
 
 describe("notifications service", () => {
   it("creates a notification and publishes notification.created", async () => {
-    const notification = await notificationsService.createNotification(ctxAs(), {
+    const notification = (await notificationsService.createNotification(ctxAs(), {
       schemeId,
       userId: OWNER,
       title: "Welcome",
       body: "Your portal is ready.",
       category: "general",
-    });
+    }))!;
+    expect(notification).not.toBeNull();
     expect(notification.readAt).toBeNull();
 
     const events = await tdb.db.query.eventLog.findMany({
@@ -313,7 +326,7 @@ describe("the notifier", () => {
 
     const unknown = await notifierService.handleEventForNotifications(
       ctxAs(),
-      fakeEvent("payment.received", { paymentId: "p", amountCents: 1, payid: null }),
+      fakeEvent("quote.received", { quoteId: "q", rfqId: "r", contractorId: "c" }),
     );
     expect(unknown.created).toBe(0);
   });
@@ -487,6 +500,454 @@ describe("the notifier — org-scoped compliance obligations", () => {
     const none = await notifierService.handleEventForNotifications(
       ctxAs(systemActor("notifier")),
       orgEvent({ organizationId: emptyOrg[0]!.id }),
+    );
+    expect(none.created).toBe(0);
+  });
+});
+
+describe("the notifier — delivery hardening", () => {
+  it("is idempotent per (event, recipient): a redelivered job re-sends nothing", async () => {
+    memoryEmail.sent.length = 0;
+    memorySms.sent.length = 0;
+
+    const event = fakeEvent("decision.requested", {
+      decisionId: randomUUID(),
+      title: "Repaint the lobby",
+      kind: "other",
+      deciderRole: "committee",
+    });
+
+    const first = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      event,
+    );
+    expect(first.created).toBe(2); // chair + treasurer bells
+    expect(memoryEmail.sent).toHaveLength(2);
+    expect(memorySms.sent).toHaveLength(1);
+
+    // pg-boss redelivers the same job (same event id) — nothing new happens.
+    const second = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      event,
+    );
+    expect(second.created).toBe(0);
+    expect(memoryEmail.sent).toHaveLength(2);
+    expect(memorySms.sent).toHaveLength(1);
+
+    // Exactly one bell row per recipient for this event.
+    const rows = await tdb.db.query.notifications.findMany();
+    const forEvent = rows.filter((n) => n.dedupeKey?.startsWith(event.id));
+    expect(forEvent).toHaveLength(2);
+  });
+
+  it("records every notifier email/SMS in the messages correspondence log", async () => {
+    const decisionId = randomUUID();
+    await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("decision.requested", {
+        decisionId,
+        title: "Audit trail check",
+        kind: "other",
+        deciderRole: "committee",
+      }),
+    );
+
+    const rows = await tdb.db.query.messages.findMany();
+    const mine = rows.filter((m) => (m.related as { id?: string } | null)?.id === decisionId);
+    const emails = mine.filter((m) => m.channel === "email");
+    const sms = mine.filter((m) => m.channel === "sms");
+    expect(emails.map((m) => m.toAddress).sort()).toEqual([
+      "chair-n@example.com",
+      "treasurer-n@example.com",
+    ]);
+    expect(sms.map((m) => m.toAddress)).toEqual(["+61411111111"]);
+    for (const m of mine) {
+      expect(m.status).toBe("sent");
+      expect(m.providerMessageId).toBeTruthy();
+      expect(m.template).toBe("notifier:decision.requested");
+      expect(m.direction).toBe("outbound");
+    }
+  });
+
+  it("isolates a failed recipient: the rest of the fan-out still delivers", async () => {
+    // An email provider that rejects the treasurer but accepts everyone else.
+    const flakySent: { to: string }[] = [];
+    const flakyCtx: ServiceContext = {
+      db: tdb.db,
+      clock: fixedClock(NOW),
+      actor: systemActor("notifier"),
+      integrations: {
+        ...integrations,
+        email: {
+          name: "flaky",
+          async send(email: { to: string }) {
+            if (email.to === "treasurer-n@example.com") {
+              throw new Error("mailbox on fire");
+            }
+            flakySent.push({ to: email.to });
+            return { providerMessageId: `flaky-${flakySent.length}` };
+          },
+        },
+      },
+    };
+
+    const decisionId = randomUUID();
+    const { created } = await notifierService.handleEventForNotifications(
+      flakyCtx,
+      fakeEvent("decision.requested", {
+        decisionId,
+        title: "Isolation test",
+        kind: "other",
+        deciderRole: "committee",
+      }),
+    );
+
+    // Bells for both, email delivered to the chair despite the treasurer failing.
+    expect(created).toBe(2);
+    expect(flakySent.map((s) => s.to)).toEqual(["chair-n@example.com"]);
+
+    // The failure is on the correspondence log, not swallowed.
+    const rows = await tdb.db.query.messages.findMany();
+    const mine = rows.filter(
+      (m) => (m.related as { id?: string } | null)?.id === decisionId && m.channel === "email",
+    );
+    expect(mine.find((m) => m.toAddress === "treasurer-n@example.com")!.status).toBe("failed");
+    expect(mine.find((m) => m.toAddress === "chair-n@example.com")!.status).toBe("sent");
+  });
+});
+
+describe("the notifier — new event handlers", () => {
+  it("meeting.scheduled notifies every member in-app (email is opt-in)", async () => {
+    memoryEmail.sent.length = 0;
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("meeting.scheduled", {
+        meetingId: randomUUID(),
+        kind: "agm",
+        title: "2026 AGM",
+        scheduledAt: "2026-08-20T09:00:00.000Z",
+      }),
+    );
+    expect(created).toBe(3); // chair, treasurer, owner
+    expect(memoryEmail.sent).toHaveLength(0); // default email OFF for this type
+
+    const rows = await notificationsService.listNotifications(ctxAs(), schemeId, OWNER, {
+      unreadOnly: true,
+    });
+    const match = rows.find((n) => n.title === "Meeting scheduled: 2026 AGM")!;
+    expect(match.category).toBe("meeting");
+    expect(match.body).toContain("2026-08-20");
+  });
+
+  it("meeting.notice.issued notifies every member with the meeting's title", async () => {
+    memoryEmail.sent.length = 0;
+    const meetingRows = await tdb.db
+      .insert(meetings)
+      .values({
+        schemeId,
+        kind: "agm",
+        title: "2026 AGM",
+        scheduledAt: new Date("2026-08-20T09:00:00Z"),
+      })
+      .returning();
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("meeting.notice.issued", { meetingId: meetingRows[0]!.id, recipients: 3 }),
+    );
+    expect(created).toBe(3);
+    expect(memoryEmail.sent).toHaveLength(0); // statutory notice is its own email
+
+    const rows = await notificationsService.listNotifications(ctxAs(), schemeId, CHAIR, {
+      unreadOnly: true,
+    });
+    const match = rows.find((n) => n.related?.id === meetingRows[0]!.id)!;
+    expect(match.title).toBe("Notice of meeting: 2026 AGM");
+  });
+
+  it("decision.resolved notifies the voters; decision.expired falls back to the committee", async () => {
+    memoryEmail.sent.length = 0;
+    const decision = await decisionsService.requestDecision(ctxAs(userActor(CHAIR)), {
+      schemeId,
+      kind: "other",
+      title: "Replace the intercom",
+      summaryMd: "…",
+      deciderRole: "committee",
+    });
+    // Only the chair voted.
+    await tdb.db.insert(decisionVotes).values({
+      decisionId: decision.id,
+      userId: CHAIR,
+      choice: "approve",
+    });
+
+    const resolved = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("decision.resolved", {
+        decisionId: decision.id,
+        optionId: "approve",
+        resolvedBy: CHAIR,
+      }),
+    );
+    expect(resolved.created).toBe(1); // the voter, not the whole committee
+    const chairRows = await notificationsService.listNotifications(ctxAs(), schemeId, CHAIR, {
+      unreadOnly: true,
+    });
+    const match = chairRows.find((n) => n.title === "Decision resolved: Replace the intercom")!;
+    expect(match.category).toBe("decision");
+    expect(match.body).toContain("approve");
+    expect(memoryEmail.sent.map((e) => e.to)).toEqual(["chair-n@example.com"]);
+
+    // A decision nobody voted on expires → the committee hears about it.
+    const lapsed = await decisionsService.requestDecision(ctxAs(userActor(CHAIR)), {
+      schemeId,
+      kind: "other",
+      title: "Lapsed question",
+      summaryMd: "…",
+      deciderRole: "committee",
+    });
+    const expired = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("decision.expired", { decisionId: lapsed.id }),
+    );
+    expect(expired.created).toBe(2); // chair + treasurer
+  });
+
+  it("payment.received (unmatched) notifies the treasurer only", async () => {
+    memoryEmail.sent.length = 0;
+    const paymentRows = await tdb.db
+      .insert(payments)
+      .values({
+        schemeId,
+        provider: "manual",
+        providerRef: `test-unmatched-${randomUUID()}`,
+        amountCents: 50_000,
+        paidAt: new Date(NOW),
+        status: "unmatched",
+      })
+      .returning();
+
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("payment.received", {
+        paymentId: paymentRows[0]!.id,
+        amountCents: 50_000,
+        payid: null,
+        rail: "manual",
+      }),
+    );
+    expect(created).toBe(1); // treasurer only — no matched lot yet
+
+    const rows = await notificationsService.listNotifications(ctxAs(), schemeId, TREASURER, {
+      unreadOnly: true,
+    });
+    const match = rows.find((n) => n.related?.id === paymentRows[0]!.id)!;
+    expect(match.category).toBe("finance");
+    expect(match.body).toContain("not yet matched");
+  });
+
+  it("payment.received (matched) sends the lot owner a receipt confirmation + tells the treasurer", async () => {
+    memoryEmail.sent.length = 0;
+    const budgetRows = await tdb.db
+      .insert(budgets)
+      .values({ schemeId, fiscalYearStart: "2026-07-01" })
+      .returning();
+    const scheduleRows = await tdb.db
+      .insert(levySchedules)
+      .values({ schemeId, budgetId: budgetRows[0]!.id, firstDueOn: "2026-08-01" })
+      .returning();
+    const noticeRows = await tdb.db
+      .insert(levyNotices)
+      .values({
+        schemeId,
+        lotId,
+        levyScheduleId: scheduleRows[0]!.id,
+        instalment: 1,
+        noticeNumber: "LN-PAY-1",
+        dueOn: "2026-08-01",
+        totalCents: 125_000,
+        status: "paid",
+      })
+      .returning();
+    const paymentRows = await tdb.db
+      .insert(payments)
+      .values({
+        schemeId,
+        provider: "manual",
+        providerRef: `test-matched-${randomUUID()}`,
+        amountCents: 125_000,
+        paidAt: new Date(NOW),
+        status: "matched",
+      })
+      .returning();
+    await tdb.db.insert(paymentAllocations).values({
+      paymentId: paymentRows[0]!.id,
+      levyNoticeId: noticeRows[0]!.id,
+      amountCents: 125_000,
+    });
+
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("payment.received", {
+        paymentId: paymentRows[0]!.id,
+        amountCents: 125_000,
+        payid: null,
+      }),
+    );
+    expect(created).toBe(2); // the paying lot's owner + the treasurer
+
+    const ownerRows = await notificationsService.listNotifications(ctxAs(), schemeId, OWNER, {
+      unreadOnly: true,
+    });
+    const receipt = ownerRows.find((n) => n.related?.id === paymentRows[0]!.id)!;
+    expect(receipt.body).toContain("$1,250.00");
+    expect(receipt.body).toContain("LN-PAY-1");
+
+    // Owner receipt confirmation email (default ON for payment.received).
+    expect(memoryEmail.sent.map((e) => e.to).sort()).toEqual([
+      "owner-n@example.com",
+      "treasurer-n@example.com",
+    ]);
+  });
+
+  it("work_order.completed notifies the original requester", async () => {
+    memoryEmail.sent.length = 0;
+    const contractorRows = await tdb.db
+      .insert(contractors)
+      .values({ schemeId, businessName: "Fix It Fast" })
+      .returning();
+    const requestRows = await tdb.db
+      .insert(maintenanceRequests)
+      .values({
+        schemeId,
+        title: "Broken letterbox",
+        description: "…",
+        reportedByPersonId: ownerPersonId,
+      })
+      .returning();
+    const woRows = await tdb.db
+      .insert(workOrders)
+      .values({
+        schemeId,
+        requestId: requestRows[0]!.id,
+        contractorId: contractorRows[0]!.id,
+        scope: "Fix the letterbox",
+        approvedAmountCents: 10_000,
+        status: "completed",
+      })
+      .returning();
+
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("work_order.completed", { workOrderId: woRows[0]!.id }),
+    );
+    expect(created).toBe(1); // the reporter (owner), not the committee
+
+    const rows = await notificationsService.listNotifications(ctxAs(), schemeId, OWNER, {
+      unreadOnly: true,
+    });
+    const match = rows.find((n) => n.related?.id === woRows[0]!.id)!;
+    expect(match.title).toBe("Work completed: Broken letterbox");
+    expect(match.category).toBe("maintenance");
+    expect(memoryEmail.sent.map((e) => e.to)).toEqual(["owner-n@example.com"]);
+  });
+
+  it("complaint.filed notifies the officers with the statutory deadline", async () => {
+    memoryEmail.sent.length = 0;
+    const complaintId = randomUUID();
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("complaint.filed", {
+        complaintId,
+        complainantPersonId: ownerPersonId,
+        subject: "Noise from lot 3",
+        meetByDate: "2026-07-30",
+      }),
+    );
+    expect(created).toBe(2); // chair + treasurer (the officers), never the owner
+
+    const rows = await notificationsService.listNotifications(ctxAs(), schemeId, CHAIR, {
+      unreadOnly: true,
+    });
+    const match = rows.find((n) => n.related?.id === complaintId)!;
+    expect(match.title).toBe("New complaint: Noise from lot 3");
+    expect(match.body).toContain("2026-07-30");
+    expect(memoryEmail.sent).toHaveLength(2);
+  });
+});
+
+describe("the notifier — agent.run.failed → org admins", () => {
+  const ADMIN = "user-agent-admin-n";
+  let orgSchemeId: string;
+
+  beforeAll(async () => {
+    const orgRows = await tdb.db
+      .insert(organizations)
+      .values({ name: "Agent Failure Mgmt" })
+      .returning();
+    const schemeRows = await tdb.db
+      .insert(schemes)
+      .values({
+        organizationId: orgRows[0]!.id,
+        name: "Agent OC",
+        planOfSubdivision: "PS888803N",
+        addressLine1: "3 Agent Way",
+        suburb: "Carlton",
+        postcode: "3053",
+        tier: 3,
+        status: "active",
+      })
+      .returning();
+    orgSchemeId = schemeRows[0]!.id;
+    await tdb.db.insert(users).values({
+      id: ADMIN,
+      name: "Ada Admin",
+      email: "agent-admin-n@example.com",
+    });
+    await tdb.db.insert(memberships).values({
+      schemeId: orgSchemeId,
+      userId: ADMIN,
+      role: "manager_admin",
+      startedOn: "2025-01-01",
+    });
+  });
+
+  it("notifies the org admins with the error and a link to the run", async () => {
+    memoryEmail.sent.length = 0;
+    const runId = randomUUID();
+    const event: EventRecord = {
+      ...fakeEvent("agent.run.failed", {
+        agentRunId: runId,
+        agent: "finance",
+        error: "model timeout after 30s",
+      }),
+      schemeId: orgSchemeId,
+    };
+
+    const { created } = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      event,
+    );
+    expect(created).toBe(1);
+
+    const rows = await notificationsService.listNotifications(ctxAs(), orgSchemeId, ADMIN, {
+      unreadOnly: true,
+    });
+    const match = rows.find((n) => n.related?.id === runId)!;
+    expect(match.title).toBe("Agent run failed: finance");
+    expect(match.body).toContain("model timeout after 30s");
+    expect(match.category).toBe("general");
+    expect(memoryEmail.sent.map((e) => e.to)).toEqual(["agent-admin-n@example.com"]);
+    expect(memoryEmail.sent[0]!.text).toContain("Review agent runs");
+  });
+
+  it("is a no-op for a scheme with no org and no manager_admin", async () => {
+    const none = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("agent.run.failed", {
+        agentRunId: randomUUID(),
+        agent: "finance",
+        error: "boom",
+      }),
     );
     expect(none.created).toBe(0);
   });

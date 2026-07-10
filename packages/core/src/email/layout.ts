@@ -144,6 +144,13 @@ export interface EmailInput {
    * placeholder). Supply a per-recipient preferences URL when available.
    */
   preferencesUrl?: string;
+  /**
+   * Per-recipient one-click unsubscribe URL (HMAC-signed token). When present
+   * an "Unsubscribe" link is added to the footer next to "Manage
+   * notifications" — the same URL callers should mirror into the
+   * List-Unsubscribe header.
+   */
+  unsubscribeUrl?: string;
 }
 
 export interface RenderedEmail {
@@ -432,7 +439,13 @@ function renderHtml(input: EmailInput): string {
             &nbsp;&middot;&nbsp;
             <a href="${escapeAttr(URLS.privacy)}" style="color:${COLOR.faintInk};text-decoration:underline;">Privacy</a>
             &nbsp;&middot;&nbsp;
-            <a href="${escapeAttr(prefsUrl)}" style="color:${COLOR.faintInk};text-decoration:underline;">Manage notifications</a>
+            <a href="${escapeAttr(prefsUrl)}" style="color:${COLOR.faintInk};text-decoration:underline;">Manage notifications</a>${
+              input.unsubscribeUrl
+                ? `
+            &nbsp;&middot;&nbsp;
+            <a href="${escapeAttr(input.unsubscribeUrl)}" style="color:${COLOR.faintInk};text-decoration:underline;">Unsubscribe</a>`
+                : ""
+            }
           </td></tr>
         </table>
       </td></tr>
@@ -496,6 +509,7 @@ function renderText(input: EmailInput): string {
       `Terms: ${URLS.terms}`,
       `Privacy: ${URLS.privacy}`,
       `Manage notifications: ${prefsUrl}`,
+      ...(input.unsubscribeUrl ? [`Unsubscribe: ${input.unsubscribeUrl}`] : []),
     ].join("\n"),
   );
 

@@ -20,9 +20,20 @@ export interface CreateNotificationInput {
   body: string;
   category: NotificationCategory;
   related?: { type: string; id: string };
+  /**
+   * Delivery idempotency token (unique-indexed). When set, an insert that
+   * collides with an existing row is a no-op and `createNotification` returns
+   * null — the notifier derives it from the trigger event id + recipient so a
+   * redelivered pg-boss job can't duplicate the bell or re-send email/SMS.
+   */
+  dedupeKey?: string;
 }
 
-/** Insert an in-app notification + notification.created in one transaction. */
+/**
+ * Insert an in-app notification + notification.created in one transaction.
+ * Returns null when a `dedupeKey` collision absorbed the insert (already
+ * delivered) — no row, no event.
+ */
 export async function createNotification(ctx: ServiceContext, input: CreateNotificationInput) {
   return await ctx.db.transaction(async (tx) => {
     const rows = await tx
@@ -34,9 +45,12 @@ export async function createNotification(ctx: ServiceContext, input: CreateNotif
         body: input.body,
         category: input.category,
         related: input.related ?? null,
+        dedupeKey: input.dedupeKey ?? null,
       })
+      .onConflictDoNothing({ target: notifications.dedupeKey })
       .returning();
-    const notification = rows[0]!;
+    const notification = rows[0];
+    if (!notification) return null; // dedupeKey collision — already delivered.
 
     await publishEvent(tx, {
       schemeId: input.schemeId,
@@ -56,16 +70,27 @@ export async function createNotification(ctx: ServiceContext, input: CreateNotif
   });
 }
 
-/** Fan the same notification out to a set of users (deduped). */
+/**
+ * Fan the same notification out to a set of users (deduped). Returns only the
+ * rows actually created — with `opts.dedupeKey`, recipients whose key already
+ * exists are silently skipped (idempotent redelivery).
+ */
 export async function notifyUsers(
   ctx: ServiceContext,
   schemeId: string,
   userIds: string[],
-  input: Omit<CreateNotificationInput, "schemeId" | "userId">,
+  input: Omit<CreateNotificationInput, "schemeId" | "userId" | "dedupeKey">,
+  opts?: { dedupeKey?: (userId: string) => string },
 ) {
   const created = [];
   for (const userId of [...new Set(userIds)]) {
-    created.push(await createNotification(ctx, { ...input, schemeId, userId }));
+    const notification = await createNotification(ctx, {
+      ...input,
+      schemeId,
+      userId,
+      dedupeKey: opts?.dedupeKey?.(userId),
+    });
+    if (notification) created.push(notification);
   }
   return created;
 }

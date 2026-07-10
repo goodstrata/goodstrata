@@ -28,6 +28,13 @@ const envSchema = z.object({
 
   EMAIL_PROVIDER: z.string().default("console"),
   SMS_PROVIDER: z.string().default("console"),
+  /**
+   * HMAC secret for per-recipient one-click unsubscribe tokens in notification
+   * email (footer link + List-Unsubscribe header). Falls back to
+   * BETTER_AUTH_SECRET at boot when unset, so unsubscribe links always work;
+   * set it explicitly to rotate independently of session signing.
+   */
+  UNSUBSCRIBE_SECRET: z.string().min(16).optional(),
   STORAGE_PROVIDER: z.string().default("local"),
   PAYMENTS_PROVIDER: z.string().default("mock"),
   VIDEO_PROVIDER: z.string().default("console"),

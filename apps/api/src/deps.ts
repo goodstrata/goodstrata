@@ -31,6 +31,31 @@ export function buildServiceContextFactory(
   });
 }
 
+/**
+ * Production misconfiguration warnings for outbound delivery: a "console"
+ * email/SMS provider only logs to stdout, so in production every notification,
+ * levy notice and receipt silently goes nowhere. Logged prominently at boot
+ * and exposed on /api/health. Empty outside production.
+ */
+export function deliveryProviderWarnings(
+  env: Pick<Env, "NODE_ENV">,
+  integrations: Pick<Integrations, "email" | "sms">,
+): string[] {
+  if (env.NODE_ENV !== "production") return [];
+  const warnings: string[] = [];
+  if (integrations.email.name === "console") {
+    warnings.push(
+      "EMAIL_PROVIDER=console in production — outbound email is only logged, not delivered. Set EMAIL_PROVIDER=ses or smtp.",
+    );
+  }
+  if (integrations.sms.name === "console") {
+    warnings.push(
+      "SMS_PROVIDER=console in production — outbound SMS is only logged, not delivered. Set SMS_PROVIDER=twilio.",
+    );
+  }
+  return warnings;
+}
+
 export async function buildModelResolver(env: Env): Promise<ModelResolver> {
   // process.env is included so per-agent overrides (AI_MODEL_FINANCE=…) work.
   const aiEnv = {
