@@ -12,6 +12,8 @@ interface RequestPayload {
   title: string;
   description: string;
   lotId: string | null;
+  /** Human origin: the reporter flagged the request an emergency at intake. */
+  reportedEmergency?: boolean;
 }
 
 interface RfqCreatedPayload {
@@ -23,8 +25,11 @@ interface RfqCreatedPayload {
 
 /**
  * The maintenance agent triages new requests and proposes work orders. It
- * classifies and chooses a contractor; CODE routes the work order by the
- * scheme's thresholds (auto / decision gate / emergency + post-hoc review).
+ * classifies and chooses a contractor; CODE routes the work order, and no
+ * LLM-originated value (triage urgency, cost estimate) ever gates a dispatch:
+ * an agent proposal always opens the committee decision gate unless the HUMAN
+ * reporter flagged the request an emergency at intake (immediate dispatch +
+ * post-hoc committee review).
  *
  * It is also the RFQ scope drafter: when an officer creates an RFQ, the agent
  * writes the anonymized scope-of-works DRAFT for human review. It never
@@ -52,7 +57,11 @@ export const maintenanceAgent: AgentDefinition = {
     "   why it's the owner's responsibility, then finish.",
     "3. If it IS common property, call proposeWorkOrder with the best-matched contractor from",
     "   the provided list, a clear scope of work, and a realistic cost estimate in cents.",
-    "   The platform decides whether it auto-dispatches or goes to the committee — not you.",
+    "   Routing is decided by the platform, never by you: your proposal ALWAYS goes to the",
+    "   committee for approval before any contractor is engaged, unless the REPORTER flagged",
+    "   the request as an emergency at intake — only that human flag dispatches immediately",
+    "   (with a post-hoc committee review). Your urgency assessment and cost estimate never",
+    "   trigger a dispatch on their own.",
     "Then finish with a one-line summary.",
     "",
     "TASK B — a request for quotes (RFQ) was created and needs its scope of works drafted.",
@@ -123,8 +132,9 @@ export const maintenanceAgent: AgentDefinition = {
       `Request title: ${payload.title}`,
       `Description: ${payload.description}`,
       `Reported for: ${payload.lotId ? "a specific lot" : "common property (unspecified)"}`,
+      `Reporter flagged as emergency: ${payload.reportedEmergency ? "YES — a proposed work order dispatches immediately with post-hoc committee review" : "no — any work order you propose needs committee approval before dispatch"}`,
       "",
-      `Auto-approve threshold: ${formatCents(scheme.settings.maintenanceAutoApproveCents)}`,
+      `Committee auto-approve threshold for officer-raised work (context only — your own estimates always need approval): ${formatCents(scheme.settings.maintenanceAutoApproveCents)}`,
       "",
       "Approved contractors:",
       ...(pool.length > 0
@@ -198,7 +208,7 @@ export const maintenanceAgent: AgentDefinition = {
 
       proposeWorkOrder: defineAgentTool(ctx, {
         description:
-          "Propose a work order: contractor, scope, estimated cost. The platform routes it (auto-dispatch, committee approval, or emergency) by the scheme's thresholds.",
+          "Propose a work order: contractor, scope, estimated cost. Your proposal goes to the committee for approval before dispatch — unless the reporter flagged the request as an emergency at intake, in which case the platform dispatches immediately and opens a post-hoc committee review. Your estimate and urgency never trigger dispatch.",
         inputSchema: z.object({
           contractorId: z.string(),
           scope: z.string().min(5).max(5000),

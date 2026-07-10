@@ -31,6 +31,7 @@ export const NOTIFICATION_TYPES = [
   "agenda_item.submitted",
   "agenda_item.accepted",
   "agenda_item.rejected",
+  "motion.close.proposed",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -88,6 +89,8 @@ export const NOTIFICATION_DEFAULTS: Record<
   "agenda_item.submitted": { in_app: true, email: true, sms: false },
   "agenda_item.accepted": { in_app: true, email: true, sms: false },
   "agenda_item.rejected": { in_app: true, email: true, sms: false },
+  // A live-meeting prompt for officers, not correspondence — bell only.
+  "motion.close.proposed": { in_app: true, email: false, sms: false },
 };
 
 /**
@@ -141,6 +144,7 @@ export const NOTIFICATION_GROUPS = [
       "agenda_item.submitted",
       "agenda_item.accepted",
       "agenda_item.rejected",
+      "motion.close.proposed",
     ],
   },
   {
@@ -277,6 +281,11 @@ export const NOTIFICATION_TYPE_META: Record<
   "agenda_item.rejected": {
     label: "Your motion declined",
     help: "When the committee declines a motion you proposed.",
+    group: "meetings",
+  },
+  "motion.close.proposed": {
+    label: "Motions ready to close",
+    help: "When the AI chair suggests a motion's discussion is finished.",
     group: "meetings",
   },
 };

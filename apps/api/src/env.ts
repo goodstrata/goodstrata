@@ -25,6 +25,16 @@ const envSchema = z.object({
   AI_DEFAULT_MODEL: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
+  /**
+   * Escape hatch: set to "1" to allow the mock AI provider in production
+   * (e.g. a demo box). Without it, a prod deploy whose provider resolves to
+   * mock refuses to start rather than silently no-op'ing every agent.
+   */
+  ALLOW_MOCK_AI: z.string().optional(),
+  /** Max tokens (input+output) a single agent run may consume. */
+  AGENT_RUN_TOKEN_BUDGET: z.coerce.number().int().positive().optional(),
+  /** Max tokens all of a scheme's agent runs may consume per UTC day. */
+  AGENT_SCHEME_DAILY_TOKEN_BUDGET: z.coerce.number().int().positive().optional(),
 
   EMAIL_PROVIDER: z.string().default("console"),
   SMS_PROVIDER: z.string().default("console"),

@@ -1,4 +1,4 @@
-import { createModelResolver, type ModelResolver } from "@goodstrata/agents";
+import { createModelResolver, defaultModelKey, type ModelResolver } from "@goodstrata/agents";
 import type { Causation, ServiceContext } from "@goodstrata/core";
 import type { Database } from "@goodstrata/db";
 import { type Integrations, integrationsFromEnv } from "@goodstrata/integrations";
@@ -65,6 +65,25 @@ export async function buildModelResolver(env: Env): Promise<ModelResolver> {
     ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
     OLLAMA_BASE_URL: env.OLLAMA_BASE_URL,
   };
+
+  // Mock-provider guard: `mock` is the DEFAULT provider, so a keyless prod
+  // deploy would otherwise boot fine and have every agent silently "succeed"
+  // doing nothing. Refuse to start unless explicitly allowed.
+  if (defaultModelKey(aiEnv).startsWith("mock:")) {
+    if (env.NODE_ENV === "production" && env.ALLOW_MOCK_AI !== "1") {
+      throw new Error(
+        "AI provider resolves to 'mock' in production — every agent would no-op silently. " +
+          "Set AI_PROVIDER=anthropic (with ANTHROPIC_API_KEY) or AI_PROVIDER=local / AI_DEFAULT_MODEL, " +
+          "or set ALLOW_MOCK_AI=1 to run keyless on purpose.",
+      );
+    }
+    if (env.NODE_ENV === "development") {
+      console.warn(
+        "[ai] provider is 'mock' — agents return canned text and never call tools (set AI_PROVIDER=anthropic|local for real runs)",
+      );
+    }
+  }
+
   if (env.AI_PROVIDER === "mock") {
     // Keyless dev/e2e: agents run against a static mock (no tool calls).
     const { staticTextModel } = await import("@goodstrata/agents/testing");

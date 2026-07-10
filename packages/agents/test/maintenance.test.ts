@@ -49,10 +49,11 @@ function svc(): ServiceContext {
   };
 }
 
-async function submitRequest(title: string, description: string) {
+async function submitRequest(title: string, description: string, reportedEmergency = false) {
   const request = await maintenanceService.createMaintenanceRequest(svc(), schemeId, {
     title,
     description,
+    reportedEmergency,
   });
   // Load the created event the dispatcher would have delivered.
   const events = await tdb.db.query.eventLog.findMany({
@@ -91,7 +92,7 @@ afterAll(async () => {
 });
 
 describe("maintenance agent", () => {
-  it("triages and proposes; code auto-dispatches under the threshold", async () => {
+  it("an LLM estimate under the threshold NEVER auto-dispatches — committee gate opens", async () => {
     const { request, event } = await submitRequest(
       "Dripping tap in common laundry",
       "The cold tap won't fully close, slow drip for a week.",
@@ -119,12 +120,72 @@ describe("maintenance agent", () => {
             input: {
               contractorId,
               scope: "Replace tap washer/cartridge in common laundry cold tap",
+              // Under the $500 auto-approve threshold — but it is the LLM's own
+              // figure, so it must not gate a dispatch.
               estimatedCents: 15_000,
             },
           },
         ],
       },
-      { text: "Triaged as routine plumbing and dispatched Rapid Roofing." },
+      { text: "Triaged as routine plumbing; work order proposed for committee approval." },
+    ]);
+
+    const outcome = await runAgent(deps, maintenanceAgent, event);
+    expect(outcome.kind).toBe("ran");
+    if (outcome.kind !== "ran") return;
+    expect(outcome.status).toBe("awaiting_decision");
+
+    const requests = await maintenanceService.listRequests(svc(), schemeId);
+    const updated = requests.find((r) => r.id === request.id)!;
+    expect(updated.status).toBe("quoting"); // awaiting the committee, not approved
+    expect(updated.category).toBe("plumbing");
+
+    // Nothing dispatched, nobody emailed, and the human gate is open.
+    const orders = await maintenanceService.listWorkOrders(svc(), schemeId);
+    expect(orders.every((o) => o.status !== "dispatched")).toBe(true);
+    expect(memoryEmail.sent).toHaveLength(0);
+    const decisions = await tdb.db.query.decisions.findMany({
+      where: (t, { eq }) => eq(t.kind, "quote_approval"),
+    });
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]!.followUp).toMatchObject({ action: "maintenance.dispatchWorkOrder" });
+  });
+
+  it("a reporter-flagged emergency still dispatches immediately with post-hoc review", async () => {
+    const { request, event } = await submitRequest(
+      "Burst pipe flooding the basement carpark",
+      "Water is pouring from a common riser — carpark flooding now.",
+      true, // the HUMAN reporter flagged the emergency at intake
+    );
+    memoryEmail.sent.length = 0;
+
+    const deps = makeDeps([
+      {
+        toolCalls: [
+          {
+            toolName: "triageRequest",
+            input: {
+              category: "plumbing",
+              urgency: "emergency",
+              isCommonProperty: true,
+              reasoning: "Active flooding from a common riser.",
+            },
+          },
+        ],
+      },
+      {
+        toolCalls: [
+          {
+            toolName: "proposeWorkOrder",
+            input: {
+              contractorId,
+              scope: "Isolate the burst riser and repair; make safe the carpark",
+              estimatedCents: 250_000,
+            },
+          },
+        ],
+      },
+      { text: "Emergency dispatched with post-hoc committee review." },
     ]);
 
     const outcome = await runAgent(deps, maintenanceAgent, event);
@@ -133,13 +194,18 @@ describe("maintenance agent", () => {
     expect(outcome.status).toBe("succeeded");
 
     const requests = await maintenanceService.listRequests(svc(), schemeId);
-    const updated = requests.find((r) => r.id === request.id)!;
-    expect(updated.status).toBe("approved");
-    expect(updated.category).toBe("plumbing");
+    expect(requests.find((r) => r.id === request.id)!.status).toBe("approved");
 
+    // Dispatched immediately: contractor emailed, work order out the door…
     const orders = await maintenanceService.listWorkOrders(svc(), schemeId);
-    expect(orders.some((o) => o.status === "dispatched")).toBe(true);
+    expect(orders.some((o) => o.requestId === request.id && o.status === "dispatched")).toBe(true);
     expect(memoryEmail.sent.some((e) => e.to === "roof@example.com")).toBe(true);
+    // …with the post-hoc committee review opened.
+    const reviews = await tdb.db.query.decisions.findMany({
+      where: (t, { eq }) => eq(t.kind, "emergency_review"),
+    });
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]!.followUp).toBeNull();
   });
 
   it("over-threshold proposal ends the run awaiting the committee decision", async () => {
@@ -182,10 +248,12 @@ describe("maintenance agent", () => {
     if (outcome.kind !== "ran") return;
     expect(outcome.status).toBe("awaiting_decision");
 
+    // Newest gate is for this proposal (the under-threshold test opened one too).
     const decisions = await tdb.db.query.decisions.findMany({
       where: (t, { eq }) => eq(t.kind, "quote_approval"),
+      orderBy: (t, { desc }) => desc(t.createdAt),
     });
-    expect(decisions).toHaveLength(1);
+    expect(decisions.length).toBeGreaterThan(0);
     expect(decisions[0]!.followUp).toMatchObject({ action: "maintenance.dispatchWorkOrder" });
   });
 

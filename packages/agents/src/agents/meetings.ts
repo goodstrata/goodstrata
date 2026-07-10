@@ -18,8 +18,14 @@ const TRANSCRIPT_CONTEXT_CHARS = 8000;
  * The meetings agent drafts minutes when a meeting closes, from the
  * structured record (agenda, motions, tallies, attendance) plus — when the
  * video meeting was transcribed — the stored transcript, so the minutes
- * reflect the actual discussion. The draft is stored as a document and
- * linked to the meeting.
+ * reflect the actual discussion.
+ *
+ * REVIEW GATE: the draft is stored COMMITTEE-ONLY with the meeting flipped to
+ * "minutes_draft". Members see nothing until an officer approves via
+ * meetingsService.approveMinutes (officer-gated route), which republishes the
+ * document owner-visible, sets minutes_distributed, and publishes the
+ * minutes.drafted event that notifies every member. LLM-drafted minutes are
+ * never member-visible without a human in between.
  */
 export const meetingsAgent: AgentDefinition = {
   name: "meetings",
@@ -115,36 +121,29 @@ export const meetingsAgent: AgentDefinition = {
     const payload = ctx.triggerEvent.payload as ClosedPayload;
     return {
       saveMinutes: defineAgentTool(ctx, {
-        description: "Store the drafted minutes and attach them to the meeting",
+        description:
+          "Store the drafted minutes as a committee-only draft attached to the meeting. " +
+          "An officer reviews and approves before members see anything.",
         inputSchema: z.object({ minutesMarkdown: z.string().min(50) }),
         mutates: true,
         async execute(input) {
           if (!ctx.schemeId) throw new Error("no scheme");
+          // Committee-only until a human approves (meetingsService.approveMinutes
+          // republishes at "owners", flips to minutes_distributed, and publishes
+          // the member-facing minutes.drafted event at THAT point — not here).
           const doc = await documentsService.uploadDocument(ctx.services, ctx.schemeId, {
             filename: `minutes-${payload.meetingId}.md`,
             contentType: "text/markdown",
             content: new TextEncoder().encode(input.minutesMarkdown),
             category: "minutes",
             title: "Draft minutes",
-            accessLevel: "owners",
+            accessLevel: "committee",
           });
           await ctx.services.db
             .update(meetings)
-            .set({ minutesDocumentId: doc.id, status: "minutes_distributed" })
+            .set({ minutesDocumentId: doc.id, status: "minutes_draft" })
             .where(and(eq(meetings.id, payload.meetingId), eq(meetings.schemeId, ctx.schemeId)));
-          const { publishEvent } = await import("@goodstrata/events");
-          await publishEvent(ctx.services.db, {
-            schemeId: ctx.schemeId,
-            stream: `meeting:${payload.meetingId}`,
-            type: "minutes.drafted",
-            payload: { meetingId: payload.meetingId, documentId: doc.id },
-            actor: ctx.services.actor,
-            correlationId: ctx.triggerEvent.correlationId,
-            causationId: ctx.triggerEvent.id,
-            causationDepth: ctx.triggerEvent.causationDepth + 1,
-            dedupeKey: `${ctx.runId}:minutes`,
-          });
-          return { ok: true, documentId: doc.id };
+          return { ok: true, documentId: doc.id, awaitingApproval: true };
         },
       }),
     };

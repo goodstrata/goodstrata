@@ -151,6 +151,8 @@ export const MEETING_STATUSES = [
   "notice_sent",
   "in_progress",
   "closed",
+  /** Agent-drafted minutes stored committee-only, awaiting officer approval. */
+  "minutes_draft",
   "minutes_distributed",
 ] as const;
 export type MeetingStatus = (typeof MEETING_STATUSES)[number];

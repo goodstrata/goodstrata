@@ -59,10 +59,14 @@ function req(userId: string, path: string, init?: { method?: string; json?: unkn
 
 const svc = () => deps.serviceContext(systemActor("test"));
 
-async function triagedRequest(urgency: "emergency" | "high" | "routine" = "routine") {
+async function triagedRequest(
+  urgency: "emergency" | "high" | "routine" = "routine",
+  reportedEmergency = false,
+) {
   const request = await maintenanceService.createMaintenanceRequest(svc(), schemeId, {
     title: `Route job ${Math.random().toString(36).slice(2, 8)}`,
     description: "Needs fixing",
+    reportedEmergency,
   });
   await maintenanceService.applyTriage(svc(), schemeId, request.id, {
     category: "plumbing",
@@ -264,8 +268,9 @@ describe("work orders (officer only)", () => {
     expect(route.decisionId).toBeTruthy();
   });
 
-  it("emergency request → route.mode emergency_dispatched with a post-hoc review", async () => {
-    const request = await triagedRequest("emergency");
+  it("reporter-flagged emergency request → route.mode emergency_dispatched with a post-hoc review", async () => {
+    // The REPORTER flagged the emergency at intake; agent triage alone never dispatches.
+    const request = await triagedRequest("emergency", true);
     const res = await req(CHAIR, "/work-orders", {
       json: {
         requestId: request.id,

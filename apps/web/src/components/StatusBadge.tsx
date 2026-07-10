@@ -63,6 +63,7 @@ const STATUS_TONES: Record<string, Tone> = {
   // meetings & motions
   notice_sent: "info",
   closed: "positive",
+  minutes_draft: "agent",
   minutes_distributed: "positive",
   carried: "positive",
   lost: "critical",

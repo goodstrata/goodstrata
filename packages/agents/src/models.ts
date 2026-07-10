@@ -93,3 +93,12 @@ function defaultKeyFor(env: AiEnv): string {
       return "mock:default";
   }
 }
+
+/**
+ * The 'provider:model' key agents fall back to when no per-agent override is
+ * set — what the deploy actually runs on by default. Exposed so boot can
+ * refuse a production start that silently resolves to the mock provider.
+ */
+export function defaultModelKey(env: AiEnv): string {
+  return env.AI_DEFAULT_MODEL?.trim() || defaultKeyFor(env);
+}

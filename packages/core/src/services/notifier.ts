@@ -76,6 +76,7 @@ export const NOTIFIER_EVENT_TYPES = [
   "work_order.completed",
   "complaint.filed",
   "agent.run.failed",
+  "motion.close.proposed",
 ] as const;
 
 /** Roles considered "the committee" for notification fan-out. */
@@ -564,6 +565,27 @@ export async function handleEventForNotifications(
           url: schemeUrl(schemeId, "maintenance"),
         }),
         smsBody: `GoodStrata: ${title}`,
+      });
+      return { created };
+    }
+
+    case "motion.close.proposed": {
+      // The AI chair thinks discussion is done — nudge the officers to run the
+      // binding close/tally themselves. Bell-only: it is a live-meeting prompt,
+      // not correspondence.
+      const payload = event.payload as { motionId: string; title: string };
+      const committee = await userIdsWithRoles(ctx, schemeId, COMMITTEE_NOTIFY_ROLES);
+      const created = await deliver(ctx, {
+        eventId: event.id,
+        schemeId,
+        notificationType: "motion.close.proposed",
+        userIds: committee,
+        inApp: {
+          title: `Motion ready to close: ${payload.title}`,
+          body: "The AI chair suggests discussion is finished. Close the motion to tally the votes.",
+          category: "meeting",
+          related: { type: "motion", id: payload.motionId },
+        },
       });
       return { created };
     }

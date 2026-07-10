@@ -27,6 +27,12 @@ export const createRequestInput = z.object({
   description: z.string().min(3).max(5000),
   lotId: z.string().optional(),
   reportedByPersonId: z.string().optional(),
+  /**
+   * The reporter's own "this is an emergency" flag, captured at intake. This
+   * is the ONLY signal that can authorise immediate work-order dispatch —
+   * agent triage urgency never does (see proposeWorkOrder).
+   */
+  reportedEmergency: z.boolean().optional(),
 });
 export type CreateRequestInput = z.infer<typeof createRequestInput>;
 
@@ -50,6 +56,7 @@ export async function createMaintenanceRequest(
         reportedByPersonId: input.reportedByPersonId ?? null,
         title: input.title,
         description: input.description,
+        reportedEmergency: input.reportedEmergency ?? false,
         status: "open",
       })
       .returning();
@@ -64,6 +71,7 @@ export async function createMaintenanceRequest(
         title: request.title,
         description: request.description,
         lotId: request.lotId,
+        reportedEmergency: request.reportedEmergency,
       },
       actor: ctx.actor,
       ...causationFields(ctx),
@@ -268,10 +276,17 @@ export type WorkOrderRoute =
   | { mode: "awaiting_approval"; workOrderId: string; decisionId: string };
 
 /**
- * Create a work order for a triaged request and route it per SPEC §4.2:
- *  - emergency urgency → dispatch now + post-hoc committee review
- *  - ≤ auto-approve threshold → dispatch now
- *  - above → committee decision gate (multi-quote note above the higher bar)
+ * Create a work order for a triaged request and route it per SPEC §4.2, with
+ * one hard safety rule: LLM-ORIGINATED VALUES NEVER GATE AUTO-DISPATCH.
+ *
+ *  - reporter flagged the request an emergency at intake (human origin) →
+ *    dispatch now + post-hoc committee review. Triage `urgency` (LLM output)
+ *    deliberately plays no part in this.
+ *  - a human officer proposes ≤ the auto-approve threshold → dispatch now
+ *    (the estimate is the officer's own figure).
+ *  - everything else — including EVERY agent-proposed work order that isn't a
+ *    reporter-flagged emergency — goes to the committee decision gate
+ *    (multi-quote note above the higher bar).
  */
 export async function proposeWorkOrder(
   ctx: ServiceContext,
@@ -296,8 +311,14 @@ export async function proposeWorkOrder(
   if (!contractor) throw notFound("Approved contractor");
 
   const { maintenanceAutoApproveCents, maintenanceMultiQuoteCents } = scheme.settings;
-  const isEmergency = request.urgency === "emergency";
-  const withinAuto = input.estimatedCents <= maintenanceAutoApproveCents;
+  // Human origin only: the reporter's intake flag. request.urgency is agent
+  // triage (LLM output) and must never authorise an immediate dispatch.
+  const isEmergency = request.reportedEmergency;
+  // The auto-approve threshold applies to human officers (and trusted code)
+  // whose estimate is their own figure — NEVER to an agent actor, whose
+  // estimatedCents is LLM output and cannot wave its own work through.
+  const withinAuto =
+    ctx.actor.kind !== "agent" && input.estimatedCents <= maintenanceAutoApproveCents;
 
   const workOrderId = await ctx.db.transaction(async (tx) => {
     const rows = await tx
@@ -348,7 +369,7 @@ export async function proposeWorkOrder(
       kind: "emergency_review",
       title: `Emergency works dispatched — ${formatCents(input.estimatedCents)} (${contractor.businessName})`,
       summaryMd: [
-        `Emergency maintenance was auto-dispatched per the scheme's settings:`,
+        `Emergency maintenance was dispatched immediately because the reporter flagged the request as an emergency:`,
         "",
         `- **Request:** ${request.title}`,
         `- **Contractor:** ${contractor.businessName}`,

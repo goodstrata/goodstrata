@@ -1,6 +1,7 @@
 import {
   agendaItems,
   type DbHandle,
+  documents,
   lotLedgerEntries,
   lots,
   meetingAttendance,
@@ -86,6 +87,13 @@ interface MotionResult extends Partial<MotionTally> {
   quorate?: boolean | null;
   /** s 86(2)(a): a circular ordinary ballot fell below the returned-votes floor. */
   belowQuorumFloor?: boolean;
+  /**
+   * ISO instant the AI chair proposed closing this motion (ready-to-close
+   * flag). The proposal is advisory: only a human officer's closeMotion call
+   * runs the binding tally. Preserved through resolveMotion for the audit
+   * trail.
+   */
+  closeProposedAt?: string | null;
 }
 
 /**
@@ -482,6 +490,13 @@ async function generalMeetingNoticeBlocks(
 // Video meetings (Daily.co in production; console provider offline)
 // ---------------------------------------------------------------------------
 
+/** Statuses in/after which a meeting is over (minutes drafted or distributed). */
+const ENDED_MEETING_STATUSES = ["closed", "minutes_draft", "minutes_distributed"] as const;
+
+function meetingEnded(status: (typeof meetings.$inferSelect)["status"]): boolean {
+  return (ENDED_MEETING_STATUSES as readonly string[]).includes(status);
+}
+
 const VIDEO_ROOM_EXPIRES_MINUTES = 4 * 60;
 
 /** Deterministic room name so join can re-derive it without extra state. */
@@ -505,7 +520,7 @@ export async function startVideoMeeting(ctx: ServiceContext, schemeId: string, m
       422,
     );
   }
-  if (meeting.status === "closed" || meeting.status === "minutes_distributed") {
+  if (meetingEnded(meeting.status)) {
     throw new DomainError("ALREADY_CLOSED", "Meeting is already closed", 409);
   }
   if (meeting.videoUrl) return { url: meeting.videoUrl };
@@ -813,8 +828,7 @@ export async function demandPoll(
     const generalInProgress =
       meeting &&
       (meeting.kind === "agm" || meeting.kind === "sgm") &&
-      meeting.status !== "closed" &&
-      meeting.status !== "minutes_distributed";
+      !meetingEnded(meeting.status);
     if (!generalInProgress) {
       throw new DomainError(
         "BAD_STATUS",
@@ -1217,6 +1231,45 @@ export async function closeMotion(ctx: ServiceContext, schemeId: string, motionI
 }
 
 /**
+ * The AI chair's ready-to-close flag: record that discussion on an open motion
+ * appears finished, so a human officer can run the binding tally (closeMotion
+ * via the officer-gated route). Advisory only — never closes or tallies.
+ * Publishes motion.close.proposed, which the notifier turns into an in-app
+ * nudge for the committee officers. Idempotent per motion.
+ */
+export async function proposeMotionClosure(
+  ctx: ServiceContext,
+  schemeId: string,
+  motionId: string,
+) {
+  const motion = await ctx.db.query.motions.findFirst({
+    where: and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)),
+  });
+  if (!motion) throw notFound("Motion");
+  if (motion.status !== "open") throw new DomainError("BAD_STATUS", "Motion is not open", 409);
+
+  const result = (motion.result ?? {}) as MotionResult;
+  if (result.closeProposedAt) {
+    return { motionId, closeProposedAt: result.closeProposedAt, alreadyProposed: true };
+  }
+
+  const closeProposedAt = ctx.clock.now().toISOString();
+  await ctx.db.transaction(async (tx) => {
+    const updated: MotionResult = { ...result, closeProposedAt };
+    await tx.update(motions).set({ result: updated }).where(eq(motions.id, motionId));
+    await publishEvent(tx, {
+      schemeId,
+      stream: `motion:${motionId}`,
+      type: "motion.close.proposed",
+      payload: { motionId, meetingId: motion.meetingId, title: motion.title },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+  });
+  return { motionId, closeProposedAt, alreadyProposed: false };
+}
+
+/**
  * ss 78(4)/97(5): ripen an interim resolution into a final one once its 29-day
  * window has elapsed and it was not challenged/petitioned. A challenged interim
  * resolution does NOT ripen — it is set aside (status → lost); re-passing it
@@ -1538,7 +1591,7 @@ export async function closeMeeting(ctx: ServiceContext, schemeId: string, meetin
     where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
   });
   if (!meeting) throw notFound("Meeting");
-  if (meeting.status === "closed" || meeting.status === "minutes_distributed") {
+  if (meetingEnded(meeting.status)) {
     throw new DomainError("ALREADY_CLOSED", "Meeting is already closed", 409);
   }
 
@@ -1585,6 +1638,52 @@ export async function closeMeeting(ctx: ServiceContext, schemeId: string, meetin
   });
 
   return quorum;
+}
+
+/**
+ * Officer approval of the agent-drafted minutes. The meetings agent stores its
+ * draft committee-only with status "minutes_draft"; this human-invoked step
+ * republishes the document owner-visible, flips the meeting to
+ * minutes_distributed, and publishes minutes.drafted — the event the notifier
+ * fans out to every member — so members are told only once a human has
+ * reviewed the LLM's draft.
+ */
+export async function approveMinutes(ctx: ServiceContext, schemeId: string, meetingId: string) {
+  // Same rule as decision resolution: this is a human gate — an agent or
+  // system actor must never approve the LLM's own draft.
+  if (ctx.actor.kind !== "user") {
+    throw new DomainError("FORBIDDEN", "Only a user can approve minutes", 403);
+  }
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting) throw notFound("Meeting");
+  if (meeting.status !== "minutes_draft" || !meeting.minutesDocumentId) {
+    throw new DomainError(
+      "NO_DRAFT_MINUTES",
+      "This meeting has no draft minutes awaiting approval",
+      409,
+    );
+  }
+  const documentId = meeting.minutesDocumentId;
+
+  await ctx.db.transaction(async (tx) => {
+    await tx.update(documents).set({ accessLevel: "owners" }).where(eq(documents.id, documentId));
+    await tx
+      .update(meetings)
+      .set({ status: "minutes_distributed" })
+      .where(eq(meetings.id, meetingId));
+    await publishEvent(tx, {
+      schemeId,
+      stream: `meeting:${meetingId}`,
+      type: "minutes.drafted",
+      payload: { meetingId, documentId },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+  });
+
+  return { meetingId, documentId };
 }
 
 // ---------------------------------------------------------------------------

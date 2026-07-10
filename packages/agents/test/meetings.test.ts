@@ -4,7 +4,7 @@ import { lots, schemes } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import { loadEvent } from "@goodstrata/events";
 import { integrationsFromEnv } from "@goodstrata/integrations";
-import { type Actor, fixedClock, systemActor } from "@goodstrata/shared";
+import { type Actor, fixedClock, systemActor, userActor } from "@goodstrata/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { meetingsAgent } from "../src/agents/meetings.js";
 import { createModelResolver } from "../src/models.js";
@@ -64,7 +64,7 @@ afterAll(async () => {
 });
 
 describe("meetings agent", () => {
-  it("drafts minutes from the structured record and attaches them", async () => {
+  it("drafts minutes committee-only; members see them only after officer approval", async () => {
     const meeting = await meetingsService.createMeeting(svc(), schemeId, {
       kind: "committee",
       title: "July committee meeting",
@@ -104,23 +104,53 @@ describe("meetings agent", () => {
     if (outcome.kind !== "ran") return;
     expect(outcome.status).toBe("succeeded");
 
+    // REVIEW GATE: the draft is committee-only and the meeting sits in
+    // minutes_draft — members have NOT been notified.
     const detail = await meetingsService.meetingDetail(svc(), schemeId, meeting.id);
-    expect(detail.meeting.status).toBe("minutes_distributed");
+    expect(detail.meeting.status).toBe("minutes_draft");
     expect(detail.meeting.minutesDocumentId).toBeTruthy();
 
-    // The stored document round-trips.
+    // The stored document round-trips, committee-visible only.
     const docs = await tdb.db.query.documents.findMany({
       where: (t, { eq }) => eq(t.category, "minutes"),
     });
     expect(docs).toHaveLength(1);
+    expect(docs[0]!.accessLevel).toBe("committee");
     const stored = await integrations.storage.get(docs[0]!.storageKey);
     expect(new TextDecoder().decode(stored)).toContain("Accept gutter quote");
 
-    // minutes.drafted event linked to the meeting.closed trigger.
+    // No member-facing minutes.drafted event at draft time.
+    const draftedBefore = await tdb.db.query.eventLog.findMany({
+      where: (t, { eq }) => eq(t.type, "minutes.drafted"),
+    });
+    expect(draftedBefore).toHaveLength(0);
+
+    // A non-user actor cannot approve the LLM's own draft.
+    await expect(meetingsService.approveMinutes(svc(), schemeId, meeting.id)).rejects.toThrow(
+      /Only a user/,
+    );
+
+    // Officer approval republishes owner-visible + notifies members.
+    const officer = { ...svc(), actor: userActor("user-officer-1") };
+    const approved = await meetingsService.approveMinutes(officer, schemeId, meeting.id);
+    expect(approved.documentId).toBe(detail.meeting.minutesDocumentId);
+
+    const after = await meetingsService.meetingDetail(svc(), schemeId, meeting.id);
+    expect(after.meeting.status).toBe("minutes_distributed");
+    const doc = await tdb.db.query.documents.findFirst({
+      where: (t, { eq }) => eq(t.id, approved.documentId),
+    });
+    expect(doc!.accessLevel).toBe("owners");
+
+    // minutes.drafted (the member notification event) published at APPROVAL.
     const drafted = await tdb.db.query.eventLog.findMany({
       where: (t, { eq }) => eq(t.type, "minutes.drafted"),
     });
     expect(drafted).toHaveLength(1);
-    expect(drafted[0]!.causationId).toBe(event.id);
+
+    // Approving twice is a 409 — there is no draft left to approve.
+    await expect(meetingsService.approveMinutes(officer, schemeId, meeting.id)).rejects.toThrow(
+      /no draft minutes/i,
+    );
   });
 });
