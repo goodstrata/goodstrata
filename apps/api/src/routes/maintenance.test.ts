@@ -186,11 +186,9 @@ describe("reporting a maintenance issue (any member)", () => {
     expect(body.error.details!.some((i) => i.path[0] === "title")).toBe(true);
   });
 
-  // TODO(bug?): the API accepts a whitespace-only title ("   " passes min(3)
-  // because createRequestInput does not trim). The web form trims to min 1, so
-  // only direct API callers can create blank-looking requests. If server-side
-  // trimming is adopted, unskip this.
-  it.skip("rejects a whitespace-only title", async () => {
+  // createRequestInput trims before min(3), so blank-looking titles are
+  // refused server-side, not just by the web form's client trim.
+  it("rejects a whitespace-only title", async () => {
     const res = await req(OWNER, "/maintenance", {
       json: { title: "   ", description: "valid description" },
     });
@@ -396,7 +394,10 @@ describe("contractor pool (officer only)", () => {
     const noTrades = await req(CHAIR, "/contractors", {
       json: {
         businessName: "No Trades Co",
-        tradeCategories: ",,,".split(",").map((t) => t.trim()).filter(Boolean),
+        tradeCategories: ",,,"
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
       },
     });
     expect(noTrades.status).toBe(422);

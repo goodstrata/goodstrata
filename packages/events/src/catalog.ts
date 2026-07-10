@@ -226,6 +226,20 @@ export const eventDefs = {
   // documents / compliance / comms
   "document.uploaded": lax,
   "document.classified": lax,
+  /** A replacement revision was uploaded; the old row/object stay behind as the audit trail. */
+  "document.superseded": z.object({
+    /** The old (now superseded) document. */
+    documentId: z.string(),
+    supersededByDocumentId: z.string(),
+    category: z.string(),
+    title: z.string(),
+  }),
+  /** An officer soft-deleted the document; the row survives for retention/audit. */
+  "document.deleted": z.object({
+    documentId: z.string(),
+    category: z.string(),
+    title: z.string(),
+  }),
   /** The retention sweep deleted the stored object and de-identified the row. */
   "document.retention.purged": z.object({
     documentId: z.string(),

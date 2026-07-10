@@ -168,6 +168,7 @@ function documentDto(d: {
   sizeBytes: number;
   accessLevel: string;
   retentionUntil: string | null;
+  supersedesDocumentId: string | null;
   createdAt: Date;
 }) {
   return {
@@ -178,6 +179,7 @@ function documentDto(d: {
     sizeBytes: d.sizeBytes,
     accessLevel: d.accessLevel,
     retentionUntil: d.retentionUntil,
+    supersedesDocumentId: d.supersedesDocumentId,
     createdAt: d.createdAt,
   };
 }
@@ -187,20 +189,50 @@ export function documentsRoutes(deps: AppDeps) {
     .get(
       "/:schemeId/documents",
       requireSchemeMember(deps),
-      zv("query", z.object({ category: z.enum(DOCUMENT_CATEGORIES).optional() })),
+      zv(
+        "query",
+        z.object({
+          category: z.enum(DOCUMENT_CATEGORIES).optional(),
+          /** "true" adds superseded revisions to the register (version history). */
+          includeSuperseded: z.enum(["true", "false"]).optional(),
+        }),
+      ),
       async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const query = c.req.valid("query");
         // s146 tiers: the register only lists records this member may read,
         // so an owner never sees a committee record they'd then be refused.
         const docs = await documentsService.listDocuments(
           ctx,
           c.get("schemeId"),
-          c.req.valid("query").category,
+          query.category,
           documentsService.accessLevelsForRoles(c.get("roles")),
+          { includeSuperseded: query.includeSuperseded === "true" },
         );
         return c.json({ documents: docs.map(documentDto) });
       },
     )
+    .get("/:schemeId/documents/:documentId/history", requireSchemeMember(deps), async (c) => {
+      const ctx = deps.serviceContext(userActor(c.get("user").id));
+      const doc = await documentsService.getDocument(
+        ctx,
+        c.get("schemeId"),
+        c.req.param("documentId"),
+      );
+      if (!doc || doc.deletedAt) {
+        return c.json({ error: { code: "NOT_FOUND", message: "Document not found" } }, 404);
+      }
+      // Same s146 tier gate as the content endpoint, applied per revision —
+      // an older revision may sit at a different tier than the head.
+      const allowed = documentsService.accessLevelsForRoles(c.get("roles"));
+      if (!allowed.includes(doc.accessLevel)) {
+        return c.json({ error: { code: "FORBIDDEN", message: "Committee access only" } }, 403);
+      }
+      const chain = await documentsService.getDocumentChain(ctx, c.get("schemeId"), doc.id);
+      return c.json({
+        documents: chain.filter((d) => allowed.includes(d.accessLevel)).map(documentDto),
+      });
+    })
     .get("/:schemeId/documents/:documentId/content", requireSchemeMember(deps), async (c) => {
       const ctx = deps.serviceContext(userActor(c.get("user").id));
       const doc = await documentsService.getDocument(
@@ -208,7 +240,9 @@ export function documentsRoutes(deps: AppDeps) {
         c.get("schemeId"),
         c.req.param("documentId"),
       );
-      if (!doc) {
+      // Soft-deleted documents 404 like absent ones; superseded revisions stay
+      // served (audit trail) at their original tier.
+      if (!doc || doc.deletedAt) {
         return c.json({ error: { code: "NOT_FOUND", message: "Document not found" } }, 404);
       }
       // s146 access levels: committee/admin docs need an officer-tier role.
@@ -252,7 +286,57 @@ export function documentsRoutes(deps: AppDeps) {
         title: typeof body.title === "string" && body.title ? body.title : undefined,
       });
       return c.json({ document: documentDto(doc) }, 201);
-    });
+    })
+    .post(
+      "/:schemeId/documents/:documentId/supersede",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      async (c) => {
+        const body = await c.req.parseBody();
+        const file = body.file;
+        if (!(file instanceof File)) {
+          return c.json({ error: { code: "NO_FILE", message: "Attach a file" } }, 422);
+        }
+        // Unlike plain upload, absent category/accessLevel inherit from the
+        // superseded revision (service default) rather than falling back to
+        // other/owners.
+        const parsedCategory =
+          typeof body.category === "string" && body.category
+            ? z.enum(DOCUMENT_CATEGORIES).catch("other").parse(body.category)
+            : undefined;
+        const parsedAccess =
+          typeof body.accessLevel === "string" && body.accessLevel
+            ? z.enum(DOCUMENT_ACCESS_LEVELS).catch("owners").parse(body.accessLevel)
+            : undefined;
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const doc = await documentsService.supersedeDocument(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("documentId"),
+          {
+            filename: file.name,
+            contentType: file.type || "application/octet-stream",
+            content: new Uint8Array(await file.arrayBuffer()),
+            category: parsedCategory,
+            accessLevel: parsedAccess,
+            title: typeof body.title === "string" && body.title ? body.title : undefined,
+          },
+        );
+        return c.json({ document: documentDto(doc) }, 201);
+      },
+    )
+    .delete(
+      "/:schemeId/documents/:documentId",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        // Soft-delete; RETENTION_HELD (409) while a statutory retention window
+        // is still open (s144: financial records, 7 years).
+        await documentsService.deleteDocument(ctx, c.get("schemeId"), c.req.param("documentId"));
+        return c.json({ ok: true });
+      },
+    );
 }
 
 export function activationRoutes(deps: AppDeps) {

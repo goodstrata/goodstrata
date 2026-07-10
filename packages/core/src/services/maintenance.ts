@@ -22,7 +22,8 @@ import { registerDecisionAction, requestDecision } from "./decisions.js";
 // ---------------------------------------------------------------------------
 
 export const createRequestInput = z.object({
-  title: z.string().min(3).max(200),
+  // trim before min(3): a whitespace-only title must not pass validation.
+  title: z.string().trim().min(3).max(200),
   description: z.string().min(3).max(5000),
   lotId: z.string().optional(),
   reportedByPersonId: z.string().optional(),
