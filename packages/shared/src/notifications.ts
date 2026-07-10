@@ -8,6 +8,7 @@
  */
 
 /** The nine notifier event types users can tune (the matrix rows). */
+/** The notifier event types users can tune (the matrix rows). */
 export const NOTIFICATION_TYPES = [
   "maintenance.request.created",
   "work_order.dispatched",
@@ -18,6 +19,7 @@ export const NOTIFICATION_TYPES = [
   "minutes.drafted",
   "community.comment.created",
   "entity.comment.created",
+  "conversation.message.sent",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -55,6 +57,7 @@ export const NOTIFICATION_DEFAULTS: Record<
   "community.comment.created": { in_app: true, email: false, sms: false },
   // A reply on a matter you raised (or are handling) is actionable — email on.
   "entity.comment.created": { in_app: true, email: true, sms: false },
+  "conversation.message.sent": { in_app: true, email: true, sms: false },
 };
 
 /**
@@ -94,6 +97,11 @@ export const NOTIFICATION_GROUPS = [
     key: "community",
     label: "Community",
     types: ["community.comment.created"],
+  },
+  {
+    key: "messages",
+    label: "Messages",
+    types: ["conversation.message.sent"],
   },
 ] as const satisfies readonly {
   key: string;
@@ -150,5 +158,10 @@ export const NOTIFICATION_TYPE_META: Record<
     label: "Request & complaint replies",
     help: "When someone replies on a maintenance request or complaint you're part of.",
     group: "building",
+  },
+  "conversation.message.sent": {
+    label: "Private messages",
+    help: "When someone sends you a private message.",
+    group: "messages",
   },
 };

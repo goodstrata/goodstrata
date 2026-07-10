@@ -55,6 +55,13 @@ export {
   createMeetingInput,
   submitProxyInput,
 } from "./services/meetings.js";
+export type {
+  ConversationMessageView,
+  ConversationSummary,
+  ParticipantSummary,
+} from "./services/messaging.js";
+export * as messagingService from "./services/messaging.js";
+export { sendMessageInput, startConversationInput } from "./services/messaging.js";
 export * as notificationPreferencesService from "./services/notificationPreferences.js";
 export * as notificationsService from "./services/notifications.js";
 export * as notifierService from "./services/notifier.js";

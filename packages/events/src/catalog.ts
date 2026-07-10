@@ -352,6 +352,14 @@ export const eventDefs = {
     removedBy: z.string(),
   }),
 
+  // private messaging (DM threads — conversations in schema/messaging.ts)
+  /** A message was sent into a private conversation (covers the first message at creation). */
+  "conversation.message.sent": z.object({
+    conversationId: z.string(),
+    messageId: z.string(),
+    senderUserId: z.string(),
+  }),
+
   "notification.created": z.object({
     notificationId: z.string(),
     userId: z.string(),

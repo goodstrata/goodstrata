@@ -2,12 +2,15 @@ import {
   communityPosts,
   complaints,
   complianceObligations,
+  conversationParticipants,
+  conversations,
   lots,
   maintenanceRequests,
   memberships,
   ownerships,
   people,
   schemes,
+  users,
 } from "@goodstrata/db";
 import type { EventRecord } from "@goodstrata/events";
 import { type CommentEntityType, formatCents, type MembershipRole } from "@goodstrata/shared";
@@ -36,6 +39,7 @@ export const NOTIFIER_EVENT_TYPES = [
   "community.comment.created",
   "entity.comment.created",
   "compliance.obligation.due",
+  "conversation.message.sent",
 ] as const;
 
 /** Roles considered "the committee" for notification fan-out. */
@@ -644,6 +648,64 @@ export async function handleEventForNotifications(
           body: "Open the thread to read the reply and respond.",
           ctaLabel: "Open the thread",
           url: schemeUrl(schemeId, section),
+        }),
+        smsBody: `GoodStrata: ${body}`,
+      });
+      return { created };
+    }
+
+    case "conversation.message.sent": {
+      const payload = event.payload as {
+        conversationId: string;
+        messageId: string;
+        senderUserId: string;
+      };
+      // Fan out to the OTHER participants — never the sender. The audience is
+      // the participant snapshot, not a role query: only people already in the
+      // thread learn about it. Message content stays out of the notification —
+      // it is private; the bell/email just say who wrote and link into the app.
+      const participantRows = await ctx.db.query.conversationParticipants.findMany({
+        where: eq(conversationParticipants.conversationId, payload.conversationId),
+        columns: { userId: true },
+      });
+      const recipients = participantRows
+        .map((p) => p.userId)
+        .filter((id) => id !== payload.senderUserId);
+      if (recipients.length === 0) return { created: 0 };
+
+      const [conversation, sender] = await Promise.all([
+        ctx.db.query.conversations.findFirst({
+          where: eq(conversations.id, payload.conversationId),
+          columns: { subject: true },
+        }),
+        ctx.db.query.users.findFirst({
+          where: eq(users.id, payload.senderUserId),
+          columns: { name: true },
+        }),
+      ]);
+      const senderName = sender?.name ?? "A member";
+      const title = `New message from ${senderName}`;
+      const body = conversation?.subject
+        ? `${senderName} sent a message in "${conversation.subject}".`
+        : `${senderName} sent you a private message.`;
+      const created = await deliver(ctx, {
+        schemeId,
+        notificationType: "conversation.message.sent",
+        userIds: recipients,
+        inApp: {
+          title,
+          body,
+          category: "general",
+          related: { type: "conversation", id: payload.conversationId },
+        },
+        email: genericEmail({
+          subject: title,
+          preheader: body,
+          heading: title,
+          intro: body,
+          body: "Open your messages to read it and reply. The message itself stays in the app.",
+          ctaLabel: "Open messages",
+          url: schemeUrl(schemeId, "messages"),
         }),
         smsBody: `GoodStrata: ${body}`,
       });
