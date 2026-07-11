@@ -103,8 +103,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     @keyframes sp { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
     /* worked example shown before the visitor commits a document */
-    .sample-lead { margin-top: 40px; font-size: 15px; color: var(--muted-ink); display: flex; align-items: center; gap: 10px; }
-    .sample-lead::before { content: ""; flex: 0 0 22px; height: 1px; background: var(--primary); }
+    /* The slider is the fallback path for the majority who arrive without their
+       AGM papers, so this line has to read as an invitation, not a footnote. */
+    .sample-lead { margin-top: 40px; font-family: var(--font-display); font-weight: 500; font-size: clamp(21px, 3vw, 27px); line-height: 1.25; color: var(--ink); display: flex; align-items: center; gap: 12px; }
+    .sample-lead::before { content: ""; flex: 0 0 28px; height: 2px; background: var(--primary); }
     .sample { margin-top: 16px; border: 1px solid var(--line); border-radius: 14px; padding: 26px 26px 24px; background: var(--card); }
     .sample-badge { display: inline-block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 500; padding: 4px 11px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); margin-bottom: 18px; }
     .sample .headline-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: clamp(38px, 7vw, 60px); letter-spacing: -0.02em; color: var(--primary); line-height: 1; }
@@ -198,12 +200,51 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </div>
         <div class="flag">Heads up: a typical AGM also lists an <b>insurance commission</b>: money the manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>
         <p class="sample-note">Based on about <b>$700</b> per lot, per year (the Australian average). Drop in your own document above for your building's real number. GoodStrata does this same job for $0.</p>
+        <!-- The slider used to dead-end on the number. Whoever drags it has just
+             seen what their building pays; give them the next step here rather
+             than only on the upload path's result card. -->
+        <div class="cta-row">
+          <a class="btn primary" href="https://demo.goodstrata.com.au" data-cta="demo" data-cta-place="slider">Try the demo</a>
+          <a class="btn ghost" href="/for-owners/" data-cta="rally" data-cta-place="slider">Rally your building</a>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
 <script>
+  /**
+   * Conversion tracking for the estimator funnel. Events go to the dataLayer
+   * (GTM is already on the page); each one still has to be turned into a GA4
+   * event/conversion in the GTM + GA4 UI — the code side is only half of it.
+   *
+   * Funnel: calc_slider_used → calc_upload_started → calc_estimate_shown (the
+   * money moment, carries the estimated annual fee) or calc_estimate_failed,
+   * and calc_cta_click for every exit to the demo / signup / rally page.
+   *
+   * No document, filename or figure from anyone's actual papers is ever sent —
+   * only the estimated total, which is the thing worth optimising against.
+   */
+  window.dataLayer = window.dataLayer || [];
+  function track(event, params) {
+    try {
+      window.dataLayer.push(Object.assign({ event: event }, params || {}));
+    } catch (_) {
+      // Analytics must never break the page.
+    }
+  }
+
+  // Every CTA on the page, wherever it sits, reports where it was clicked from
+  // so "slider → demo" can be told apart from "result → demo".
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("[data-cta]") : null;
+    if (!a) return;
+    track("calc_cta_click", {
+      cta_id: a.getAttribute("data-cta"),
+      cta_place: a.getAttribute("data-cta-place") || "page",
+    });
+  });
+
   (function () {
     var s = document.getElementById("lotSlider");
     if (!s) return;
@@ -233,6 +274,15 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     }
     s.addEventListener("input", update);
     s.addEventListener("change", announce);
+    // Fire once, when the drag settles — an "input"-tick event would push a
+    // hundred hits per drag and make the funnel meaningless.
+    var sliderReported = false;
+    s.addEventListener("change", function () {
+      if (sliderReported) return;
+      sliderReported = true;
+      var lots = +s.value;
+      track("calc_slider_used", { lots: lots, estimated_annual_fee: lots * 700 });
+    });
     update();
   })();
 </script>
@@ -352,7 +402,14 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
   async function upload(file) {
     if (busy) return;
-    if (file.size > 12 * 1024 * 1024) { setStatus("That file is over 12 MB. Try a smaller export or a single page.", true); return; }
+    if (file.size > 12 * 1024 * 1024) {
+      track("calc_estimate_failed", { reason: "file_too_large" });
+      setStatus("That file is over 12 MB. Try a smaller export or a single page.", true);
+      return;
+    }
+    // The document itself never leaves the page in an analytics hit — only that
+    // an upload started, and its type/size.
+    track("calc_upload_started", { file_type: file.type || "unknown", file_kb: Math.round(file.size / 1024) });
     setBusy(file);
     if (sampleEl) sampleEl.classList.add("hidden");
     resultEl.innerHTML = SKELETON;
@@ -378,12 +435,14 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       const data = await res.json();
       if (!res.ok) {
         const msg = data?.error?.message || "We couldn't read that document. Try a clearer PDF or photo.";
+        track("calc_estimate_failed", { reason: "api_error", status: res.status });
         restoreIdle();
         setStatus(msg, true);
         return;
       }
       render(data);
     } catch (err) {
+      track("calc_estimate_failed", { reason: err?.name === "AbortError" ? "timeout" : "network" });
       restoreIdle();
       setStatus(
         err?.name === "AbortError"
@@ -401,6 +460,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   function render(d) {
     clearStatus();
     if (!d.isStrataFinancialDoc) {
+      track("calc_estimate_failed", { reason: "not_a_strata_doc" });
       restoreIdle();
       setStatus(
         "That doesn't look like a strata financial statement. Try your AGM papers, the annual budget, or the financial statement your manager sends each year.",
@@ -409,6 +469,16 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       return;
     }
     const total = d.totalManagerCostAnnualCents ?? d.managementFeeAnnualCents;
+    // The money moment: the visitor now knows what their building pays. `value`
+    // is in dollars so GA4 can report it as a value without further maths.
+    track("calc_estimate_shown", {
+      value: total != null ? Math.round(total / 100) : null,
+      currency: "AUD",
+      per_lot_annual: d.perLotAnnualCents != null ? Math.round(d.perLotAnnualCents / 100) : null,
+      lot_count: d.lotCount ?? null,
+      insurance_commission_noted: !!d.insuranceCommissionNoted,
+      confidence: d.confidence ?? null,
+    });
     const items = (d.lineItems || []).filter((i) => i && i.amountCents != null);
     const rows = items.map((i) =>
       `<div class="row"><span>${escapeHtml(i.label)}</span><span class="amt">${money(i.amountCents)}</span></div>`
@@ -433,8 +503,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         <h3>GoodStrata does all of this for $0, and every dollar is on the record.</h3>
         <p>Free for your owners corporation. Our only revenue will be a transparent margin on payments that move: no management fee, no insurance commission, no contractor kickbacks.</p>
         <div class="cta-row">
-          <a class="btn primary" href="https://my.goodstrata.com.au/signup">Get started, free</a>
-          <a class="btn ghost" href="https://demo.goodstrata.com.au">Try the live demo</a>
+          <a class="btn primary" href="https://my.goodstrata.com.au/signup" data-cta="signup" data-cta-place="result">Get started, free</a>
+          <a class="btn ghost" href="https://demo.goodstrata.com.au" data-cta="demo" data-cta-place="result">Try the live demo</a>
+          <a class="btn ghost" href="/for-owners/" data-cta="rally" data-cta-place="result">Rally your building</a>
         </div>
       </div>`;
     resultEl.classList.remove("hidden");
