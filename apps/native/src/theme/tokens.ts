@@ -60,13 +60,13 @@ export const space = (n: number) => n * 4; // 4pt grid
 
 export const type = {
   display: {
-    fontFamily: "Newsreader_600SemiBold",
+    fontFamily: "PublicSans_700Bold",
     fontSize: 28,
     lineHeight: 34,
     letterSpacing: -0.3,
   },
   title: {
-    fontFamily: "Newsreader_600SemiBold",
+    fontFamily: "PublicSans_600SemiBold",
     fontSize: 20,
     lineHeight: 26,
     letterSpacing: -0.15,
@@ -80,10 +80,9 @@ export const type = {
   figureSmall: { fontFamily: "IBMPlexMono_500Medium", fontSize: 15, lineHeight: 20 },
   eyebrow: {
     fontFamily: "IBMPlexMono_500Medium",
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 1.2,
-    textTransform: "uppercase" as const,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0,
   },
 } as const;
 

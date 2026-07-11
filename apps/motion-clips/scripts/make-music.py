@@ -144,7 +144,7 @@ def kick(vel=0.8):
     phase = 2 * np.pi * np.cumsum(f) / SR
     x = np.sin(phase) * np.exp(-t / 0.16)
     click_n = int(0.005 * SR)
-    x[:click_n] += 0.08 * highpass(rng.standard_normal(click_n), 2500)
+    x[:click_n] += 0.04 * highpass(rng.standard_normal(click_n), 2500)
     return np.tanh(1.4 * x) * vel
 
 

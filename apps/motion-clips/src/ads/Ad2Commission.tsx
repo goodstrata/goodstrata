@@ -12,6 +12,7 @@ import { AdCaption } from "../lib/AdCaption";
 import { AdEndCard } from "../lib/AdEndCard";
 import { dropIn, EASE_IN_OUT, fade, riseIn } from "../lib/anim";
 import "../lib/loadFonts";
+import { MusicBed } from "../lib/MusicBed";
 import { SceneFade } from "../lib/SceneFade";
 import { dark, fonts, light, type Theme } from "../theme";
 import { HookText } from "./shared";
@@ -258,6 +259,7 @@ const Scene3: React.FC = () => {
 export const Ad2Commission: React.FC = () => (
   <AbsoluteFill style={{ background: theme.paper }}>
     <Audio src={staticFile("audio/ad2-vo.mp3")} />
+    <MusicBed src="audio/music-ads.mp3" volume={0.22} />
     <Sequence from={SCENES.s1.from} durationInFrames={SCENES.s1.dur}>
       <SceneFade>
         <Scene1 />

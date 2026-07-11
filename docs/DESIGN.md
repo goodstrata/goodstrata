@@ -181,7 +181,7 @@ Foundation is the existing shadcn/radix kit, extended. New primitives live in
 - **`ErrorState`** — what happened + “Try again” wired to `refetch`.
 - **`PageHeader`** — title/description/actions, responsive.
 - **`RegistryPlate`** — the signature scheme header (full + compact).
-- **`StatCard`** — mono-set figure (display serif for hero figures), label,
+- **`StatCard`** — mono-set figure (larger mono ramp for hero figures), label,
   optional tone + delta. Used on Finance and dashboard.
 - **`SidebarNav` / `BottomNav` / `SectionSheet`** — the shell navigation.
 - **`ResponsiveTable`** — `<Table>` from `md:` up; stacked definition cards

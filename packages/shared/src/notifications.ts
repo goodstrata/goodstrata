@@ -11,6 +11,8 @@
 export const NOTIFICATION_TYPES = [
   "maintenance.request.created",
   "work_order.dispatched",
+  "work_order.accepted",
+  "quote.received",
   "levy.notice.issued",
   "arrears.stage.reached",
   "compliance.obligation.due",
@@ -27,6 +29,7 @@ export const NOTIFICATION_TYPES = [
   "decision.resolved",
   "decision.expired",
   "complaint.filed",
+  "complaint.advanced",
   "agent.run.failed",
   "agenda_item.submitted",
   "agenda_item.accepted",
@@ -71,6 +74,8 @@ export const NOTIFICATION_DEFAULTS: Record<
   "minutes.drafted": { in_app: true, email: true, sms: false, push: true },
   "maintenance.request.created": { in_app: true, email: true, sms: false, push: true },
   "work_order.dispatched": { in_app: true, email: false, sms: false, push: true },
+  "work_order.accepted": { in_app: true, email: false, sms: false, push: true },
+  "quote.received": { in_app: true, email: false, sms: false, push: true },
   "community.comment.created": { in_app: true, email: false, sms: false, push: true },
   // A reply on a matter you raised (or are handling) is actionable — email on.
   "entity.comment.created": { in_app: true, email: true, sms: false, push: true },
@@ -88,6 +93,7 @@ export const NOTIFICATION_DEFAULTS: Record<
   "decision.resolved": { in_app: true, email: true, sms: false, push: true },
   "decision.expired": { in_app: true, email: true, sms: false, push: true },
   "complaint.filed": { in_app: true, email: true, sms: false, push: true },
+  "complaint.advanced": { in_app: true, email: true, sms: false, push: true },
   // Ops signal for admins — the bell + email, never a text.
   "agent.run.failed": { in_app: true, email: true, sms: false, push: true },
   // Owner motion submissions: actionable for officers / the submitter — email on.
@@ -123,6 +129,8 @@ export const NOTIFICATION_GROUPS = [
     types: [
       "maintenance.request.created",
       "work_order.dispatched",
+      "work_order.accepted",
+      "quote.received",
       "work_order.completed",
       "entity.comment.created",
     ],
@@ -156,7 +164,12 @@ export const NOTIFICATION_GROUPS = [
   {
     key: "community",
     label: "Community",
-    types: ["community.comment.created", "announcement.published", "complaint.filed"],
+    types: [
+      "community.comment.created",
+      "announcement.published",
+      "complaint.filed",
+      "complaint.advanced",
+    ],
   },
   {
     key: "messages",
@@ -187,6 +200,16 @@ export const NOTIFICATION_TYPE_META: Record<
   "work_order.dispatched": {
     label: "Work orders sent",
     help: "When a job goes out to a contractor.",
+    group: "building",
+  },
+  "work_order.accepted": {
+    label: "Work orders accepted",
+    help: "When a contractor accepts an awarded job.",
+    group: "building",
+  },
+  "quote.received": {
+    label: "Quotes received",
+    help: "When a contractor submits a quote for review.",
     group: "building",
   },
   "levy.notice.issued": {
@@ -267,6 +290,11 @@ export const NOTIFICATION_TYPE_META: Record<
   "complaint.filed": {
     label: "New complaints",
     help: "When a grievance is lodged with the owners corporation.",
+    group: "community",
+  },
+  "complaint.advanced": {
+    label: "Complaint updates",
+    help: "When a complaint you lodged moves to its next stage.",
     group: "community",
   },
   "agent.run.failed": {

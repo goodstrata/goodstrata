@@ -227,7 +227,7 @@ function ChecklistRow({
           <PressableScale
             onPress={onAction}
             accessibilityRole="button"
-            style={{ alignSelf: "flex-start", minHeight: 36, justifyContent: "center" }}
+            style={{ alignSelf: "flex-start", minHeight: 44, justifyContent: "center" }}
           >
             <Text style={[t.label, { color: theme.accent }]}>{actionLabel}</Text>
           </PressableScale>

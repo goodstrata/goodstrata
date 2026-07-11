@@ -19,30 +19,80 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { z } from "zod";
-import { AgentsTab } from "@/components/AgentsTab";
-import { ComplianceTab } from "@/components/ComplianceTab";
-import { DecisionsTab } from "@/components/DecisionsTab";
-import { FinanceTab } from "@/components/FinanceTab";
-import { GrievancesTab } from "@/components/GrievancesTab";
-import { MaintenanceTab } from "@/components/MaintenanceTab";
-import { MeetingsTab } from "@/components/MeetingsTab";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ActivitySection } from "@/components/sections/ActivitySection";
-import { CommitteeSection } from "@/components/sections/CommitteeSection";
-import { CommunitySection } from "@/components/sections/CommunitySection";
-import { DocumentsSection } from "@/components/sections/DocumentsSection";
-import { LotsSection } from "@/components/sections/LotsSection";
-import { MessagesSection } from "@/components/sections/MessagesSection";
 import { OverviewSection } from "@/components/sections/OverviewSection";
-import { PeopleSection } from "@/components/sections/PeopleSection";
 import { RegistryPlate } from "@/components/ui/registry-plate";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { schemeQueryOptions, useIsOwnerView } from "@/lib/roles";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
+
+// Overview is the scheme landing surface and stays in the route bundle. Every
+// deeper register is loaded only when selected, so a resident opening their
+// building does not download committee, finance, messaging and editor code at
+// once. Named-export adapters keep the component modules unchanged.
+const FinanceTab = lazy(() =>
+  import("@/components/FinanceTab").then((module) => ({ default: module.FinanceTab })),
+);
+const OwnerFinanceSummary = lazy(() =>
+  import("@/components/overview/OwnerHome").then((module) => ({
+    default: module.OwnerFinanceSummary,
+  })),
+);
+const MaintenanceTab = lazy(() =>
+  import("@/components/MaintenanceTab").then((module) => ({ default: module.MaintenanceTab })),
+);
+const MeetingsTab = lazy(() =>
+  import("@/components/MeetingsTab").then((module) => ({ default: module.MeetingsTab })),
+);
+const DecisionsTab = lazy(() =>
+  import("@/components/DecisionsTab").then((module) => ({ default: module.DecisionsTab })),
+);
+const GrievancesTab = lazy(() =>
+  import("@/components/GrievancesTab").then((module) => ({ default: module.GrievancesTab })),
+);
+const ComplianceTab = lazy(() =>
+  import("@/components/ComplianceTab").then((module) => ({ default: module.ComplianceTab })),
+);
+const AgentsTab = lazy(() =>
+  import("@/components/AgentsTab").then((module) => ({ default: module.AgentsTab })),
+);
+const ActivitySection = lazy(() =>
+  import("@/components/sections/ActivitySection").then((module) => ({
+    default: module.ActivitySection,
+  })),
+);
+const CommitteeSection = lazy(() =>
+  import("@/components/sections/CommitteeSection").then((module) => ({
+    default: module.CommitteeSection,
+  })),
+);
+const CommunitySection = lazy(() =>
+  import("@/components/sections/CommunitySection").then((module) => ({
+    default: module.CommunitySection,
+  })),
+);
+const DocumentsSection = lazy(() =>
+  import("@/components/sections/DocumentsSection").then((module) => ({
+    default: module.DocumentsSection,
+  })),
+);
+const LotsSection = lazy(() =>
+  import("@/components/sections/LotsSection").then((module) => ({ default: module.LotsSection })),
+);
+const MessagesSection = lazy(() =>
+  import("@/components/sections/MessagesSection").then((module) => ({
+    default: module.MessagesSection,
+  })),
+);
+const PeopleSection = lazy(() =>
+  import("@/components/sections/PeopleSection").then((module) => ({
+    default: module.PeopleSection,
+  })),
+);
 
 const SECTIONS = [
   "overview",
@@ -192,9 +242,9 @@ function SchemePage() {
   const { section } = Route.useSearch();
   const { data } = useQuery(schemeQueryOptions(schemeId));
   const isOwnerView = useIsOwnerView(schemeId);
-  // Show the register-index sidebar from md (768px) so tablets/small laptops
-  // get it instead of the phone bottom bar; the shared hook stays at 1024.
-  const isMobile = useIsMobile(768);
+  // Keep the bottom bar through tablet widths. Dense registers and forms need
+  // the full canvas until lg; a 14rem sidebar at 768px leaves too little room.
+  const isMobile = useIsMobile(1024);
 
   // The sections this viewer's nav offers; null for anyone on the committee
   // (they get the whole register) and while roles are still loading.
@@ -206,9 +256,9 @@ function SchemePage() {
 
   return (
     <>
-      <div className="md:grid md:grid-cols-[14rem_1fr] md:gap-8">
+      <div className="lg:grid lg:grid-cols-[14rem_1fr] lg:gap-8">
         {!isMobile && <SidebarNav schemeId={schemeId} active={section} nav={nav} />}
-        <div className="min-w-0 space-y-6 pb-24 md:pb-8">
+        <div className="min-w-0 space-y-6 pb-24 lg:pb-8">
           {data ? (
             <RegistryPlate
               eyebrow={`${data.scheme.planOfSubdivision} · Tier ${data.scheme.tier}`}
@@ -227,11 +277,26 @@ function SchemePage() {
               <Skeleton className="h-px w-full" />
             </div>
           )}
-          <SectionBody schemeId={schemeId} section={section} visible={visible} />
+          <Suspense fallback={<SectionSkeleton />}>
+            <SectionBody schemeId={schemeId} section={section} visible={visible} />
+          </Suspense>
         </div>
       </div>
       {isMobile && nav && <BottomNav schemeId={schemeId} active={section} nav={nav} />}
     </>
+  );
+}
+
+function SectionSkeleton() {
+  return (
+    <div className="space-y-5" aria-label="Loading section" role="status">
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-44" />
+        <Skeleton className="h-4 w-72 max-w-full" />
+      </div>
+      <Skeleton className="h-32 w-full rounded-lg" />
+      <span className="sr-only">Loading section…</span>
+    </div>
   );
 }
 
@@ -264,7 +329,11 @@ function SectionBody({
     case "overview":
       return <OverviewSection schemeId={schemeId} />;
     case "finance":
-      return <FinanceTab schemeId={schemeId} />;
+      return visible ? (
+        <OwnerFinanceSummary schemeId={schemeId} />
+      ) : (
+        <FinanceTab schemeId={schemeId} />
+      );
     case "maintenance":
       return <MaintenanceTab schemeId={schemeId} />;
     case "meetings":
@@ -313,7 +382,7 @@ function SectionLink({
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex min-h-11 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors md:min-h-0 md:py-2",
+        "relative flex min-h-11 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors lg:min-h-0 lg:py-2",
         active
           ? "bg-accent font-medium text-primary"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -372,7 +441,7 @@ function NavGroups({
   );
 }
 
-/** Tablet/desktop (≥ md) register index: sticky left sidebar. */
+/** Desktop (≥ lg) register index: sticky left sidebar. */
 function SidebarNav({
   schemeId,
   active,

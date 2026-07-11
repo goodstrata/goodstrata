@@ -14,3 +14,17 @@ licensed AU apartment/townhouse stills (kit refs A/B/D per plan §3) with a
 one-line source + license note added here per asset.
 
 Fonts: Public Sans, Newsreader, IBM Plex Mono (OFL) — copied from `site/fonts/`.
+
+## Music
+
+Both music beds are **original compositions synthesized from scratch** by
+`scripts/make-music.py` (numpy additive synthesis — no samples, no stock or
+licensed music, nothing pre-existing):
+
+- `public/audio/music-clips.mp3` — warm D-major felt-piano/pad bed under the
+  C1–C5 explainers (`MusicBed` volume 0.15 ≈ 11 dB under the VO).
+- `public/audio/music-ads.mp3` — punchier B-minor pulse bed under the AD1–AD4
+  verticals (`MusicBed` volume 0.22 ≈ 8 dB under the VO).
+
+The script is deterministic (fixed seed); rerun it to regenerate the beds
+bit-identically.

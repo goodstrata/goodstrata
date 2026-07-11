@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   budgets,
+  complaints,
   contractors,
   decisionVotes,
   levyNotices,
@@ -323,6 +324,64 @@ describe("the notifier", () => {
     expect(workOrder.created).toBe(2);
   });
 
+  it("notifies officers when a quote arrives and a contractor accepts the job", async () => {
+    const quote = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("quote.received", {
+        quoteId: randomUUID(),
+        rfqId: randomUUID(),
+        contractorId: randomUUID(),
+        amountCents: 125_000,
+      }),
+    );
+    const accepted = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("work_order.accepted", {
+        workOrderId: randomUUID(),
+        contractorId: randomUUID(),
+      }),
+    );
+
+    expect(quote.created).toBe(2);
+    expect(accepted.created).toBe(2);
+    const ownerRows = await notificationsService.listNotifications(ctxAs(), schemeId, OWNER);
+    expect(ownerRows.some((row) => row.title.includes("contractor quote"))).toBe(false);
+  });
+
+  it("notifies the complainant when their complaint advances", async () => {
+    const rows = await tdb.db
+      .insert(complaints)
+      .values({
+        schemeId,
+        complainantPersonId: ownerPersonId,
+        subject: "Test complaint update",
+        details: "Enough detail for notifier coverage.",
+        meetByDate: "2026-07-30",
+      })
+      .returning();
+    const complaintId = rows[0]!.id;
+
+    const result = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      fakeEvent("complaint.advanced", {
+        complaintId,
+        fromStatus: "received",
+        toStatus: "under_discussion",
+      }),
+    );
+
+    expect(result.created).toBe(1);
+    const ownerRows = await notificationsService.listNotifications(ctxAs(), schemeId, OWNER);
+    expect(ownerRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Your complaint was updated",
+          body: expect.stringContaining("under discussion"),
+        }),
+      ]),
+    );
+  });
+
   it("ignores events without a scheme and unknown types", async () => {
     const noScheme = await notifierService.handleEventForNotifications(ctxAs(), {
       ...fakeEvent("minutes.drafted", { meetingId: "m", documentId: "d" }),
@@ -330,10 +389,7 @@ describe("the notifier", () => {
     });
     expect(noScheme.created).toBe(0);
 
-    const unknown = await notifierService.handleEventForNotifications(
-      ctxAs(),
-      fakeEvent("quote.received", { quoteId: "q", rfqId: "r", contractorId: "c" }),
-    );
+    const unknown = await notifierService.handleEventForNotifications(ctxAs(), fakeEvent("x", {}));
     expect(unknown.created).toBe(0);
   });
 });

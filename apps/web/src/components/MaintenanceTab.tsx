@@ -37,11 +37,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { useIsOfficer, useIsOwnerView } from "@/lib/roles";
+import { useSheetSide } from "@/lib/use-sheet-side";
 
 interface RequestImage {
   id: string;
@@ -383,6 +393,7 @@ function RaiseWorkOrderDialog({
   onChange: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const sheetSide = useSheetSide();
   const contractorsQuery = useQuery({
     queryKey: ["contractors", schemeId],
     queryFn: async () =>
@@ -420,23 +431,23 @@ function RaiseWorkOrderDialog({
   const pool = contractorsQuery.data?.contractors ?? [];
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
         <Button size="sm" variant="outline">
           <HardHat aria-hidden="true" className="size-4" /> Raise work order
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Raise a work order</DialogTitle>
-          <DialogDescription>
+      </SheetTrigger>
+      <SheetContent {...sheetSide}>
+        <SheetHeader>
+          <SheetTitle>Raise a work order</SheetTitle>
+          <SheetDescription>
             For “{request.title}”. Small jobs dispatch immediately; larger ones go to the committee
             for approval.
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
         <form
           id="wo-form"
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 px-4"
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -535,13 +546,13 @@ function RaiseWorkOrderDialog({
           </form.Field>
           <FormError form={form} />
         </form>
-        <DialogFooter>
+        <SheetFooter className="sticky bottom-0 border-t bg-background">
           <SubmitButton form={form} formId="wo-form">
             Raise work order
           </SubmitButton>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 

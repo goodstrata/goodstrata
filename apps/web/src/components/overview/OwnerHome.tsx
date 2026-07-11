@@ -87,7 +87,7 @@ export function OwnerHome({ schemeId, data }: { schemeId: string; data: Overview
   return (
     <div className="space-y-6">
       <ReportIssueHero schemeId={schemeId} />
-      <WhatIOwe schemeId={schemeId} />
+      <OwnerFinanceSummary schemeId={schemeId} />
       <MyRequests schemeId={schemeId} />
       <div className="grid gap-6 lg:grid-cols-2">
         <NextMeetingCard schemeId={schemeId} meeting={data.nextMeeting} />
@@ -139,7 +139,7 @@ function ReportIssueHero({ schemeId }: { schemeId: string }) {
  * scheme-wide arrears table. Resolves owned lots from the member-readable lots
  * list (matched by the signed-in email) and sums each lot's statement balance.
  */
-function WhatIOwe({ schemeId }: { schemeId: string }) {
+export function OwnerFinanceSummary({ schemeId }: { schemeId: string }) {
   const { data: session } = useSession();
   const email = session?.user?.email?.toLowerCase() ?? null;
 

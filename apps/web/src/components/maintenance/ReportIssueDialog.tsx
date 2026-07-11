@@ -4,15 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,9 +13,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
+import { useSheetSide } from "@/lib/use-sheet-side";
 
 const reportSchema = z.object({
   title: z.string().trim().min(1, "Give the issue a short title."),
@@ -111,6 +112,7 @@ export function ReportIssueDialog({
   const [open, setOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [images, setImages] = useState<{ file: File; url: string }[]>([]);
+  const sheetSide = useSheetSide();
 
   // Track live preview URLs in a ref so unmount cleanup revokes the current set
   // without re-subscribing the effect on every change.
@@ -220,23 +222,23 @@ export function ReportIssueDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
         <Button size={triggerSize} variant={triggerVariant} className={triggerClassName}>
           <Plus aria-hidden="true" className="size-4" /> {triggerLabel}
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Report a maintenance issue</DialogTitle>
-          <DialogDescription>
+      </SheetTrigger>
+      <SheetContent {...sheetSide}>
+        <SheetHeader>
+          <SheetTitle>Report a maintenance issue</SheetTitle>
+          <SheetDescription>
             Tell us what's wrong. The maintenance agent triages every report automatically — you
             don't need to pick a category.
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
         <form
           id="mr-form"
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 px-4"
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -353,12 +355,12 @@ export function ReportIssueDialog({
           </Field>
           <FormError form={form} />
         </form>
-        <DialogFooter>
+        <SheetFooter className="sticky bottom-0 border-t bg-background">
           <SubmitButton form={form} formId="mr-form">
             Submit report
           </SubmitButton>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

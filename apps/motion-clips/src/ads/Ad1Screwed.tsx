@@ -12,6 +12,7 @@ import { AdEndCard } from "../lib/AdEndCard";
 import { countUp, fade, riseIn } from "../lib/anim";
 import { FeeCard } from "../lib/FeeCard";
 import "../lib/loadFonts";
+import { MusicBed } from "../lib/MusicBed";
 import { SceneFade } from "../lib/SceneFade";
 import { dark, fees, fonts, light, money, type Theme } from "../theme";
 import { HookText, PhoneSnap } from "./shared";
@@ -198,6 +199,7 @@ const Scene5: React.FC = () => {
 export const Ad1Screwed: React.FC = () => (
   <AbsoluteFill style={{ background: theme.paper }}>
     <Audio src={staticFile("audio/ad1-vo.mp3")} />
+    <MusicBed src="audio/music-ads.mp3" volume={0.22} />
     <Sequence from={SCENES.s1.from} durationInFrames={SCENES.s1.dur}>
       <SceneFade>
         <Scene1 />

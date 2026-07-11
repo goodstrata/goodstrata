@@ -62,6 +62,8 @@ import { unsubscribeUrl } from "./unsubscribe.js";
 export const NOTIFIER_EVENT_TYPES = [
   "decision.requested",
   "work_order.dispatched",
+  "work_order.accepted",
+  "quote.received",
   "levy.notice.issued",
   "arrears.stage.reached",
   "minutes.drafted",
@@ -83,6 +85,7 @@ export const NOTIFIER_EVENT_TYPES = [
   "payment.received",
   "work_order.completed",
   "complaint.filed",
+  "complaint.advanced",
   "agent.run.failed",
   "motion.close.proposed",
 ] as const;
@@ -1080,6 +1083,45 @@ export async function handleEventForNotifications(
       return { created };
     }
 
+    case "work_order.accepted": {
+      const payload = event.payload as { workOrderId: string };
+      const officers = await userIdsWithRoles(ctx, schemeId, COMMITTEE_NOTIFY_ROLES);
+      const title = "Contractor accepted the work order";
+      const created = await deliver(ctx, {
+        eventId: event.id,
+        schemeId,
+        notificationType: "work_order.accepted",
+        userIds: officers,
+        inApp: {
+          title,
+          body: "The awarded contractor accepted the job. The work order is now underway.",
+          category: "maintenance",
+          related: { type: "work_order", id: payload.workOrderId },
+        },
+      });
+      return { created };
+    }
+
+    case "quote.received": {
+      const payload = event.payload as { quoteId: string; rfqId: string; amountCents: number };
+      const officers = await userIdsWithRoles(ctx, schemeId, COMMITTEE_NOTIFY_ROLES);
+      const amount = formatCents(payload.amountCents);
+      const title = `New contractor quote — ${amount}`;
+      const created = await deliver(ctx, {
+        eventId: event.id,
+        schemeId,
+        notificationType: "quote.received",
+        userIds: officers,
+        inApp: {
+          title,
+          body: "A contractor submitted a quote. Open maintenance to compare it before awarding the job.",
+          category: "maintenance",
+          related: { type: "rfq", id: payload.rfqId },
+        },
+      });
+      return { created };
+    }
+
     case "motion.close.proposed": {
       // The AI chair thinks discussion is done — nudge the officers to run the
       // binding close/tally themselves. Bell-only: it is a live-meeting prompt,
@@ -1892,6 +1934,48 @@ export async function handleEventForNotifications(
           url: schemeUrl(schemeId, "grievances"),
         }),
         smsBody: `GoodStrata: ${title}`,
+      });
+      return { created };
+    }
+
+    case "complaint.advanced": {
+      const payload = event.payload as {
+        complaintId: string;
+        fromStatus: string;
+        toStatus: string;
+      };
+      const complaint = await ctx.db.query.complaints.findFirst({
+        where: eq(complaints.id, payload.complaintId),
+      });
+      if (!complaint) return { created: 0 };
+      const complainant = await ctx.db.query.people.findFirst({
+        where: eq(people.id, complaint.complainantPersonId),
+      });
+      if (!complainant?.userId) return { created: 0 };
+
+      const stage = payload.toStatus.replace(/_/g, " ");
+      const title = "Your complaint was updated";
+      const body = `Your complaint has moved to ${stage}. Open grievances to review its current status.`;
+      const created = await deliver(ctx, {
+        eventId: event.id,
+        schemeId,
+        notificationType: "complaint.advanced",
+        userIds: [complainant.userId],
+        inApp: {
+          title,
+          body,
+          category: "general",
+          related: { type: "complaint", id: payload.complaintId },
+        },
+        email: genericEmail({
+          subject: title,
+          preheader: body,
+          heading: title,
+          intro: body,
+          body: "Open grievances to see the complaint record and any next steps.",
+          ctaLabel: "Open grievances",
+          url: schemeUrl(schemeId, "grievances"),
+        }),
       });
       return { created };
     }

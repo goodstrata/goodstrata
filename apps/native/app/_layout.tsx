@@ -1,5 +1,4 @@
 import { IBMPlexMono_500Medium, IBMPlexMono_600SemiBold } from "@expo-google-fonts/ibm-plex-mono";
-import { Newsreader_500Medium, Newsreader_600SemiBold } from "@expo-google-fonts/newsreader";
 import {
   PublicSans_400Regular,
   PublicSans_600SemiBold,
@@ -34,8 +33,6 @@ void SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const [themeReady, setThemeReady] = useState(false);
   const [fontsLoaded, fontError] = useFonts({
-    Newsreader_500Medium,
-    Newsreader_600SemiBold,
     PublicSans_400Regular,
     PublicSans_600SemiBold,
     PublicSans_700Bold,

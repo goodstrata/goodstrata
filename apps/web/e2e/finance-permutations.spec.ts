@@ -23,8 +23,8 @@ test.describe.configure({ mode: "serial" });
  *  - officer-side validation errors (client zod messages) and server business
  *    errors surfacing as toasts (duplicate levy issue → 409);
  *  - the manual bank-transfer rail (record payment → receipt, partial payment);
- *  - role gating: an owner sees the read side (stats, how-to-pay, notices,
- *    payments) but NONE of the officer mutations.
+ *  - role presentation: an owner sees only their own balance, payment guidance
+ *    and statement — never the scheme-wide finance workspace.
  */
 test("finance permutations: officer error paths, manual payment rail, owner gating", async ({
   page,
@@ -170,21 +170,19 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
 
   // ================= Owner gating =================
 
-  // The owner opens the SAME scheme's finance register.
+  // The owner opens the SAME scheme's owner-focused money view.
   await section(ownerPage, "finance").click();
 
-  // Read side: headline stats, payment details (account exists now), notices.
-  await expect(ownerPage.getByText("Admin fund")).toBeVisible();
+  // Their own position is prominent and actionable.
+  await expect(ownerPage.getByRole("heading", { name: "My levies" })).toBeVisible();
+  await expect(ownerPage.getByText("Amount due")).toBeVisible();
   await expect(ownerPage.getByText("How to pay")).toBeVisible();
-  await expect(ownerPage.getByText("BSB", { exact: true })).toBeVisible();
-  // The notice ref renders in BOTH registers (notice row + matched payment
-  // reference) — assert the first; the payments-side copy is covered below.
-  await expect(ownerPage.getByText(/LN-2026-01-1/).first()).toBeVisible();
-  // Money moved, so the owner sees the payments register (with the receipt).
-  await expect(ownerPage.getByText("Payments", { exact: true })).toBeVisible();
-  await expect(ownerPage.getByText("matched", { exact: true })).toBeVisible();
+  await expect(ownerPage.getByTestId("statement-lot-1")).toBeVisible();
 
-  // Mutations: none of the officer affordances exist for an owner.
+  // Scheme-wide management information and officer actions are absent.
+  for (const text of ["Admin fund", "Arrears", "Payments", "Budgets", "Levy schedules"]) {
+    await expect(ownerPage.getByText(text, { exact: true })).toHaveCount(0);
+  }
   for (const name of [
     "New budget",
     "New schedule",
@@ -195,7 +193,7 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
   ]) {
     await expect(ownerPage.getByRole("button", { name })).toHaveCount(0);
   }
-  // The officer-only provider status line is hidden too.
+  await expect(ownerPage.getByText("BSB", { exact: true })).toHaveCount(0);
   await expect(ownerPage.getByText(/webhook last seen/)).toHaveCount(0);
 
   await ownerContext.close();

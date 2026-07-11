@@ -15,6 +15,7 @@ import { CodeBlock } from "../lib/CodeBlock";
 import { KenBurns } from "../lib/KenBurns";
 import { Ledger } from "../lib/Ledger";
 import "../lib/loadFonts";
+import { MusicBed } from "../lib/MusicBed";
 import { SceneFade } from "../lib/SceneFade";
 import { fonts, light, type Theme } from "../theme";
 
@@ -631,6 +632,7 @@ const Scene8: React.FC = () => {
 export const C3OneLaptop: React.FC<C3Props> = () => (
   <AbsoluteFill style={{ background: theme.bandBg }}>
     <Audio src={staticFile("audio/c3-vo.mp3")} />
+    <MusicBed src="audio/music-clips.mp3" />
     {(
       [
         [SCENES.s1, Scene1],

@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { createRootRouteWithContext, Link, Outlet, useParams } from "@tanstack/react-router";
 import { ChevronLeft, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Toaster } from "@/components/ui/sonner";
 import { signOut, useSession } from "@/lib/auth";
+import { schemeQueryOptions } from "@/lib/roles";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -42,6 +43,10 @@ function RootLayout() {
   const { data: session } = useSession();
   const params = useParams({ strict: false }) as { schemeId?: string };
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const { data: activeScheme } = useQuery({
+    ...schemeQueryOptions(params.schemeId ?? ""),
+    enabled: Boolean(params.schemeId),
+  });
 
   // Keep browser chrome (mobile status bar / toolbar) in sync with the app's
   // resolved theme — the static metas in index.html only track the OS scheme,
@@ -72,22 +77,46 @@ function RootLayout() {
         <div className="mx-auto flex h-14 w-full max-w-(--breakpoint-2xl) items-center justify-between gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]">
           <div className="flex min-w-0 items-center gap-3">
             <Link to="/" className="flex shrink-0 items-center" aria-label="GoodStrata home">
-              <img src="/logo-on-light.svg" alt="GoodStrata" className="h-7 w-auto dark:hidden" />
-              <img
-                src="/logo-on-dark.svg"
-                alt="GoodStrata"
-                className="hidden h-7 w-auto dark:block"
-              />
+              {params.schemeId ? (
+                <>
+                  <img src="/icon.svg" alt="" className="size-7 lg:hidden" />
+                  <img
+                    src="/logo-on-light.svg"
+                    alt="GoodStrata"
+                    className="hidden h-7 w-auto lg:block dark:lg:hidden"
+                  />
+                  <img
+                    src="/logo-on-dark.svg"
+                    alt="GoodStrata"
+                    className="hidden h-7 w-auto dark:lg:block"
+                  />
+                </>
+              ) : (
+                <>
+                  <img src="/logo-on-light.svg" alt="GoodStrata" className="h-7 w-auto dark:hidden" />
+                  <img
+                    src="/logo-on-dark.svg"
+                    alt="GoodStrata"
+                    className="hidden h-7 w-auto dark:block"
+                  />
+                </>
+              )}
             </Link>
             {params.schemeId && (
               <Link
                 to="/"
+                aria-label="Back to schemes"
                 className="flex shrink-0 items-center gap-0.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
               >
                 <ChevronLeft className="size-4" aria-hidden="true" />
-                Schemes
+                <span className="hidden sm:inline">Schemes</span>
               </Link>
             )}
+            {params.schemeId && activeScheme ? (
+              <span className="max-w-[9rem] truncate border-l pl-3 text-sm font-medium sm:max-w-xs lg:hidden">
+                {activeScheme.scheme.name}
+              </span>
+            ) : null}
           </div>
           {session?.user ? (
             <div className="flex items-center gap-1">

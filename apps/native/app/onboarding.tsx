@@ -406,7 +406,7 @@ export default function OnboardingScreen() {
                     accessibilityRole="radio"
                     accessibilityState={{ selected }}
                     style={{
-                      minHeight: 40,
+                      minHeight: 44,
                       justifyContent: "center",
                       paddingHorizontal: space(3),
                       borderRadius: radius.pill,

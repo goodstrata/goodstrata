@@ -67,7 +67,7 @@ test("maintenance: contractor pool + report issue validation + owner role gating
 
   // Maintenance sections are sub-tabs now; the pool lives under "Contractors".
   await page.getByRole("tab", { name: "Contractors" }).click();
-  await expect(page.getByText("Contractor pool")).toBeVisible();
+  await expect(page.getByRole("tabpanel", { name: "Contractors" })).toBeVisible();
   await page.getByRole("button", { name: "New contractor" }).click();
   await page.getByTestId("contractor-name").fill("Fitzroy Sparks");
   await page.getByTestId("contractor-email").fill("notanemail");
@@ -100,10 +100,10 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   // Back to the Requests sub-tab where the request list + report triggers live.
   await page.getByRole("tab", { name: "Requests" }).click();
   // Two triggers exist while the request list is empty (header + empty state).
-  await page.getByRole("button", { name: "Report issue" }).first().click();
+  await page.getByRole("button", { name: "Report an issue" }).first().click();
   await page.getByTestId("mr-title").fill("   ");
   await page.getByTestId("mr-description").fill("   ");
-  await page.getByRole("button", { name: "Submit request" }).click();
+  await page.getByRole("button", { name: "Submit report" }).click();
   await expect(page.getByText("Give the issue a short title.")).toBeVisible();
   await expect(page.getByText("Describe the issue so the agent can triage it.")).toBeVisible();
   await expect(page.getByRole("dialog")).toBeVisible(); // nothing submitted
@@ -112,7 +112,7 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   await page.getByTestId("mr-description").fill("Water pooling near the mailboxes after rain.");
   await page.getByTestId("mr-lot").click();
   await page.getByRole("option", { name: "Lot 2", exact: true }).click();
-  await page.getByRole("button", { name: "Submit request" }).click();
+  await page.getByRole("button", { name: "Submit report" }).click();
   await expect(
     page.getByText("Request submitted — the maintenance agent will triage it"),
   ).toBeVisible();
@@ -143,17 +143,17 @@ test("maintenance: contractor pool + report issue validation + owner role gating
 
   // Officer-only surfaces are absent for an owner: no contractor pool at all,
   // no raise/complete controls anywhere.
-  await expect(ownerPage.getByRole("button", { name: "Report issue" }).first()).toBeVisible();
+  await expect(ownerPage.getByRole("button", { name: "Report an issue" }).first()).toBeVisible();
   await expect(ownerPage.getByText("Contractor pool")).toHaveCount(0);
   await expect(ownerPage.getByRole("button", { name: "New contractor" })).toHaveCount(0);
   await expect(ownerPage.getByRole("button", { name: "Raise work order" })).toHaveCount(0);
   await expect(ownerPage.getByRole("button", { name: "Mark completed" })).toHaveCount(0);
 
   // …and an owner can report an issue themselves (any-member action).
-  await ownerPage.getByRole("button", { name: "Report issue" }).first().click();
+  await ownerPage.getByRole("button", { name: "Report an issue" }).first().click();
   await ownerPage.getByTestId("mr-title").fill("Broken intercom at entry");
   await ownerPage.getByTestId("mr-description").fill("Buzzer to lot 2 has stopped working.");
-  await ownerPage.getByRole("button", { name: "Submit request" }).click();
+  await ownerPage.getByRole("button", { name: "Submit report" }).click();
   await expect(
     ownerPage.getByText("Request submitted — the maintenance agent will triage it"),
   ).toBeVisible();

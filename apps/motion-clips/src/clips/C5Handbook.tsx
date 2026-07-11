@@ -12,6 +12,7 @@ import { EASE_IN_OUT, EASE_OUT, fade, riseIn } from "../lib/anim";
 import { Caption } from "../lib/Caption";
 import { KenBurns } from "../lib/KenBurns";
 import "../lib/loadFonts";
+import { MusicBed } from "../lib/MusicBed";
 import { SceneFade } from "../lib/SceneFade";
 import { fonts, light, type Theme } from "../theme";
 
@@ -570,6 +571,7 @@ const Scene7: React.FC = () => {
 export const C5Handbook: React.FC<C5Props> = () => (
   <AbsoluteFill style={{ background: theme.paper }}>
     <Audio src={staticFile("audio/c5-vo.mp3")} />
+    <MusicBed src="audio/music-clips.mp3" />
     {(
       [
         [SCENES.s1, Scene1],

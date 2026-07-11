@@ -20,6 +20,7 @@ import {
   slamIn,
 } from "../lib/anim";
 import "../lib/loadFonts";
+import { MusicBed } from "../lib/MusicBed";
 import { SceneFade } from "../lib/SceneFade";
 import { fees, fonts, light, money, type Theme } from "../theme";
 
@@ -365,6 +366,7 @@ const Scene4: React.FC = () => {
 export const Ad4Zero: React.FC = () => (
   <AbsoluteFill style={{ background: theme.paper }}>
     <Audio src={staticFile("audio/ad4-vo.mp3")} />
+    <MusicBed src="audio/music-ads.mp3" volume={0.22} />
     <Sequence from={SCENES.s1.from} durationInFrames={SCENES.s1.dur}>
       <SceneFade>
         <Scene1 />

@@ -15,6 +15,7 @@ import { FeeCard } from "../lib/FeeCard";
 import { KenBurns } from "../lib/KenBurns";
 import "../lib/loadFonts";
 import { MonoLine } from "../lib/MonoLine";
+import { MusicBed } from "../lib/MusicBed";
 import { SceneFade } from "../lib/SceneFade";
 import { fees, fonts, light, money, type Theme } from "../theme";
 
@@ -695,6 +696,7 @@ export const C1TheNumber: React.FC<C1Props> = () => {
           cut plays muted via the <video muted> attribute, so the track rides
           along and a tap unmutes it. */}
       <Audio src={staticFile("audio/c1-vo.mp3")} />
+      <MusicBed src="audio/music-clips.mp3" />
 
       <Sequence from={SCENES.s1.from} durationInFrames={SCENES.s1.dur}>
         <SceneFade>
