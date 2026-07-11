@@ -48,6 +48,15 @@ interface NotificationsResponse {
 
 type FeedItem = AppNotification & { schemeName: string };
 
+const NOTIFICATION_SKELETON_KEYS = [
+  "notification-skeleton-1",
+  "notification-skeleton-2",
+  "notification-skeleton-3",
+  "notification-skeleton-4",
+  "notification-skeleton-5",
+  "notification-skeleton-6",
+] as const;
+
 // ── Feed: every scheme's notifications, merged, newest first ────────────────
 
 function useNotificationsFeed() {
@@ -60,8 +69,7 @@ function useNotificationsFeed() {
   const notifQueries = useQueries({
     queries: schemes.map((entry) => ({
       queryKey: ["scheme", entry.scheme.id, "notifications"],
-      queryFn: () =>
-        api<NotificationsResponse>(`/api/schemes/${entry.scheme.id}/notifications`),
+      queryFn: () => api<NotificationsResponse>(`/api/schemes/${entry.scheme.id}/notifications`),
     })),
   });
 
@@ -91,14 +99,10 @@ function useNotificationsFeed() {
   const errored =
     (schemesQuery.isError && schemesQuery.data === undefined) ||
     (schemes.length > 0 && !anyData && notifQueries.every((q) => q.isError));
-  const refetching = schemesQuery.isRefetching || notifQueries.some((q) => q.isRefetching);
+  const refetchAll = () =>
+    Promise.all([schemesQuery.refetch(), ...notifQueries.map((q) => q.refetch())]);
 
-  const refetchAll = () => {
-    void schemesQuery.refetch();
-    for (const q of notifQueries) void q.refetch();
-  };
-
-  return { schemes, items, unreadCount, loading, errored, refetching, refetchAll };
+  return { schemes, items, unreadCount, loading, errored, refetchAll };
 }
 
 /**
@@ -114,8 +118,16 @@ export function useUnreadNotificationsCount(): number {
 export default function Notifications() {
   const theme = useTheme();
   const queryClient = useQueryClient();
-  const { schemes, items, unreadCount, loading, errored, refetching, refetchAll } =
-    useNotificationsFeed();
+  const { schemes, items, unreadCount, loading, errored, refetchAll } = useNotificationsFeed();
+  const [pulling, setPulling] = useState(false);
+  const refresh = async () => {
+    setPulling(true);
+    try {
+      await refetchAll();
+    } finally {
+      setPulling(false);
+    }
+  };
 
   // List entrance runs on first successful load only (§2 rule 2).
   const [hasEntered, setHasEntered] = useState(false);
@@ -188,8 +200,8 @@ export default function Notifications() {
   if (loading) {
     content = (
       <View>
-        {Array.from({ length: 6 }, (_, i) => (
-          <View key={i} style={{ paddingVertical: space(3), gap: space(2) }}>
+        {NOTIFICATION_SKELETON_KEYS.map((key) => (
+          <View key={key} style={{ paddingVertical: space(3), gap: space(2) }}>
             <Skeleton width="55%" height={16} />
             <Skeleton width="82%" height={12} />
           </View>
@@ -205,7 +217,7 @@ export default function Notifications() {
         keyExtractor={(n) => n.id}
         contentContainerStyle={{ paddingBottom: space(10), flexGrow: 1 }}
         refreshControl={
-          <RefreshControl refreshing={refetching} onRefresh={refetchAll} tintColor={theme.muted} />
+          <RefreshControl refreshing={pulling} onRefresh={refresh} tintColor={theme.muted} />
         }
         ListEmptyComponent={
           <View style={{ paddingTop: space(4) }}>
@@ -214,11 +226,11 @@ export default function Notifications() {
         }
         renderItem={({ item, index }) => {
           const unread = !item.readAt;
-          const subtitle =
-            item.body || (schemes.length > 1 ? item.schemeName : undefined);
+          const subtitle = item.body || (schemes.length > 1 ? item.schemeName : undefined);
           const row = (
             <ListRow
               title={item.title}
+              titleLines={2}
               subtitle={subtitle}
               unread={unread}
               divider={index < items.length - 1}
@@ -228,7 +240,7 @@ export default function Notifications() {
                 .join(". ")}
               accessibilityHint="Opens the related item"
               right={
-                <Text style={[t.figureSmall, { color: theme.muted }]}>
+                <Text style={[t.eyebrow, { color: theme.muted }]}>
                   {formatRelativeTime(item.createdAt)}
                 </Text>
               }

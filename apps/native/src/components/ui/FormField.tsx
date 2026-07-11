@@ -25,6 +25,7 @@ export function FormField({
         onBlur={() => setFocused(false)}
         placeholderTextColor={theme.muted}
         selectionColor={theme.accent}
+        keyboardAppearance={props.keyboardAppearance ?? (theme.dark ? "dark" : "light")}
         style={{
           ...t.body,
           color: theme.text,

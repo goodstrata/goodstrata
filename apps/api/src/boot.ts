@@ -28,6 +28,7 @@ const DECISION_EXECUTE_QUEUE = "decision.execute";
 const NOTIFY_QUEUE = "notify";
 const CRON_ARREARS = "cron.arrears.daily";
 const CRON_RETENTION = "cron.retention.daily";
+const CRON_PUSH_RECEIPTS = "cron.push-receipts";
 const MEETING_CONDUCT_QUEUE = "meeting.conduct";
 const MEETING_CONDUCT_KICKOFF_QUEUE = "meeting.conduct.kickoff";
 /** First conductor tick fires shortly after the video room opens. */
@@ -75,9 +76,11 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
     types: notifierService.NOTIFIER_EVENT_TYPES,
   };
 
-  // Notify jobs retry on transient failure (DB blip mid fan-out). Redelivery
-  // is safe: the notifier is idempotent per (event, recipient) via the
-  // notifications dedupeKey, so a retry only completes what's missing.
+  // Notify jobs retry on transient failure. Bell dedupe keys plus leased
+  // per-channel delivery state make normal redelivery resume only incomplete
+  // recipients/targets. External providers do not offer a universal
+  // exactly-once guarantee, so a crash after provider acceptance but before
+  // the completion write can still duplicate that one send.
   // createQueue is ON CONFLICT DO NOTHING (the dispatcher may have made the
   // queue on an earlier boot), so updateQueue asserts the retry policy.
   const notifyRetry = { retryLimit: 3, retryDelay: 30, retryBackoff: true };
@@ -153,6 +156,21 @@ export async function startBackground(deps: AppDeps): Promise<BackgroundServices
       if (created > 0) {
         console.log(`[notifier] ${event.type} → ${created} notification(s)`);
       }
+    }
+  });
+
+  // Expo accepts a message before APNs/FCM has handled it. Persisted ticket
+  // ids become eligible after Expo's recommended 15-minute delay; this short
+  // sweep resolves the receipts and prunes devices that are only reported as
+  // DeviceNotRegistered at receipt time.
+  await boss.createQueue(CRON_PUSH_RECEIPTS).catch(() => {});
+  await boss.schedule(CRON_PUSH_RECEIPTS, "*/5 * * * *");
+  await boss.work(CRON_PUSH_RECEIPTS, async () => {
+    const result = await notifierService.processPendingPushReceipts(
+      deps.serviceContext(systemActor(CRON_PUSH_RECEIPTS)),
+    );
+    if (result.checked > 0 || result.expired > 0) {
+      console.log("[cron:push-receipts]", result);
     }
   });
 

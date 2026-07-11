@@ -131,6 +131,11 @@ function SignupThenAccept({ token }: { token: string }) {
       const signup = await signUp.email({
         email: current.email,
         password,
+        // Keep the bearer token in the verification callback as well as local
+        // storage. If the recipient opens the email on another browser/device,
+        // Better Auth returns them to this exact invite instead of dropping
+        // them on the empty-scheme onboarding screen.
+        callbackURL: `/join?token=${encodeURIComponent(token)}`,
         // The invite already carries the person's name; only fall back to the
         // typed field (or the email local-part) when it doesn't.
         name: current.name?.trim() || name.trim() || current.email.split("@")[0]!,
@@ -180,8 +185,8 @@ function SignupThenAccept({ token }: { token: string }) {
           <CardHeader>
             <CardTitle className="text-lg">Check your email</CardTitle>
             <CardDescription>
-              Your account for <span className="break-all">{preview.email}</span> is set up. Open the
-              verification link we just emailed you and sign in — you'll be added to{" "}
+              Your account for <span className="break-all">{preview.email}</span> is set up. Open
+              the verification link we just emailed you and sign in — you'll be added to{" "}
               {preview.schemeName} automatically.
             </CardDescription>
           </CardHeader>
@@ -212,13 +217,7 @@ function SignupThenAccept({ token }: { token: string }) {
           >
             {preview.name ? (
               <Field label="Name" htmlFor="join-name" hint="Set from your invitation.">
-                <Input
-                  id="join-name"
-                  value={preview.name}
-                  readOnly
-                  disabled
-                  autoComplete="name"
-                />
+                <Input id="join-name" value={preview.name} readOnly disabled autoComplete="name" />
               </Field>
             ) : (
               <form.Field name="name">

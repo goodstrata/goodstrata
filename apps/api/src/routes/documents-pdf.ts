@@ -27,6 +27,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps } from "../deps.js";
+import { canReadLot, canReadPayment } from "../lot-access.js";
 import { type AppEnv, requireSchemeMember } from "../middleware.js";
 import { zv } from "../validate.js";
 
@@ -218,6 +219,16 @@ export function documentsPdfRoutes(deps: AppDeps) {
             return c.json({ error: { code: "NOT_FOUND", message: "Payment not found" } }, 404);
           }
 
+          const allowed = await canReadPayment(deps, {
+            schemeId,
+            paymentId,
+            userId: c.get("user").id,
+            roles: c.get("roles"),
+          });
+          if (!allowed) {
+            return c.json({ error: { code: "NOT_FOUND", message: "Payment not found" } }, 404);
+          }
+
           const receipt = await deps.db.query.receipts.findFirst({
             where: and(eq(receipts.paymentId, payment.id), eq(receipts.schemeId, schemeId)),
           });
@@ -322,6 +333,16 @@ export function documentsPdfRoutes(deps: AppDeps) {
           const schemeId = c.get("schemeId");
           const lotId = c.req.param("lotId");
           const q = c.req.valid("query");
+
+          const allowed = await canReadLot(deps, {
+            schemeId,
+            lotId,
+            userId: c.get("user").id,
+            roles: c.get("roles"),
+          });
+          if (!allowed) {
+            return c.json({ error: { code: "NOT_FOUND", message: "Lot not found" } }, 404);
+          }
 
           const [scheme, lot] = await Promise.all([
             deps.db.query.schemes.findFirst({ where: eq(schemes.id, schemeId) }),

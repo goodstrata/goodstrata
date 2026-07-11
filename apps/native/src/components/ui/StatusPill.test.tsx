@@ -21,6 +21,12 @@ describe("statusTone mapping", () => {
     expect(statusTone("cancelled")).toBe("crit");
   });
 
+  it("maps factual, automated and archival statuses to their Registry tones", () => {
+    expect(statusTone("scheduled")).toBe("info");
+    expect(statusTone("triaged")).toBe("agent");
+    expect(statusTone("archived")).toBe("neutral");
+  });
+
   it("normalises casing, whitespace and dashes before lookup", () => {
     expect(statusTone("  PAID  ")).toBe("ok");
     expect(statusTone("Due-Soon")).toBe("warn");
@@ -28,9 +34,9 @@ describe("statusTone mapping", () => {
     expect(statusTone("OVERDUE")).toBe("crit");
   });
 
-  it("defaults unknown statuses to warn and warns in dev", () => {
+  it("defaults unknown statuses to neutral and warns in dev", () => {
     const spy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    expect(statusTone("teleported")).toBe("warn");
+    expect(statusTone("teleported")).toBe("neutral");
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -43,8 +49,8 @@ describe("StatusPill component", () => {
   });
 
   it("renders the label regardless of tone", async () => {
-    await render(<StatusPill tone="crit" label="Overdue" />);
-    expect(screen.getByText("Overdue")).toBeOnTheScreen();
+    await render(<StatusPill tone="agent" label="Raised by an agent" />);
+    expect(screen.getByText("Raised by an agent")).toBeOnTheScreen();
   });
 
   it("shows label text verbatim so meaning does not rely on colour", async () => {

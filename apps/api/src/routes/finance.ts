@@ -17,6 +17,7 @@ import { userActor } from "@goodstrata/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps } from "../deps.js";
+import { canReadLot, canReadPayment } from "../lot-access.js";
 import { type AppEnv, requireRole, requireSchemeMember } from "../middleware.js";
 import { zv } from "../validate.js";
 
@@ -104,14 +105,46 @@ export function financeRoutes(deps: AppDeps) {
         },
       )
       .get("/:schemeId/payments", requireSchemeMember(deps), async (c) => {
-        const ctx = deps.serviceContext(userActor(c.get("user").id));
-        return c.json({ payments: await paymentsService.listPayments(ctx, c.get("schemeId")) });
+        const schemeId = c.get("schemeId");
+        const userId = c.get("user").id;
+        const roles = c.get("roles");
+        const ctx = deps.serviceContext(userActor(userId));
+        const rows = await paymentsService.listPayments(ctx, schemeId);
+        const readable = await Promise.all(
+          rows.map((payment) =>
+            canReadPayment(deps, { schemeId, paymentId: payment.id, userId, roles }),
+          ),
+        );
+        return c.json({ payments: rows.filter((_payment, index) => readable[index]) });
       })
       // How owners pay + payments observability (provider, webhook liveness,
       // suspense-queue size). Member-visible: owners need the account details.
       .get("/:schemeId/payments/status", requireSchemeMember(deps), async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({ status: await paymentsService.paymentsStatus(ctx, c.get("schemeId")) });
+      })
+      // A notification may point an owner at one payment without exposing the
+      // scheme-wide payments register. All allocated lots must belong to them.
+      .get("/:schemeId/payments/:paymentId", requireSchemeMember(deps), async (c) => {
+        const schemeId = c.get("schemeId");
+        const paymentId = c.req.param("paymentId");
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const payment = (await paymentsService.listPayments(ctx, schemeId)).find(
+          (row) => row.id === paymentId,
+        );
+        if (!payment) {
+          return c.json({ error: { code: "NOT_FOUND", message: "Payment not found" } }, 404);
+        }
+        const allowed = await canReadPayment(deps, {
+          schemeId,
+          paymentId,
+          userId: c.get("user").id,
+          roles: c.get("roles"),
+        });
+        if (!allowed) {
+          return c.json({ error: { code: "NOT_FOUND", message: "Payment not found" } }, 404);
+        }
+        return c.json({ payment });
       })
       // Manual-payment rail: a treasurer records a bank transfer that arrived
       // outside the provider webhook. Same allocation/receipt/audit chain.
@@ -220,6 +253,15 @@ export function financeRoutes(deps: AppDeps) {
         return c.json({ arrears: await arrearsService.arrearsForScheme(ctx, c.get("schemeId")) });
       })
       .get("/:schemeId/lots/:lotId/statement", requireSchemeMember(deps), async (c) => {
+        const allowed = await canReadLot(deps, {
+          schemeId: c.get("schemeId"),
+          lotId: c.req.param("lotId"),
+          userId: c.get("user").id,
+          roles: c.get("roles"),
+        });
+        if (!allowed) {
+          return c.json({ error: { code: "NOT_FOUND", message: "Lot not found" } }, 404);
+        }
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json(
           await arrearsService.lotStatement(ctx, c.get("schemeId"), c.req.param("lotId")),

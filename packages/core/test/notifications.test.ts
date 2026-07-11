@@ -9,11 +9,13 @@ import {
   maintenanceRequests,
   meetings,
   memberships,
+  notificationDeliveryClaims,
   organizations,
   ownerships,
   paymentAllocations,
   payments,
   people,
+  pushTokens,
   schemes,
   users,
   workOrders,
@@ -38,6 +40,7 @@ const integrations = {
   ...integrationsFromEnv({
     EMAIL_PROVIDER: "memory",
     SMS_PROVIDER: "memory",
+    PUSH_PROVIDER: "memory",
     STORAGE_PROVIDER: "memory",
   }),
   payments: mockPaymentsProvider(),
@@ -47,6 +50,9 @@ const memoryEmail = integrations.email as typeof integrations.email & {
 };
 const memorySms = integrations.sms as typeof integrations.sms & {
   sent: { to: string; body: string }[];
+};
+const memoryPush = integrations.push as typeof integrations.push & {
+  sent: { to: string; title: string; body: string; data?: Record<string, unknown> }[];
 };
 
 const NOW = "2026-07-02T00:00:00Z";
@@ -386,10 +392,16 @@ describe("the notifier — org-scoped compliance obligations", () => {
       { schemeId: schemeA, userId: MGR_ONE, role: "manager_admin", startedOn: "2025-01-01" },
       { schemeId: schemeA, userId: ORG_OWNER, role: "owner", startedOn: "2025-01-01" },
     ]);
+    await tdb.db.insert(pushTokens).values({
+      userId: MGR_BOTH,
+      token: "ExponentPushToken[org-manager]",
+      platform: "ios",
+    });
   });
 
   it("pi_expiry sweep event notifies org admins in-app (per scheme) and by email (once)", async () => {
     memoryEmail.sent.length = 0;
+    memoryPush.sent.length = 0;
 
     // Raise the org-level obligation well ahead (band: none at 2026-07-02)…
     const obligation = await complianceService.raiseObligation(ctxAs(), {
@@ -454,6 +466,32 @@ describe("the notifier — org-scoped compliance obligations", () => {
     ]);
     expect(memoryEmail.sent[0]!.subject).toBe("Manager PI insurance expiry — due 2026-11-15");
     expect(memoryEmail.sent[0]!.text).toContain("/manager");
+    const orgPush = memoryPush.sent[0]!;
+    expect(orgPush.to).toBe("ExponentPushToken[org-manager]");
+    const pushData = orgPush.data as {
+      schemeId: string;
+      notificationId: string;
+      related: { type: string; id: string };
+    };
+    expect(pushData.related).toEqual({ type: "compliance_obligation", id: obligation.id });
+    const anchorRows = await notificationsService.listNotifications(
+      ctxAs(),
+      pushData.schemeId,
+      MGR_BOTH,
+    );
+    expect(pushData.notificationId).toBe(
+      anchorRows.find((notification) => notification.related?.id === obligation.id)!.id,
+    );
+
+    // Org-scoped delivery has multiple bell rows for one admin, but outbound
+    // claims remain one per event/user/channel and survive job redelivery.
+    const repeated = await notifierService.handleEventForNotifications(
+      ctxAs(systemActor("notifier")),
+      event as unknown as EventRecord,
+    );
+    expect(repeated.created).toBe(0);
+    expect(memoryEmail.sent).toHaveLength(2);
+    expect(memoryPush.sent).toHaveLength(1);
   });
 
   it("overdue registration_renewal reads as overdue; an org with no admins is a no-op", async () => {
@@ -572,6 +610,7 @@ describe("the notifier — delivery hardening", () => {
   it("isolates a failed recipient: the rest of the fan-out still delivers", async () => {
     // An email provider that rejects the treasurer but accepts everyone else.
     const flakySent: { to: string }[] = [];
+    let failTreasurer = true;
     const flakyCtx: ServiceContext = {
       db: tdb.db,
       clock: fixedClock(NOW),
@@ -581,7 +620,7 @@ describe("the notifier — delivery hardening", () => {
         email: {
           name: "flaky",
           async send(email: { to: string }) {
-            if (email.to === "treasurer-n@example.com") {
+            if (failTreasurer && email.to === "treasurer-n@example.com") {
               throw new Error("mailbox on fire");
             }
             flakySent.push({ to: email.to });
@@ -592,27 +631,95 @@ describe("the notifier — delivery hardening", () => {
     };
 
     const decisionId = randomUUID();
-    const { created } = await notifierService.handleEventForNotifications(
-      flakyCtx,
-      fakeEvent("decision.requested", {
-        decisionId,
-        title: "Isolation test",
-        kind: "other",
-        deciderRole: "committee",
-      }),
+    const event = fakeEvent("decision.requested", {
+      decisionId,
+      title: "Isolation test",
+      kind: "other",
+      deciderRole: "committee",
+    });
+    await expect(notifierService.handleEventForNotifications(flakyCtx, event)).rejects.toThrow(
+      /notifier delivery incomplete/,
     );
 
-    // Bells for both, email delivered to the chair despite the treasurer failing.
-    expect(created).toBe(2);
+    // Bells and every unaffected channel delivered before the aggregate asks
+    // pg-boss to retry the failed recipient.
     expect(flakySent.map((s) => s.to)).toEqual(["chair-n@example.com"]);
 
-    // The failure is on the correspondence log, not swallowed.
+    const firstClaims = await tdb.db.query.notificationDeliveryClaims.findMany({
+      where: (t, { eq }) => eq(t.eventId, event.id),
+    });
+    expect(
+      firstClaims.find((claim) => claim.userId === CHAIR && claim.channel === "email")!.completedAt,
+    ).not.toBeNull();
+    const failedClaim = firstClaims.find(
+      (claim) => claim.userId === TREASURER && claim.channel === "email",
+    )!;
+    expect(failedClaim.completedAt).toBeNull();
+    expect(failedClaim.lastError).toContain("mailbox on fire");
+
+    failTreasurer = false;
+    const retry = await notifierService.handleEventForNotifications(flakyCtx, event);
+    expect(retry.created).toBe(0);
+    // Only the released failed lease re-sends; chair/SMS/push successes remain terminal.
+    expect(flakySent.map((send) => send.to)).toEqual([
+      "chair-n@example.com",
+      "treasurer-n@example.com",
+    ]);
+    const retriedClaim = await tdb.db.query.notificationDeliveryClaims.findFirst({
+      where: (t, { and, eq }) =>
+        and(eq(t.eventId, event.id), eq(t.userId, TREASURER), eq(t.channel, "email")),
+    });
+    expect(retriedClaim).toMatchObject({ attempts: 2, lastError: null });
+    expect(retriedClaim!.completedAt).not.toBeNull();
+
+    // The correspondence log retains both the failed attempt and successful retry.
     const rows = await tdb.db.query.messages.findMany();
     const mine = rows.filter(
       (m) => (m.related as { id?: string } | null)?.id === decisionId && m.channel === "email",
     );
-    expect(mine.find((m) => m.toAddress === "treasurer-n@example.com")!.status).toBe("failed");
+    expect(
+      mine
+        .filter((m) => m.toAddress === "treasurer-n@example.com")
+        .map((m) => m.status)
+        .sort(),
+    ).toEqual(["failed", "sent"]);
     expect(mine.find((m) => m.toAddress === "chair-n@example.com")!.status).toBe("sent");
+  });
+
+  it("keeps a live crash lease concurrent-safe, then retries it after expiry", async () => {
+    memoryEmail.sent.length = 0;
+    memorySms.sent.length = 0;
+    const event = fakeEvent("decision.requested", {
+      decisionId: randomUUID(),
+      title: "Crash lease exercise",
+      kind: "other",
+      deciderRole: "committee",
+    });
+    await tdb.db.insert(notificationDeliveryClaims).values({
+      eventId: event.id,
+      userId: CHAIR,
+      channel: "email",
+      leaseId: randomUUID(),
+      leaseUntil: new Date("2026-07-02T00:02:00Z"),
+      attempts: 1,
+    });
+
+    await expect(
+      notifierService.handleEventForNotifications(ctxAs(systemActor("notifier")), event),
+    ).rejects.toThrow(/email delivery lease still active/);
+    expect(memoryEmail.sent.map((send) => send.to)).toEqual(["treasurer-n@example.com"]);
+    expect(memorySms.sent).toHaveLength(1);
+
+    const afterExpiry: ServiceContext = {
+      ...ctxAs(systemActor("notifier")),
+      clock: fixedClock("2026-07-02T00:03:00Z"),
+    };
+    const retry = await notifierService.handleEventForNotifications(afterExpiry, event);
+    expect(retry.created).toBe(0);
+    expect(memoryEmail.sent.map((send) => send.to).sort()).toEqual(
+      ["chair-n@example.com", "treasurer-n@example.com"].sort(),
+    );
+    expect(memorySms.sent).toHaveLength(1);
   });
 });
 
@@ -845,9 +952,10 @@ describe("the notifier — new event handlers", () => {
     const rows = await notificationsService.listNotifications(ctxAs(), schemeId, OWNER, {
       unreadOnly: true,
     });
-    const match = rows.find((n) => n.related?.id === woRows[0]!.id)!;
+    const match = rows.find((n) => n.related?.id === requestRows[0]!.id)!;
     expect(match.title).toBe("Work completed: Broken letterbox");
     expect(match.category).toBe("maintenance");
+    expect(match.related).toEqual({ type: "maintenance_request", id: requestRows[0]!.id });
     expect(memoryEmail.sent.map((e) => e.to)).toEqual(["owner-n@example.com"]);
   });
 

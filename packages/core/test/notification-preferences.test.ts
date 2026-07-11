@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { lots, memberships, notificationPreferences, ownerships, people, schemes, users } from "@goodstrata/db";
+import {
+  lots,
+  memberships,
+  notificationPreferences,
+  ownerships,
+  people,
+  schemes,
+  users,
+} from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import type { EventRecord } from "@goodstrata/events";
 import { integrationsFromEnv, mockPaymentsProvider } from "@goodstrata/integrations";
@@ -315,5 +323,48 @@ describe("notifier honours preferences per channel", () => {
       }),
     );
     expect(created).toBe(1); // only treasurer's bell row now
+  });
+
+  it("redelivery stays idempotent when recipients opt out of in_app", async () => {
+    for (const userId of [CHAIR, TREASURER]) {
+      await notificationPreferencesService.upsertPreference(ctxAs(), userId, {
+        notificationType: "decision.requested",
+        channel: "in_app",
+        enabled: false,
+      });
+    }
+    const event = fakeEvent("decision.requested", {
+      decisionId: randomUUID(),
+      title: "Replace the entry intercom",
+      kind: "committee",
+    });
+
+    expect(
+      await notifierService.handleEventForNotifications(ctxAs(systemActor("notifier")), event),
+    ).toEqual({ created: 0 });
+    expect(memoryEmail.sent).toHaveLength(2);
+    expect(memorySms.sent).toHaveLength(1);
+
+    // Same pg-boss event, still no visible bell row to use as a gate.
+    expect(
+      await notifierService.handleEventForNotifications(ctxAs(systemActor("notifier")), event),
+    ).toEqual({ created: 0 });
+    expect(memoryEmail.sent).toHaveLength(2);
+    expect(memorySms.sent).toHaveLength(1);
+
+    const claims = await tdb.db.query.notificationDeliveryClaims.findMany({
+      where: (t, { eq }) => eq(t.eventId, event.id),
+    });
+    expect(claims.map((claim) => claim.channel).sort()).toEqual(["email", "email", "sms"]);
+    expect(
+      await tdb.db.query.notifications.findMany({
+        where: (t, { like }) => like(t.dedupeKey, `${event.id}%`),
+      }),
+    ).toHaveLength(0);
+
+    // The persisted preference remains a real opt-out, not a hidden bell row
+    // created only to support dedupe.
+    const matrix = await notificationPreferencesService.listEffectivePreferences(ctxAs(), CHAIR);
+    expect(matrix["decision.requested"].in_app).toBe(false);
   });
 });

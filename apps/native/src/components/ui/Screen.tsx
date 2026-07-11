@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { space, type } from "../../theme/tokens";
@@ -17,11 +17,13 @@ export interface ScreenProps {
   reserveEyebrow?: boolean;
   /** Default true → ScrollView; false → plain View for FlatList screens. */
   scroll?: boolean;
+  /** Keep the top safe-area inset. Set false when a native stack header owns it. */
+  topInset?: boolean;
   /** @deprecated Ignored. The pull-to-refresh spinner now tracks a real pull
    * only, so a background refetch on navigation no longer flashes it. */
   refreshing?: boolean;
   /** Runs on pull-to-refresh; the spinner stays up until its promise settles. */
-  onRefresh?: () => void | Promise<unknown>;
+  onRefresh?: () => Promise<unknown>;
   /** Single quiet icon action, 44pt hit area. */
   headerRight?: ReactNode;
   /** Ambient self-lighting skyline band above the title. Opt-in — only the
@@ -40,6 +42,7 @@ export function Screen({
   eyebrow,
   reserveEyebrow,
   scroll = true,
+  topInset = true,
   onRefresh,
   headerRight,
   skyline = false,
@@ -90,7 +93,7 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: theme.bg }}>
+    <SafeAreaView edges={topInset ? ["top"] : []} style={{ flex: 1, backgroundColor: theme.bg }}>
       {scroll ? (
         <ScrollView
           contentContainerStyle={{ paddingBottom: space(10) }}

@@ -18,7 +18,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AppDeps } from "./deps.js";
 import { buildServiceContextFactory } from "./deps.js";
 import type { AppEnv } from "./middleware.js";
+import { documentsPdfRoutes } from "./routes/documents-pdf.js";
 import { financeRoutes } from "./routes/finance.js";
+import { lotsRoutes } from "./routes/onboarding.js";
 
 /**
  * Route-level permutation matrix for the finance family: WHO may hit each
@@ -36,6 +38,7 @@ let app: Hono;
 let schemeId: string;
 let draftBudgetId: string;
 let adoptedBudgetId: string;
+const lotIds: string[] = [];
 
 const integrations = {
   ...integrationsFromEnv({
@@ -110,6 +113,8 @@ beforeAll(async () => {
       await next();
     })
     .route("/schemes", financeRoutes(deps))
+    .route("/schemes", documentsPdfRoutes(deps))
+    .route("/schemes", lotsRoutes(deps))
     .onError((err, c) => {
       // Mirrors createApp's DomainError → envelope mapping.
       if (err instanceof DomainError) {
@@ -160,6 +165,7 @@ beforeAll(async () => {
       .insert(lots)
       .values({ schemeId, lotNumber, entitlement: 10, liability: 10 })
       .returning();
+    lotIds.push(lotRows[0]!.id);
     const personRows = await tdb.db
       .insert(people)
       .values({
@@ -167,6 +173,7 @@ beforeAll(async () => {
         givenName: `Lot${lotNumber}`,
         familyName: "Owner",
         email: `lot${lotNumber}@example.com`,
+        userId: lotNumber === "1" ? USERS.owner : null,
       })
       .returning();
     await tdb.db.insert(ownerships).values({
@@ -233,6 +240,28 @@ describe("membership gate", () => {
       const res = await request("owner", "GET", path);
       expect(res.status, `GET ${path} as owner`).toBe(200);
     }
+  });
+
+  it("owners can read their own lot statement but another lot stays undiscoverable", async () => {
+    const own = await request("owner", "GET", `/lots/${lotIds[0]}/statement`);
+    expect(own.status).toBe(200);
+
+    const other = await request("owner", "GET", `/lots/${lotIds[1]}/statement`);
+    expect(other.status).toBe(404);
+    expect((await errOf(other)).code).toBe("NOT_FOUND");
+
+    const officer = await request("chair", "GET", `/lots/${lotIds[1]}/statement`);
+    expect(officer.status).toBe(200);
+  });
+
+  it("the personal lot endpoint returns only the signed-in owner's current holdings", async () => {
+    const response = await request("owner", "GET", "/lots/mine");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      lots: { id: string; owners: { userId: string | null }[] }[];
+    };
+    expect(body.lots.map((lot) => lot.id)).toEqual([lotIds[0]]);
+    expect(body.lots[0]?.owners).toEqual([expect.objectContaining({ userId: USERS.owner })]);
   });
 });
 
@@ -361,6 +390,7 @@ describe("business errors surface as their DomainError envelope (never swallowed
   let scheduleId: string;
   let noticeId: string;
   let matchedPaymentId: string;
+  let otherLotPaymentId: string;
 
   it("a schedule against the still-draft budget → 422 BUDGET_NOT_ADOPTED", async () => {
     const res = await request("treasurer", "POST", "/levy-schedules", {
@@ -398,7 +428,10 @@ describe("business errors surface as their DomainError envelope (never swallowed
 
   it("manual payment: duplicate bank reference → 200 with duplicate:true (idempotent, not an error)", async () => {
     const notices = await request("owner", "GET", "/levy-notices");
-    noticeId = ((await notices.json()) as { notices: { id: string }[] }).notices[0]!.id;
+    const noticeRows = (await notices.json()) as {
+      notices: { id: string; lotId: string }[];
+    };
+    noticeId = noticeRows.notices.find((notice) => notice.lotId === lotIds[0])!.id;
 
     const json = {
       levyNoticeId: noticeId,
@@ -415,6 +448,74 @@ describe("business errors surface as their DomainError envelope (never swallowed
     const dup = await request("treasurer", "POST", "/payments/manual", json);
     expect(dup.status).toBe(200);
     expect(((await dup.json()) as { duplicate?: boolean }).duplicate).toBe(true);
+  });
+
+  it("payment detail and receipt are visible only to an owner of every allocated lot", async () => {
+    const ownDetail = await request("owner", "GET", `/payments/${matchedPaymentId}`);
+    expect(ownDetail.status).toBe(200);
+    expect(((await ownDetail.json()) as { payment: { id: string } }).payment.id).toBe(
+      matchedPaymentId,
+    );
+
+    const notices = await request("treasurer", "GET", "/levy-notices");
+    const noticeRows = (await notices.json()) as {
+      notices: { id: string; lotId: string }[];
+    };
+    const otherNoticeId = noticeRows.notices.find((notice) => notice.lotId === lotIds[1])!.id;
+    const recorded = await request("treasurer", "POST", "/payments/manual", {
+      levyNoticeId: otherNoticeId,
+      amountCents: 1_000,
+      paidAt: "2026-07-03",
+      reference: "ROUTE-STMT-2",
+    });
+    expect(recorded.status).toBe(201);
+    otherLotPaymentId = ((await recorded.json()) as { paymentId: string }).paymentId;
+
+    const hiddenDetail = await request("owner", "GET", `/payments/${otherLotPaymentId}`);
+    expect(hiddenDetail.status).toBe(404);
+    expect((await errOf(hiddenDetail)).code).toBe("NOT_FOUND");
+
+    const officerDetail = await request("chair", "GET", `/payments/${otherLotPaymentId}`);
+    expect(officerDetail.status).toBe(200);
+
+    const ownerRegister = await request("owner", "GET", "/payments");
+    const ownerPaymentIds = (
+      (await ownerRegister.json()) as { payments: { id: string }[] }
+    ).payments.map((payment) => payment.id);
+    expect(ownerPaymentIds).toContain(matchedPaymentId);
+    expect(ownerPaymentIds).not.toContain(otherLotPaymentId);
+
+    const officerRegister = await request("chair", "GET", "/payments");
+    const officerPaymentIds = (
+      (await officerRegister.json()) as { payments: { id: string }[] }
+    ).payments.map((payment) => payment.id);
+    expect(officerPaymentIds).toEqual(
+      expect.arrayContaining([matchedPaymentId, otherLotPaymentId]),
+    );
+
+    const ownReceipt = await request(
+      "owner",
+      "GET",
+      `/documents/payments/${matchedPaymentId}/receipt.pdf`,
+    );
+    expect(ownReceipt.status).toBe(200);
+    expect(ownReceipt.headers.get("content-type")).toContain("application/pdf");
+
+    const hiddenReceipt = await request(
+      "owner",
+      "GET",
+      `/documents/payments/${otherLotPaymentId}/receipt.pdf`,
+    );
+    expect(hiddenReceipt.status).toBe(404);
+    expect((await errOf(hiddenReceipt)).code).toBe("NOT_FOUND");
+
+    const officerReceipt = await request(
+      "chair",
+      "GET",
+      `/documents/payments/${otherLotPaymentId}/receipt.pdf`,
+    );
+    expect(officerReceipt.status).toBe(200);
+    expect(officerReceipt.headers.get("content-type")).toContain("application/pdf");
   });
 
   it("matching an already-matched payment → 409 PAYMENT_NOT_UNMATCHED", async () => {

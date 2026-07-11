@@ -46,9 +46,7 @@ export default function More() {
           </View>
         ) : (
           <>
-            <Text
-              style={[t.body, { fontFamily: "PublicSans_600SemiBold", color: theme.text }]}
-            >
+            <Text style={[t.body, { fontFamily: "PublicSans_600SemiBold", color: theme.text }]}>
               {session?.user?.name || "Owner"}
             </Text>
             <Text style={[t.bodySmall, { color: theme.muted, marginTop: space(1) }]}>
@@ -58,8 +56,35 @@ export default function More() {
         )}
       </Card>
 
+      <SectionHeader label="Account" />
+      <Card padded={false} style={{ paddingHorizontal: space(4) }}>
+        <ListRow
+          title="Profile"
+          subtitle="Name, photo, email and mobile"
+          leading={<Ionicons name="person-outline" size={18} color={theme.accent} />}
+          chevron
+          divider
+          onPress={() => router.push("/settings/profile")}
+        />
+        <ListRow
+          title="Security"
+          subtitle="Password and signed-in devices"
+          leading={<Ionicons name="shield-checkmark-outline" size={18} color={theme.accent} />}
+          chevron
+          onPress={() => router.push("/settings/security")}
+        />
+      </Card>
+
       <SectionHeader label="Preferences" />
       <Card padded={false} style={{ paddingHorizontal: space(4) }}>
+        <ListRow
+          title="Appearance"
+          subtitle="Light, dark or device setting"
+          leading={<Ionicons name="contrast-outline" size={18} color={theme.accent} />}
+          chevron
+          divider
+          onPress={() => router.push("/settings/appearance")}
+        />
         <ListRow
           title="Notifications"
           subtitle="Choose what reaches you, and how"
@@ -111,12 +136,7 @@ export default function More() {
         />
       </View>
 
-      <Text
-        style={[
-          t.caption,
-          { color: theme.muted, textAlign: "center", marginTop: space(6) },
-        ]}
-      >
+      <Text style={[t.caption, { color: theme.muted, textAlign: "center", marginTop: space(6) }]}>
         GoodStrata {Constants.expoConfig?.version ?? "0.1.0"}
       </Text>
     </Screen>

@@ -184,6 +184,25 @@ export async function acceptInvite(ctx: ServiceContext, token: string) {
       throw new DomainError("INVALID_INVITE", "This invite is invalid or has expired", 410);
     }
 
+    // An invite is addressed correspondence, not a transferable capability.
+    // A different account may already be signed in on the device that opens the
+    // email (a shared family tablet is the common case); never bind that account
+    // to the invited person's roll entry merely because it holds the token.
+    // Compare normalized addresses because Better Auth stores sign-up emails in
+    // lowercase while an officer may have entered mixed case on the roll.
+    const user = await tx.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true },
+    });
+    const normalizeEmail = (email: string) => email.trim().toLowerCase();
+    if (!user || normalizeEmail(user.email) !== normalizeEmail(invite.email)) {
+      throw new DomainError(
+        "INVITE_EMAIL_MISMATCH",
+        `Sign in as ${invite.email} to accept this invite`,
+        403,
+      );
+    }
+
     await tx.update(invites).set({ acceptedAt: ctx.clock.now() }).where(eq(invites.id, invite.id));
 
     await tx.update(people).set({ userId }).where(eq(people.id, invite.personId));

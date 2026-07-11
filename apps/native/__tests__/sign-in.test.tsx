@@ -13,6 +13,10 @@ jest.mock("../src/lib/auth", () => ({
   },
 }));
 
+jest.mock("../src/lib/authCapabilities", () => ({
+  useAuthPageInfo: () => ({ data: { socialProviders: [] } }),
+}));
+
 // Router: capture navigation without a real navigation tree.
 const mockReplace = jest.fn();
 jest.mock("expo-router", () => ({
@@ -35,9 +39,10 @@ jest.mock("expo-status-bar", () => ({ StatusBar: () => null }));
 jest.mock("react-native-safe-area-context", () => {
   const React = require("react");
   const { View } = require("react-native");
+  type MockSafeAreaProps = { children?: React.ReactNode } & Record<string, unknown>;
   return {
-    SafeAreaView: ({ children, ...p }: any) => React.createElement(View, p, children),
-    SafeAreaProvider: ({ children }: any) => children,
+    SafeAreaView: ({ children, ...p }: MockSafeAreaProps) => React.createElement(View, p, children),
+    SafeAreaProvider: ({ children }: MockSafeAreaProps) => children,
     useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
   };
 });

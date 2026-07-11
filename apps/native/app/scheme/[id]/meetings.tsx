@@ -1,34 +1,49 @@
-import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { File, Paths } from "expo-file-system";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Share, StyleSheet, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 import {
   Button,
   Card,
   EmptyState,
   ErrorState,
+  FormField,
+  formatDate,
+  humanise,
   ListRow,
+  PressableScale,
+  plate,
+  radius,
   Screen,
   SectionHeader,
   Skeleton,
   StatusPill,
-  formatDate,
-  plate,
   space,
+  statusTone,
   type as t,
   useListEntering,
   useTheme,
 } from "../../../src/components";
 import { api, apiPost } from "../../../src/lib/api";
-import { schemeQueryOptions } from "../../../src/lib/roles";
+import { authClient } from "../../../src/lib/auth";
+import { API_ORIGIN } from "../../../src/lib/config";
+import { schemeQueryOptions, useIsOfficer } from "../../../src/lib/roles";
 
 // ---------------------------------------------------------------------------
 // API types (from the API map — meetings list + detail)
 // ---------------------------------------------------------------------------
 
-type MeetingStatus = "draft" | "notice_sent" | "in_progress" | "closed" | "minutes_distributed";
+type MeetingStatus =
+  | "draft"
+  | "notice_sent"
+  | "in_progress"
+  | "closed"
+  | "minutes_draft"
+  | "minutes_distributed";
 
 interface Meeting {
   id: string;
@@ -51,6 +66,68 @@ interface AgendaItem {
   title: string;
 }
 
+interface AgendaSubmission {
+  id: string;
+  meetingId: string;
+  order: number;
+  title: string;
+  body: string | null;
+  submittedByPersonId: string | null;
+  status: "pending" | "rejected";
+  motionText: string | null;
+  rejectedReason: string | null;
+  createdAt: string;
+}
+
+interface MotionResult {
+  forWeight?: number;
+  againstWeight?: number;
+  abstainWeight?: number;
+  forCount?: number;
+  againstCount?: number;
+  abstainCount?: number;
+  basis?: "headcount" | "entitlement";
+  pollDemanded?: boolean;
+}
+
+interface Motion {
+  id: string;
+  title: string;
+  text: string;
+  resolutionType: "ordinary" | "special" | "unanimous";
+  status: "draft" | "open" | "carried" | "lost" | "withdrawn";
+  pollDemanded: boolean;
+  result: MotionResult | null;
+}
+
+interface Quorum {
+  representedLotCount: number;
+  totalLotCount: number;
+  representedEntitlement: number;
+  totalEntitlement: number;
+  quorate: boolean;
+  quorumBasis: "lot_count" | "entitlement" | null;
+}
+
+interface ChairLogEntry {
+  at: string;
+  kind: string;
+  note: string;
+}
+
+interface LotOption {
+  id: string;
+  lotNumber: string;
+}
+
+interface PersonOption {
+  id: string;
+  givenName: string | null;
+  familyName: string | null;
+  companyName: string | null;
+  email: string | null;
+}
+
 interface MeetingsResponse {
   meetings: Meeting[];
 }
@@ -58,6 +135,11 @@ interface MeetingsResponse {
 interface MeetingDetailResponse {
   meeting: Meeting;
   agenda: AgendaItem[];
+  submissions: AgendaSubmission[];
+  motions: Motion[];
+  quorum: Quorum;
+  chairLog?: ChairLogEntry[] | null;
+  transcriptionStarted?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +147,20 @@ interface MeetingDetailResponse {
 // ---------------------------------------------------------------------------
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
 
 /** "Tue 15 Jul, 6:30 pm" — the title line of an upcoming meeting card. */
 function formatDayTime(iso: string): string {
@@ -92,10 +187,13 @@ const KIND_LABELS: Record<string, string> = {
 
 /** Australian strata vocabulary, sentence case; eyebrow style uppercases it. */
 function kindLabel(kind: string): string {
-  const key = kind.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const key = kind
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
   const known = KIND_LABELS[key];
   if (known) return known;
-  const words = key.replace(/_/g, " ");
+  const words = humanise(key).toLowerCase();
   const label = words.includes("meeting") ? words : `${words} meeting`;
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
@@ -103,8 +201,20 @@ function kindLabel(kind: string): string {
 const JOIN_WINDOW_MS = 15 * 60 * 1000; // joinable within 15 min of start
 const PAST_GRACE_MS = 4 * 60 * 60 * 1000; // not closed but hours old → past
 
+function meetingEnded(status: MeetingStatus): boolean {
+  return status === "closed" || status === "minutes_draft" || status === "minutes_distributed";
+}
+
+/** General-meeting agendas lock when statutory notice is sent; committee
+ * meetings remain open for member proposals until the meeting starts. */
+function agendaAcceptingSubmissions(meeting: Meeting): boolean {
+  return (
+    meeting.status === "draft" || (meeting.kind === "committee" && meeting.status === "notice_sent")
+  );
+}
+
 function isPastMeeting(m: Meeting, now: number): boolean {
-  if (m.status === "closed" || m.status === "minutes_distributed") return true;
+  if (meetingEnded(m.status)) return true;
   if (m.status === "in_progress") return false;
   const start = new Date(m.scheduledAt).getTime();
   return Number.isFinite(start) && start < now - PAST_GRACE_MS;
@@ -119,19 +229,63 @@ function isJoinable(m: Meeting, now: number): boolean {
 
 /** Minutes state line for a past meeting's row. */
 function minutesState(m: Meeting): string {
+  if (m.status === "minutes_draft") return "Draft minutes awaiting approval";
   if (m.minutesDocumentId || m.status === "minutes_distributed") return "Minutes available";
   return "Minutes not yet available";
 }
 
 const AGENDA_PREVIEW_COUNT = 3;
 
+function videoUrlWithToken(url: string, token?: string): string {
+  if (!token) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}t=${encodeURIComponent(token)}`;
+}
+
+function scheduledIso(value: string): string | null {
+  const parsed = new Date(value.trim());
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function personLabel(person: PersonOption): string {
+  const name = [person.givenName, person.familyName].filter(Boolean).join(" ");
+  return name || person.companyName || person.email || "Unnamed person";
+}
+
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
 
 export default function MeetingsScreen() {
-  const params = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; focus?: string }>();
   const schemeId = String(params.id ?? "");
+  const focusedMeetingId = params.focus ? String(params.focus) : null;
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(focusedMeetingId);
+
+  useEffect(() => {
+    if (focusedMeetingId) setSelectedMeetingId(focusedMeetingId);
+  }, [focusedMeetingId]);
+
+  return selectedMeetingId ? (
+    <MeetingDetailScreen
+      schemeId={schemeId}
+      meetingId={selectedMeetingId}
+      onBack={() => setSelectedMeetingId(null)}
+    />
+  ) : (
+    <MeetingListScreen schemeId={schemeId} onOpen={setSelectedMeetingId} />
+  );
+}
+
+function MeetingListScreen({
+  schemeId,
+  onOpen,
+}: {
+  schemeId: string;
+  onOpen: (id: string) => void;
+}) {
+  const isOfficer = useIsOfficer(schemeId);
+  const theme = useTheme();
+  const [showSchedule, setShowSchedule] = useState(false);
 
   // Clock tick so the join window opens without a manual refresh.
   const [now, setNow] = useState(() => Date.now());
@@ -180,8 +334,8 @@ export default function MeetingsScreen() {
       ),
     onMutate: () => setJoinErrorId(null),
     onError: (_err, meetingId) => setJoinErrorId(meetingId),
-    onSuccess: ({ url }) => {
-      Linking.openURL(url).catch(() => {
+    onSuccess: ({ url, token }) => {
+      Linking.openURL(videoUrlWithToken(url, token)).catch(() => {
         // Nothing to record — the room is open server-side; the user can retry.
       });
     },
@@ -221,6 +375,7 @@ export default function MeetingsScreen() {
                     joining={joinMutation.isPending && joinMutation.variables === m.id}
                     joinFailed={joinErrorId === m.id}
                     onJoin={() => joinMutation.mutate(m.id)}
+                    onOpen={() => onOpen(m.id)}
                   />
                 </Animated.View>
               ))}
@@ -237,14 +392,15 @@ export default function MeetingsScreen() {
                   // in the subtitle on every row, so the Minutes pill never
                   // displaces it and the right column stays one kind of thing.
                   const when = formatDate(m.scheduledAt);
-                  const hasMinutes =
-                    !!m.minutesDocumentId || m.status === "minutes_distributed";
+                  const hasMinutes = !!m.minutesDocumentId || m.status === "minutes_distributed";
                   return (
                     <ListRow
                       key={m.id}
                       title={m.title || kindLabel(m.kind)}
                       subtitle={when ? `${when} · ${minutesState(m)}` : minutesState(m)}
                       right={hasMinutes ? <StatusPill tone="ok" label="Minutes" /> : undefined}
+                      onPress={() => onOpen(m.id)}
+                      accessibilityHint="Opens meeting details"
                       divider={i < past.length - 1}
                     />
                   );
@@ -260,11 +416,40 @@ export default function MeetingsScreen() {
   return (
     <Screen
       title="Meetings"
+      topInset={false}
       eyebrow={eyebrow}
       reserveEyebrow
       refreshing={meetingsQuery.isRefetching}
-      onRefresh={() => meetingsQuery.refetch()}
+      onRefresh={() =>
+        Promise.all([
+          meetingsQuery.refetch(),
+          schemeQuery.refetch(),
+          ...agendaQueries.map((query) => query.refetch()),
+        ])
+      }
+      headerRight={
+        isOfficer ? (
+          <PressableScale
+            onPress={() => setShowSchedule((visible) => !visible)}
+            accessibilityRole="button"
+            accessibilityLabel={showSchedule ? "Close schedule meeting form" : "Schedule meeting"}
+            style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
+          >
+            <Ionicons name={showSchedule ? "close" : "add"} size={24} color={theme.accent} />
+          </PressableScale>
+        ) : undefined
+      }
     >
+      {isOfficer && showSchedule ? (
+        <ScheduleMeetingForm
+          schemeId={schemeId}
+          onCancel={() => setShowSchedule(false)}
+          onCreated={(meetingId) => {
+            setShowSchedule(false);
+            onOpen(meetingId);
+          }}
+        />
+      ) : null}
       {content}
     </Screen>
   );
@@ -281,6 +466,7 @@ function UpcomingMeetingCard({
   joining,
   joinFailed,
   onJoin,
+  onOpen,
 }: {
   meeting: Meeting;
   agenda: { pending: boolean; items: AgendaItem[] } | undefined;
@@ -288,6 +474,7 @@ function UpcomingMeetingCard({
   joining: boolean;
   joinFailed: boolean;
   onJoin: () => void;
+  onOpen: () => void;
 }) {
   const theme = useTheme();
   const items = agenda?.items ?? [];
@@ -297,74 +484,81 @@ function UpcomingMeetingCard({
 
   return (
     <Card>
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <DateBlock iso={meeting.scheduledAt} />
-        <View style={{ flex: 1, marginLeft: space(3) }}>
-          <Text style={[t.eyebrow, { color: theme.muted }]} numberOfLines={1}>
-            {kindLabel(meeting.kind)}
-          </Text>
-          <Text style={[t.title, { color: theme.text, marginTop: space(1) }]} numberOfLines={1}>
-            {formatDayTime(meeting.scheduledAt)}
-          </Text>
-          <Text
-            style={{ ...t.bodySmall, color: theme.muted, marginTop: 2 }}
-            numberOfLines={1}
-          >
-            {subtitle}
-          </Text>
-        </View>
-        {meeting.status === "in_progress" ? <StatusPill tone="ok" label="In progress" /> : null}
-      </View>
-
-      {agenda?.pending ? (
-        <View style={{ marginTop: space(4), gap: space(2) }}>
-          <Skeleton width="72%" height={12} />
-          <Skeleton width="56%" height={12} />
-        </View>
-      ) : preview.length > 0 ? (
-        <View
-          style={{
-            marginTop: space(4),
-            paddingTop: space(3),
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: theme.line,
-          }}
-        >
-          <Text style={[t.eyebrow, { color: theme.muted, marginBottom: space(2) }]}>Agenda</Text>
-          {preview.map((item, i) => (
-            <View
-              key={item.id}
-              style={{
-                flexDirection: "row",
-                alignItems: "baseline",
-                marginTop: i === 0 ? 0 : space(2),
-              }}
-            >
-              <Text style={{ ...t.figureSmall, fontSize: 12, color: theme.muted, width: space(5) }}>
-                {i + 1}
-              </Text>
-              <Text
-                style={{ ...t.bodySmall, flex: 1, color: theme.text }}
-                numberOfLines={1}
-              >
-                {item.title}
-              </Text>
-            </View>
-          ))}
-          {remaining > 0 ? (
-            <Text
-              style={{
-                ...t.caption,
-                color: theme.muted,
-                marginTop: space(2),
-                marginLeft: space(5),
-              }}
-            >
-              {remaining} more item{remaining === 1 ? "" : "s"}
+      <PressableScale
+        onPress={onOpen}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${meeting.title || kindLabel(meeting.kind)}`}
+        accessibilityHint="Shows quorum, agenda, attendance and motions"
+      >
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <DateBlock iso={meeting.scheduledAt} />
+          <View style={{ flex: 1, marginLeft: space(3) }}>
+            <Text style={[t.eyebrow, { color: theme.muted }]} numberOfLines={1}>
+              {kindLabel(meeting.kind)}
             </Text>
-          ) : null}
+            <Text style={[t.title, { color: theme.text, marginTop: space(1) }]} numberOfLines={1}>
+              {formatDayTime(meeting.scheduledAt)}
+            </Text>
+            <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: 2 }} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          </View>
+          {meeting.status === "in_progress" ? (
+            <StatusPill tone="ok" label="In progress" />
+          ) : (
+            <Ionicons name="chevron-forward" size={16} color={theme.muted} />
+          )}
         </View>
-      ) : null}
+
+        {agenda?.pending ? (
+          <View style={{ marginTop: space(4), gap: space(2) }}>
+            <Skeleton width="72%" height={12} />
+            <Skeleton width="56%" height={12} />
+          </View>
+        ) : preview.length > 0 ? (
+          <View
+            style={{
+              marginTop: space(4),
+              paddingTop: space(3),
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderTopColor: theme.line,
+            }}
+          >
+            <Text style={[t.eyebrow, { color: theme.muted, marginBottom: space(2) }]}>Agenda</Text>
+            {preview.map((item, i) => (
+              <View
+                key={item.id}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "baseline",
+                  marginTop: i === 0 ? 0 : space(2),
+                }}
+              >
+                <Text
+                  style={{ ...t.figureSmall, fontSize: 12, color: theme.muted, width: space(5) }}
+                >
+                  {i + 1}
+                </Text>
+                <Text style={{ ...t.bodySmall, flex: 1, color: theme.text }} numberOfLines={1}>
+                  {item.title}
+                </Text>
+              </View>
+            ))}
+            {remaining > 0 ? (
+              <Text
+                style={{
+                  ...t.caption,
+                  color: theme.muted,
+                  marginTop: space(2),
+                  marginLeft: space(5),
+                }}
+              >
+                {remaining} more item{remaining === 1 ? "" : "s"}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </PressableScale>
 
       {joinable ? (
         <View style={{ marginTop: space(4) }}>
@@ -409,7 +603,7 @@ function DateBlock({ iso }: { iso: string }) {
       style={{
         width: 44,
         height: 44,
-        borderRadius: 10,
+        borderRadius: radius.control,
         backgroundColor: theme.accentSoft,
         alignItems: "center",
         justifyContent: "center",
@@ -451,7 +645,7 @@ function MeetingsSkeleton() {
       <SectionHeader label="Upcoming" />
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <Skeleton width={44} height={44} radius={10} />
+          <Skeleton width={44} height={44} radius={radius.control} />
           <View style={{ flex: 1, marginLeft: space(3), gap: space(2) }}>
             <Skeleton width="45%" height={11} />
             <Skeleton width="70%" height={18} />
@@ -468,6 +662,1423 @@ function MeetingsSkeleton() {
           <Skeleton width="80%" height={16} />
           <Skeleton width="65%" height={16} />
           <Skeleton width="72%" height={16} />
+        </View>
+      </Card>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Schedule + detail parity
+// ---------------------------------------------------------------------------
+
+const MEETING_KINDS = ["agm", "sgm", "committee"] as const;
+type MeetingKind = (typeof MEETING_KINDS)[number];
+const RESOLUTION_TYPES = ["ordinary", "special", "unanimous"] as const;
+type ResolutionType = (typeof RESOLUTION_TYPES)[number];
+
+function ChoiceOption({
+  label,
+  selected,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const theme = useTheme();
+  return (
+    <PressableScale
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="radio"
+      accessibilityState={{ selected, disabled: !!disabled }}
+      style={{
+        minHeight: 44,
+        justifyContent: "center",
+        paddingHorizontal: space(3),
+        borderRadius: radius.pill,
+        borderWidth: 1,
+        borderColor: selected ? theme.accent : theme.line,
+        backgroundColor: selected ? theme.accentSoft : "transparent",
+      }}
+    >
+      <Text style={{ ...t.label, color: selected ? theme.accent : theme.text }}>{label}</Text>
+    </PressableScale>
+  );
+}
+
+function InlineFeedback({ message, tone = "crit" }: { message: string; tone?: "ok" | "crit" }) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: space(2),
+        marginTop: space(3),
+      }}
+    >
+      <Ionicons
+        name={tone === "ok" ? "checkmark-circle-outline" : "alert-circle-outline"}
+        size={18}
+        color={tone === "ok" ? theme.ok : theme.crit}
+      />
+      <Text style={{ ...t.bodySmall, color: tone === "ok" ? theme.ok : theme.crit, flex: 1 }}>
+        {message}
+      </Text>
+    </View>
+  );
+}
+
+function ScheduleMeetingForm({
+  schemeId,
+  onCancel,
+  onCreated,
+}: {
+  schemeId: string;
+  onCancel: () => void;
+  onCreated: (meetingId: string) => void;
+}) {
+  const theme = useTheme();
+  const queryClient = useQueryClient();
+  const [kind, setKind] = useState<MeetingKind>("agm");
+  const [title, setTitle] = useState("");
+  const [when, setWhen] = useState("");
+  const [location, setLocation] = useState("");
+  const [agenda, setAgenda] = useState("");
+  const iso = scheduledIso(when);
+
+  const create = useMutation({
+    mutationFn: () =>
+      apiPost<{ meeting: Meeting }>(`/api/schemes/${schemeId}/meetings`, {
+        kind,
+        title: title.trim(),
+        scheduledAt: iso,
+        location: location.trim() || undefined,
+        agenda: agenda
+          .split("\n")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .map((item) => ({ title: item })),
+      }),
+    onSuccess: ({ meeting }) => {
+      void queryClient.invalidateQueries({ queryKey: ["scheme", schemeId, "meetings"] });
+      onCreated(meeting.id);
+    },
+  });
+
+  return (
+    <Card style={{ marginBottom: space(5) }}>
+      <Text style={{ ...t.title, color: theme.text }}>Schedule a meeting</Text>
+      <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(1) }}>
+        Create the draft first. Send the statutory notice from its detail screen.
+      </Text>
+
+      <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>Kind</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2), marginTop: space(2) }}>
+        {MEETING_KINDS.map((value) => (
+          <ChoiceOption
+            key={value}
+            label={kindLabel(value)}
+            selected={kind === value}
+            onPress={() => setKind(value)}
+          />
+        ))}
+      </View>
+
+      <View style={{ gap: space(4), marginTop: space(4) }}>
+        <FormField
+          label="Title"
+          value={title}
+          onChangeText={setTitle}
+          placeholder="2026 annual general meeting"
+          maxLength={200}
+        />
+        <FormField
+          label="When"
+          value={when}
+          onChangeText={setWhen}
+          placeholder="2026-08-15T18:30"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <FormField
+          label="Location"
+          value={location}
+          onChangeText={setLocation}
+          placeholder="Building foyer, or leave blank for online"
+          maxLength={300}
+        />
+        <FormField
+          label="Agenda — one item per line"
+          multiline
+          numberOfLines={5}
+          value={agenda}
+          onChangeText={setAgenda}
+          placeholder={"Financial statements\nBudget adoption\nCommittee election"}
+        />
+      </View>
+
+      {when.length > 0 && !iso ? (
+        <InlineFeedback message="Use a valid date and time, for example 2026-08-15T18:30." />
+      ) : null}
+      {create.error ? (
+        <InlineFeedback
+          message={
+            create.error instanceof Error
+              ? create.error.message
+              : "The meeting could not be scheduled."
+          }
+        />
+      ) : null}
+
+      <View style={{ gap: space(2), marginTop: space(4) }}>
+        <Button
+          full
+          label="Schedule meeting"
+          onPress={() => create.mutate()}
+          pending={create.isPending}
+          disabled={title.trim().length < 3 || !iso}
+        />
+        <Button
+          full
+          variant="secondary"
+          label="Cancel"
+          onPress={onCancel}
+          disabled={create.isPending}
+        />
+      </View>
+    </Card>
+  );
+}
+
+function MeetingDetailScreen({
+  schemeId,
+  meetingId,
+  onBack,
+}: {
+  schemeId: string;
+  meetingId: string;
+  onBack: () => void;
+}) {
+  const theme = useTheme();
+  const isOfficer = useIsOfficer(schemeId);
+  const queryClient = useQueryClient();
+  const [showProxy, setShowProxy] = useState(false);
+  const [showAgendaProposal, setShowAgendaProposal] = useState(false);
+  const [showAddMotion, setShowAddMotion] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [attendanceMode, setAttendanceMode] = useState<"in_person" | "online" | null>(null);
+  const [openingMinutes, setOpeningMinutes] = useState(false);
+  const [minutesError, setMinutesError] = useState<string | null>(null);
+
+  const schemeQuery = useQuery({ ...schemeQueryOptions(schemeId), enabled: !!schemeId });
+  const detailQuery = useQuery({
+    queryKey: ["scheme", schemeId, "meeting", meetingId],
+    queryFn: () => api<MeetingDetailResponse>(`/api/schemes/${schemeId}/meetings/${meetingId}`),
+    enabled: !!schemeId && !!meetingId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.meeting.status;
+      return status && meetingEnded(status) ? false : 3_000;
+    },
+  });
+  const lotsQuery = useQuery({
+    queryKey: ["scheme", schemeId, "lots"],
+    queryFn: () => api<{ lots: LotOption[] }>(`/api/schemes/${schemeId}/lots`),
+    enabled: !!schemeId,
+  });
+
+  const invalidate = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["scheme", schemeId, "meeting", meetingId] }),
+      queryClient.invalidateQueries({ queryKey: ["scheme", schemeId, "meetings"] }),
+    ]);
+  const beginAction = () => {
+    setActionMessage(null);
+    setActionError(null);
+  };
+  const failAction = (error: unknown, fallback: string) =>
+    setActionError(error instanceof Error ? error.message : fallback);
+
+  const sendNotice = useMutation({
+    mutationFn: () => apiPost(`/api/schemes/${schemeId}/meetings/${meetingId}/notice`),
+    onMutate: beginAction,
+    onSuccess: () => {
+      setActionMessage("Notice sent to all members.");
+      invalidate();
+    },
+    onError: (error) => failAction(error, "The notice could not be sent."),
+  });
+  const attend = useMutation({
+    mutationFn: (mode: "in_person" | "online") =>
+      apiPost(`/api/schemes/${schemeId}/meetings/${meetingId}/attend`, { mode }),
+    onMutate: beginAction,
+    onSuccess: (_result, mode) => {
+      setAttendanceMode(mode);
+      setActionMessage(
+        mode === "online" ? "Online attendance recorded." : "In-person attendance recorded.",
+      );
+      invalidate();
+    },
+    onError: (error) => failAction(error, "Attendance could not be recorded."),
+  });
+  const closeMeeting = useMutation({
+    mutationFn: () => apiPost(`/api/schemes/${schemeId}/meetings/${meetingId}/close`),
+    onMutate: beginAction,
+    onSuccess: () => {
+      setActionMessage("Meeting closed. The minutes agent can now draft the minutes.");
+      invalidate();
+    },
+    onError: (error) => failAction(error, "The meeting could not be closed."),
+  });
+  const approveMinutes = useMutation({
+    mutationFn: () => apiPost(`/api/schemes/${schemeId}/meetings/${meetingId}/minutes/approve`),
+    onMutate: beginAction,
+    onSuccess: () => {
+      setActionMessage("Minutes approved and distributed to members.");
+      invalidate();
+    },
+    onError: (error) => failAction(error, "The minutes could not be approved."),
+  });
+  const startVideo = useMutation({
+    mutationFn: () =>
+      apiPost<{ url: string }>(`/api/schemes/${schemeId}/meetings/${meetingId}/video/start`),
+    onMutate: beginAction,
+    onSuccess: ({ url }) => {
+      setActionMessage("Video meeting started.");
+      invalidate();
+      Linking.openURL(url).catch(() => setActionError("The video room could not be opened."));
+    },
+    onError: (error) => failAction(error, "The video meeting could not be started."),
+  });
+  const joinVideo = useMutation({
+    mutationFn: () =>
+      apiPost<{ url: string; token: string }>(
+        `/api/schemes/${schemeId}/meetings/${meetingId}/video/join`,
+      ),
+    onMutate: beginAction,
+    onSuccess: ({ url, token }) => {
+      Linking.openURL(videoUrlWithToken(url, token)).catch(() =>
+        setActionError("The video room could not be opened."),
+      );
+    },
+    onError: (error) => failAction(error, "The video room could not be joined."),
+  });
+
+  const openMinutes = async (documentId: string) => {
+    if (openingMinutes) return;
+    setOpeningMinutes(true);
+    setMinutesError(null);
+    try {
+      const file = await File.downloadFileAsync(
+        `${API_ORIGIN}/api/schemes/${schemeId}/documents/${documentId}/content`,
+        new File(Paths.cache, `meeting-minutes-${meetingId}.md`),
+        { headers: { Cookie: authClient.getCookie() }, idempotent: true },
+      );
+      await Share.share({ url: file.uri, title: "Meeting minutes" });
+    } catch {
+      setMinutesError("The minutes could not be opened. Check your access and try again.");
+    } finally {
+      setOpeningMinutes(false);
+    }
+  };
+
+  const detail = detailQuery.data;
+  const refresh = () =>
+    Promise.all([detailQuery.refetch(), lotsQuery.refetch(), schemeQuery.refetch()]);
+
+  if (detailQuery.isPending) {
+    return (
+      <Screen
+        title="Meeting"
+        topInset={false}
+        eyebrow={plate(schemeQuery.data?.scheme)}
+        reserveEyebrow
+        onRefresh={refresh}
+      >
+        <Button variant="secondary" label="All meetings" onPress={onBack} />
+        <View style={{ marginTop: space(5) }}>
+          <MeetingDetailSkeleton />
+        </View>
+      </Screen>
+    );
+  }
+  if (detailQuery.isError || !detail) {
+    return (
+      <Screen
+        title="Meeting"
+        topInset={false}
+        eyebrow={plate(schemeQuery.data?.scheme)}
+        reserveEyebrow
+        onRefresh={refresh}
+      >
+        <Button variant="secondary" label="All meetings" onPress={onBack} />
+        <ErrorState
+          title="Couldn't load this meeting"
+          detail={detailQuery.error instanceof Error ? detailQuery.error.message : undefined}
+          onRetry={() => detailQuery.refetch()}
+        />
+      </Screen>
+    );
+  }
+
+  const meeting = detail.meeting;
+  const ended = meetingEnded(meeting.status);
+  const agendaOpen = agendaAcceptingSubmissions(meeting);
+  const videoEligible =
+    (meeting.kind === "committee" || meeting.kind === "agm") &&
+    (meeting.status === "notice_sent" || meeting.status === "in_progress");
+
+  return (
+    <Screen
+      title="Meeting"
+      topInset={false}
+      eyebrow={plate(schemeQuery.data?.scheme)}
+      reserveEyebrow
+      refreshing={detailQuery.isRefetching}
+      onRefresh={refresh}
+    >
+      <Button variant="secondary" label="All meetings" onPress={onBack} />
+
+      <Card style={{ marginTop: space(4) }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space(3) }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ ...t.eyebrow, color: theme.muted }}>{kindLabel(meeting.kind)}</Text>
+            <Text style={{ ...t.title, color: theme.text, marginTop: space(1) }}>
+              {meeting.title || kindLabel(meeting.kind)}
+            </Text>
+            <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(1) }}>
+              {[formatDayTime(meeting.scheduledAt), meeting.location].filter(Boolean).join(" · ")}
+            </Text>
+          </View>
+          <StatusPill tone={statusTone(meeting.status)} label={humanise(meeting.status)} />
+        </View>
+
+        {meeting.status === "draft" ? (
+          isOfficer ? (
+            <View style={{ marginTop: space(4) }}>
+              <Button
+                full
+                label="Send notice"
+                onPress={() => sendNotice.mutate()}
+                pending={sendNotice.isPending}
+              />
+            </View>
+          ) : (
+            <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(4) }}>
+              This meeting is still a draft — the notice has not gone out yet.
+            </Text>
+          )
+        ) : null}
+
+        {meeting.status === "notice_sent" || meeting.status === "in_progress" ? (
+          <View style={{ gap: space(2), marginTop: space(4) }}>
+            <Text style={{ ...t.label, color: theme.muted }}>RSVP / attendance</Text>
+            <Button
+              full
+              variant="secondary"
+              label={attendanceMode === "in_person" ? "Attending in person ✓" : "Attend in person"}
+              onPress={() => attend.mutate("in_person")}
+              pending={attend.isPending && attend.variables === "in_person"}
+              disabled={attend.isPending}
+            />
+            <Button
+              full
+              variant="secondary"
+              label={attendanceMode === "online" ? "Attending online ✓" : "Attend online"}
+              onPress={() => attend.mutate("online")}
+              pending={attend.isPending && attend.variables === "online"}
+              disabled={attend.isPending}
+            />
+            <Button
+              full
+              variant="secondary"
+              label={showProxy ? "Hide proxy form" : "Appoint a proxy"}
+              onPress={() => setShowProxy((visible) => !visible)}
+            />
+            {isOfficer ? (
+              <Button
+                full
+                variant="secondary"
+                label="Close meeting"
+                onPress={() => closeMeeting.mutate()}
+                pending={closeMeeting.isPending}
+              />
+            ) : null}
+          </View>
+        ) : null}
+
+        {videoEligible ? (
+          <View
+            style={{
+              marginTop: space(4),
+              paddingTop: space(4),
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderTopColor: theme.line,
+              gap: space(2),
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
+              <Ionicons name="videocam-outline" size={18} color={theme.muted} />
+              <Text style={{ ...t.label, color: theme.text, flex: 1 }}>Video call</Text>
+              <StatusPill tone="agent" label="AI Chair" />
+            </View>
+            {isOfficer ? (
+              <Button
+                full
+                variant="secondary"
+                label="Start video meeting"
+                onPress={() => startVideo.mutate()}
+                pending={startVideo.isPending}
+              />
+            ) : null}
+            <Button
+              full
+              label="Join video call"
+              onPress={() => joinVideo.mutate()}
+              pending={joinVideo.isPending}
+            />
+          </View>
+        ) : null}
+
+        {actionError ? <InlineFeedback message={actionError} /> : null}
+        {actionMessage ? <InlineFeedback tone="ok" message={actionMessage} /> : null}
+      </Card>
+
+      {showProxy && !ended ? (
+        <ProxyAppointmentForm
+          schemeId={schemeId}
+          meetingId={meetingId}
+          onCancel={() => setShowProxy(false)}
+          onAppointed={() => {
+            setShowProxy(false);
+            setActionMessage("Proxy appointed for this meeting.");
+            invalidate();
+          }}
+        />
+      ) : null}
+
+      <QuorumCard quorum={detail.quorum} final={ended} />
+
+      <SectionHeader label="Agenda" />
+      {detail.agenda.length === 0 ? (
+        <Card>
+          <EmptyState icon="list-outline" title="No agenda items" />
+        </Card>
+      ) : (
+        <Card padded={false} style={{ paddingHorizontal: space(4) }}>
+          {detail.agenda.map((item, index) => (
+            <View
+              key={item.id}
+              style={{
+                flexDirection: "row",
+                gap: space(3),
+                paddingVertical: space(3),
+                borderBottomWidth: index < detail.agenda.length - 1 ? StyleSheet.hairlineWidth : 0,
+                borderBottomColor: theme.line,
+              }}
+            >
+              <Text style={{ ...t.figureSmall, color: theme.muted, width: space(5) }}>
+                {item.order}
+              </Text>
+              <Text style={{ ...t.bodySmall, color: theme.text, flex: 1 }}>{item.title}</Text>
+            </View>
+          ))}
+        </Card>
+      )}
+
+      {agendaOpen || detail.submissions.length > 0 ? (
+        <>
+          <SectionHeader
+            label="Agenda proposals"
+            right={
+              agendaOpen ? (
+                <PressableScale
+                  onPress={() => setShowAgendaProposal((visible) => !visible)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    showAgendaProposal ? "Hide agenda proposal form" : "Propose an agenda item"
+                  }
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                >
+                  <Text style={{ ...t.label, color: theme.accent }}>
+                    {showAgendaProposal ? "Cancel" : "Propose item"}
+                  </Text>
+                </PressableScale>
+              ) : undefined
+            }
+          />
+          {showAgendaProposal && agendaOpen ? (
+            <AgendaSubmissionForm
+              schemeId={schemeId}
+              meetingId={meetingId}
+              onCancel={() => setShowAgendaProposal(false)}
+              onSubmitted={async () => {
+                setShowAgendaProposal(false);
+                setActionMessage("Agenda proposal sent for officer review.");
+                await invalidate();
+              }}
+            />
+          ) : null}
+          {detail.submissions.length === 0 ? (
+            <Card>
+              <Text style={{ ...t.bodySmall, color: theme.muted }}>
+                Members may propose a motion for this meeting. An officer reviews it before it joins
+                the formal agenda.
+              </Text>
+            </Card>
+          ) : (
+            <View style={{ gap: space(3) }}>
+              {detail.submissions.map((submission) => (
+                <AgendaSubmissionCard
+                  key={submission.id}
+                  schemeId={schemeId}
+                  submission={submission}
+                  isOfficer={isOfficer}
+                  onChanged={invalidate}
+                />
+              ))}
+            </View>
+          )}
+        </>
+      ) : null}
+
+      <ChairLogCard
+        entries={detail.chairLog ?? []}
+        transcriptionStarted={detail.transcriptionStarted ?? false}
+      />
+
+      {meeting.minutesDocumentId ? (
+        <>
+          <SectionHeader label="Minutes" />
+          <Card>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}>
+              <Ionicons name="document-text-outline" size={22} color={theme.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ ...t.body, color: theme.text }}>
+                  {meeting.status === "minutes_draft" ? "Draft minutes" : "Meeting minutes"}
+                </Text>
+                <Text style={{ ...t.caption, color: theme.muted }}>
+                  {meeting.status === "minutes_draft"
+                    ? "Awaiting officer review"
+                    : "Approved record"}
+                </Text>
+              </View>
+            </View>
+            {meeting.status !== "minutes_draft" || isOfficer ? (
+              <View style={{ gap: space(2), marginTop: space(4) }}>
+                <Button
+                  full
+                  variant="secondary"
+                  label="Open minutes"
+                  onPress={() => openMinutes(meeting.minutesDocumentId!)}
+                  pending={openingMinutes}
+                />
+                {isOfficer && meeting.status === "minutes_draft" ? (
+                  <Button
+                    full
+                    label="Approve and distribute"
+                    onPress={() => approveMinutes.mutate()}
+                    pending={approveMinutes.isPending}
+                  />
+                ) : null}
+              </View>
+            ) : null}
+            {minutesError ? <InlineFeedback message={minutesError} /> : null}
+          </Card>
+        </>
+      ) : null}
+
+      <SectionHeader
+        label="Motions"
+        right={
+          isOfficer && !ended ? (
+            <PressableScale
+              onPress={() => setShowAddMotion((visible) => !visible)}
+              accessibilityRole="button"
+              accessibilityLabel={showAddMotion ? "Hide motion form" : "Add motion"}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <Text style={{ ...t.label, color: theme.accent }}>
+                {showAddMotion ? "Cancel" : "Add motion"}
+              </Text>
+            </PressableScale>
+          ) : undefined
+        }
+      />
+      {showAddMotion && isOfficer && !ended ? (
+        <AddMotionForm
+          schemeId={schemeId}
+          meetingId={meetingId}
+          onCancel={() => setShowAddMotion(false)}
+          onAdded={() => {
+            setShowAddMotion(false);
+            setActionMessage("Motion added.");
+            invalidate();
+          }}
+        />
+      ) : null}
+      {detail.motions.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="hammer-outline"
+            title="No motions yet"
+            body={
+              isOfficer
+                ? "Add the first motion for members to vote on."
+                : "Motions will appear when officers add them."
+            }
+          />
+        </Card>
+      ) : (
+        <View style={{ gap: space(3) }}>
+          {detail.motions.map((motion) => (
+            <MotionCard
+              key={motion.id}
+              schemeId={schemeId}
+              motion={motion}
+              isOfficer={isOfficer}
+              lots={lotsQuery.data?.lots ?? []}
+              lotsPending={lotsQuery.isPending}
+              onChange={invalidate}
+            />
+          ))}
+        </View>
+      )}
+    </Screen>
+  );
+}
+
+function QuorumCard({ quorum, final }: { quorum: Quorum; final: boolean }) {
+  const theme = useTheme();
+  const percentage =
+    quorum.totalEntitlement > 0
+      ? Math.min(100, Math.round((quorum.representedEntitlement / quorum.totalEntitlement) * 100))
+      : 0;
+  return (
+    <>
+      <SectionHeader label={final ? "Final quorum" : "Quorum"} />
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ ...t.figure, color: theme.text }}>{percentage}%</Text>
+            <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: 2 }}>
+              {quorum.representedEntitlement}/{quorum.totalEntitlement} entitlements ·{" "}
+              {quorum.representedLotCount}/{quorum.totalLotCount} lots
+            </Text>
+          </View>
+          <StatusPill
+            tone={quorum.quorate ? "ok" : final ? "neutral" : "warn"}
+            label={quorum.quorate ? "Quorate" : final ? "Not reached" : "Not yet quorate"}
+          />
+        </View>
+        <View
+          style={{
+            height: 6,
+            borderRadius: radius.pill,
+            backgroundColor: theme.line,
+            overflow: "hidden",
+            marginTop: space(3),
+          }}
+        >
+          <View
+            style={{
+              height: 6,
+              width: `${percentage}%`,
+              borderRadius: radius.pill,
+              backgroundColor: quorum.quorate ? theme.ok : theme.warn,
+            }}
+          />
+        </View>
+      </Card>
+    </>
+  );
+}
+
+function ChairLogCard({
+  entries,
+  transcriptionStarted,
+}: {
+  entries: ChairLogEntry[];
+  transcriptionStarted: boolean;
+}) {
+  const theme = useTheme();
+  if (entries.length === 0 && !transcriptionStarted) return null;
+  return (
+    <>
+      <SectionHeader label="AI Chair" />
+      <Card>
+        {transcriptionStarted ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: radius.pill,
+                backgroundColor: theme.crit,
+              }}
+            />
+            <Text style={{ ...t.bodySmall, color: theme.crit }}>Transcribing the meeting</Text>
+          </View>
+        ) : null}
+        {entries.map((entry, index) => (
+          <View
+            key={`${entry.at}-${entry.kind}-${entry.note}`}
+            style={{
+              paddingTop: index === 0 && !transcriptionStarted ? 0 : space(3),
+              marginTop: index === 0 && !transcriptionStarted ? 0 : space(3),
+              borderTopWidth: index === 0 && !transcriptionStarted ? 0 : StyleSheet.hairlineWidth,
+              borderTopColor: theme.line,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
+              <StatusPill tone="agent" label={humanise(entry.kind)} />
+              <Text style={{ ...t.eyebrow, color: theme.muted }}>{formatDayTime(entry.at)}</Text>
+            </View>
+            <Text style={{ ...t.bodySmall, color: theme.text, marginTop: space(2) }}>
+              {entry.note}
+            </Text>
+          </View>
+        ))}
+      </Card>
+    </>
+  );
+}
+
+function AgendaSubmissionForm({
+  schemeId,
+  meetingId,
+  onCancel,
+  onSubmitted,
+}: {
+  schemeId: string;
+  meetingId: string;
+  onCancel: () => void;
+  onSubmitted: () => Promise<unknown>;
+}) {
+  const theme = useTheme();
+  const [title, setTitle] = useState("");
+  const [motionText, setMotionText] = useState("");
+  const [rationale, setRationale] = useState("");
+  const submit = useMutation({
+    mutationFn: () =>
+      apiPost<{ agendaItem: AgendaSubmission }>(
+        `/api/schemes/${schemeId}/meetings/${meetingId}/agenda-items`,
+        {
+          title: title.trim(),
+          motionText: motionText.trim(),
+          ...(rationale.trim() ? { rationale: rationale.trim() } : {}),
+        },
+      ),
+    onSuccess: async () => {
+      setTitle("");
+      setMotionText("");
+      setRationale("");
+      await onSubmitted();
+    },
+  });
+  const valid = title.trim().length >= 3 && motionText.trim().length >= 3;
+
+  return (
+    <Card style={{ marginBottom: space(3) }}>
+      <Text style={{ ...t.title, color: theme.text }}>Propose an agenda item</Text>
+      <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(1) }}>
+        Put the proposed resolution on the record. An officer must accept it before it becomes part
+        of the formal agenda.
+      </Text>
+      <View style={{ gap: space(4), marginTop: space(4) }}>
+        <FormField
+          label="Proposal title"
+          value={title}
+          onChangeText={setTitle}
+          placeholder="What should the meeting consider?"
+          maxLength={200}
+          editable={!submit.isPending}
+        />
+        <FormField
+          label="Proposed motion"
+          value={motionText}
+          onChangeText={setMotionText}
+          placeholder="That the owners corporation resolves to…"
+          multiline
+          numberOfLines={5}
+          maxLength={5000}
+          editable={!submit.isPending}
+        />
+        <FormField
+          label="Supporting rationale (optional)"
+          value={rationale}
+          onChangeText={setRationale}
+          placeholder="Why should members support this proposal?"
+          multiline
+          numberOfLines={4}
+          maxLength={5000}
+          editable={!submit.isPending}
+        />
+      </View>
+      {submit.isError ? (
+        <InlineFeedback
+          message={
+            submit.error instanceof Error
+              ? submit.error.message
+              : "The agenda proposal could not be submitted."
+          }
+        />
+      ) : null}
+      <View style={{ gap: space(2), marginTop: space(4) }}>
+        <Button
+          full
+          label="Submit proposal"
+          onPress={() => submit.mutate()}
+          pending={submit.isPending}
+          disabled={!valid}
+        />
+        <Button
+          full
+          variant="secondary"
+          label="Cancel"
+          onPress={onCancel}
+          disabled={submit.isPending}
+        />
+      </View>
+    </Card>
+  );
+}
+
+function AgendaSubmissionCard({
+  schemeId,
+  submission,
+  isOfficer,
+  onChanged,
+}: {
+  schemeId: string;
+  submission: AgendaSubmission;
+  isOfficer: boolean;
+  onChanged: () => Promise<unknown>;
+}) {
+  const theme = useTheme();
+  const [resolutionType, setResolutionType] = useState<ResolutionType>("ordinary");
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const accept = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/schemes/${schemeId}/agenda-items/${submission.id}/accept`, {
+        resolutionType,
+      }),
+    onMutate: () => setMessage(null),
+    onSuccess: async () => {
+      setMessage("Proposal accepted and added to the agenda.");
+      await onChanged();
+    },
+  });
+  const reject = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/schemes/${schemeId}/agenda-items/${submission.id}/reject`, {
+        reason: reason.trim(),
+      }),
+    onMutate: () => setMessage(null),
+    onSuccess: async () => {
+      setRejecting(false);
+      setReason("");
+      setMessage("Proposal rejected with a reason on the record.");
+      await onChanged();
+    },
+  });
+  const busy = accept.isPending || reject.isPending;
+  const error = accept.error ?? reject.error;
+
+  return (
+    <Card>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space(3) }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ ...t.body, color: theme.text }}>{submission.title}</Text>
+          <Text style={{ ...t.caption, color: theme.muted, marginTop: space(1) }}>
+            Proposed {formatDate(submission.createdAt)}
+          </Text>
+        </View>
+        <StatusPill
+          tone={submission.status === "pending" ? "warn" : "crit"}
+          label={submission.status === "pending" ? "Under review" : "Rejected"}
+        />
+      </View>
+      {submission.motionText ? (
+        <View style={{ marginTop: space(3) }}>
+          <Text style={{ ...t.label, color: theme.muted }}>Proposed motion</Text>
+          <Text style={{ ...t.bodySmall, color: theme.text, marginTop: space(1) }}>
+            {submission.motionText}
+          </Text>
+        </View>
+      ) : null}
+      {submission.body ? (
+        <View style={{ marginTop: space(3) }}>
+          <Text style={{ ...t.label, color: theme.muted }}>Rationale</Text>
+          <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(1) }}>
+            {submission.body}
+          </Text>
+        </View>
+      ) : null}
+      {submission.rejectedReason ? (
+        <InlineFeedback message={`Officer reason: ${submission.rejectedReason}`} />
+      ) : null}
+
+      {isOfficer && submission.status === "pending" ? (
+        <View
+          style={{
+            gap: space(3),
+            marginTop: space(4),
+            paddingTop: space(4),
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: theme.line,
+          }}
+        >
+          <Text style={{ ...t.label, color: theme.muted }}>Resolution type</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
+            {RESOLUTION_TYPES.map((value) => (
+              <ChoiceOption
+                key={value}
+                label={humanise(value)}
+                selected={resolutionType === value}
+                onPress={() => setResolutionType(value)}
+                disabled={busy}
+              />
+            ))}
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
+            <Button
+              label="Accept proposal"
+              onPress={() => accept.mutate()}
+              pending={accept.isPending}
+              disabled={busy}
+            />
+            <Button
+              variant="secondary"
+              label={rejecting ? "Cancel rejection" : "Reject proposal"}
+              onPress={() => {
+                setRejecting((value) => !value);
+                setReason("");
+              }}
+              disabled={busy}
+            />
+          </View>
+          {rejecting ? (
+            <View style={{ gap: space(3) }}>
+              <FormField
+                label="Reason for rejection"
+                value={reason}
+                onChangeText={setReason}
+                placeholder="Explain why this proposal cannot join the agenda"
+                multiline
+                maxLength={2000}
+                editable={!busy}
+              />
+              <Button
+                variant="destructive"
+                label="Confirm rejection"
+                onPress={() => reject.mutate()}
+                pending={reject.isPending}
+                disabled={reason.trim().length < 3 || busy}
+              />
+            </View>
+          ) : null}
+          {error ? (
+            <InlineFeedback
+              message={
+                error instanceof Error ? error.message : "The agenda review could not be recorded."
+              }
+            />
+          ) : null}
+          {message ? <InlineFeedback tone="ok" message={message} /> : null}
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
+function ProxyAppointmentForm({
+  schemeId,
+  meetingId,
+  onCancel,
+  onAppointed,
+}: {
+  schemeId: string;
+  meetingId: string;
+  onCancel: () => void;
+  onAppointed: () => void;
+}) {
+  const theme = useTheme();
+  const [lotId, setLotId] = useState("");
+  const [proxyPersonId, setProxyPersonId] = useState("");
+  const lotsQuery = useQuery({
+    queryKey: ["scheme", schemeId, "lots", "mine"],
+    queryFn: () => api<{ lots: LotOption[] }>(`/api/schemes/${schemeId}/lots/mine`),
+  });
+  const peopleQuery = useQuery({
+    queryKey: ["scheme", schemeId, "people"],
+    queryFn: () => api<{ people: PersonOption[] }>(`/api/schemes/${schemeId}/people`),
+  });
+  const appoint = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/schemes/${schemeId}/proxies`, { lotId, proxyPersonId, meetingId }),
+    onSuccess: onAppointed,
+  });
+
+  return (
+    <Card style={{ marginTop: space(4) }}>
+      <Text style={{ ...t.title, color: theme.text }}>Appoint a proxy</Text>
+      <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(1) }}>
+        Choose your lot and the person who may vote for it if you do not attend.
+      </Text>
+
+      <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>Your lot</Text>
+      {lotsQuery.isPending ? (
+        <View style={{ marginTop: space(2) }}>
+          <Skeleton width="65%" height={44} />
+        </View>
+      ) : lotsQuery.isError ? (
+        <InlineFeedback message="The lot register could not be loaded." />
+      ) : (
+        <View
+          style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2), marginTop: space(2) }}
+        >
+          {lotsQuery.data?.lots.map((lot) => (
+            <ChoiceOption
+              key={lot.id}
+              label={`Lot ${lot.lotNumber}`}
+              selected={lotId === lot.id}
+              onPress={() => setLotId(lot.id)}
+            />
+          ))}
+        </View>
+      )}
+
+      <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>Proxy holder</Text>
+      {peopleQuery.isPending ? (
+        <View style={{ gap: space(2), marginTop: space(2) }}>
+          <Skeleton width="82%" height={44} />
+          <Skeleton width="70%" height={44} />
+        </View>
+      ) : peopleQuery.isError ? (
+        <InlineFeedback message="The people register could not be loaded." />
+      ) : (
+        <View style={{ gap: space(2), marginTop: space(2) }}>
+          {peopleQuery.data?.people.map((person) => (
+            <ChoiceOption
+              key={person.id}
+              label={personLabel(person)}
+              selected={proxyPersonId === person.id}
+              onPress={() => setProxyPersonId(person.id)}
+            />
+          ))}
+        </View>
+      )}
+
+      {appoint.error ? (
+        <InlineFeedback
+          message={
+            appoint.error instanceof Error
+              ? appoint.error.message
+              : "The proxy could not be appointed."
+          }
+        />
+      ) : null}
+      <View style={{ gap: space(2), marginTop: space(4) }}>
+        <Button
+          full
+          label="Appoint proxy"
+          onPress={() => appoint.mutate()}
+          pending={appoint.isPending}
+          disabled={!lotId || !proxyPersonId}
+        />
+        <Button full variant="secondary" label="Cancel" onPress={onCancel} />
+      </View>
+    </Card>
+  );
+}
+
+function AddMotionForm({
+  schemeId,
+  meetingId,
+  onCancel,
+  onAdded,
+}: {
+  schemeId: string;
+  meetingId: string;
+  onCancel: () => void;
+  onAdded: () => void;
+}) {
+  const theme = useTheme();
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [resolutionType, setResolutionType] = useState<ResolutionType>("ordinary");
+  const add = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/schemes/${schemeId}/motions`, {
+        meetingId,
+        title: title.trim(),
+        text: text.trim(),
+        resolutionType,
+      }),
+    onSuccess: onAdded,
+  });
+
+  return (
+    <Card style={{ marginBottom: space(3) }}>
+      <Text style={{ ...t.title, color: theme.text }}>Add a motion</Text>
+      <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(1) }}>
+        Ordinary resolutions use one vote per lot unless a poll is demanded.
+      </Text>
+      <View style={{ gap: space(4), marginTop: space(4) }}>
+        <FormField
+          label="Title"
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Motion title"
+          maxLength={200}
+        />
+        <FormField
+          label="Resolution text"
+          multiline
+          numberOfLines={5}
+          value={text}
+          onChangeText={setText}
+          placeholder="That the owners corporation resolves to…"
+          maxLength={5000}
+        />
+      </View>
+      <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>Resolution type</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2), marginTop: space(2) }}>
+        {RESOLUTION_TYPES.map((value) => (
+          <ChoiceOption
+            key={value}
+            label={
+              value === "special"
+                ? "Special · 75%"
+                : value === "unanimous"
+                  ? "Unanimous"
+                  : "Ordinary"
+            }
+            selected={resolutionType === value}
+            onPress={() => setResolutionType(value)}
+          />
+        ))}
+      </View>
+      {add.error ? (
+        <InlineFeedback
+          message={
+            add.error instanceof Error ? add.error.message : "The motion could not be added."
+          }
+        />
+      ) : null}
+      <View style={{ gap: space(2), marginTop: space(4) }}>
+        <Button
+          full
+          label="Add motion"
+          onPress={() => add.mutate()}
+          pending={add.isPending}
+          disabled={title.trim().length < 3 || text.trim().length < 3}
+        />
+        <Button full variant="secondary" label="Cancel" onPress={onCancel} />
+      </View>
+    </Card>
+  );
+}
+
+function MotionCard({
+  schemeId,
+  motion,
+  isOfficer,
+  lots,
+  lotsPending,
+  onChange,
+}: {
+  schemeId: string;
+  motion: Motion;
+  isOfficer: boolean;
+  lots: LotOption[];
+  lotsPending: boolean;
+  onChange: () => void;
+}) {
+  const theme = useTheme();
+  const [lotId, setLotId] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const begin = () => {
+    setMessage(null);
+    setError(null);
+  };
+  const fail = (value: unknown, fallback: string) =>
+    setError(value instanceof Error ? value.message : fallback);
+  const changed = (nextMessage: string) => {
+    setMessage(nextMessage);
+    onChange();
+  };
+
+  const open = useMutation({
+    mutationFn: () => apiPost(`/api/schemes/${schemeId}/motions/${motion.id}/open`),
+    onMutate: begin,
+    onSuccess: () => changed("Voting opened."),
+    onError: (value) => fail(value, "Voting could not be opened."),
+  });
+  const close = useMutation({
+    mutationFn: () => apiPost(`/api/schemes/${schemeId}/motions/${motion.id}/close`),
+    onMutate: begin,
+    onSuccess: () => changed("Motion closed and tallied."),
+    onError: (value) => fail(value, "The motion could not be closed."),
+  });
+  const demandPoll = useMutation({
+    mutationFn: () => apiPost(`/api/schemes/${schemeId}/motions/${motion.id}/demand-poll`),
+    onMutate: begin,
+    onSuccess: () => changed("Poll demanded. Entitlement will decide the motion."),
+    onError: (value) => fail(value, "A poll could not be demanded."),
+  });
+  const vote = useMutation({
+    mutationFn: (choice: "for" | "against" | "abstain") =>
+      apiPost(`/api/schemes/${schemeId}/votes`, { motionId: motion.id, lotId, choice }),
+    onMutate: begin,
+    onSuccess: (_result, choice) => changed(`${humanise(choice)} vote recorded.`),
+    onError: (value) => fail(value, "The vote could not be recorded."),
+  });
+
+  const result = motion.result;
+  const headcount = result?.basis === "headcount";
+  const hasTally = result && (result.forWeight !== undefined || result.forCount !== undefined);
+
+  return (
+    <Card>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space(3) }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ ...t.body, color: theme.text }}>{motion.title}</Text>
+          <Text style={{ ...t.caption, color: theme.muted, marginTop: 1 }}>
+            {humanise(motion.resolutionType)} resolution
+          </Text>
+        </View>
+        <StatusPill tone={statusTone(motion.status)} label={humanise(motion.status)} />
+      </View>
+      <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(3) }}>{motion.text}</Text>
+
+      {hasTally ? (
+        <View style={{ marginTop: space(3) }}>
+          <Text style={{ ...t.figureSmall, color: theme.text }}>
+            For {headcount ? (result.forCount ?? 0) : (result.forWeight ?? 0)} · Against{" "}
+            {headcount ? (result.againstCount ?? 0) : (result.againstWeight ?? 0)} · Abstain{" "}
+            {headcount ? (result.abstainCount ?? 0) : (result.abstainWeight ?? 0)}
+          </Text>
+          <Text style={{ ...t.caption, color: theme.muted, marginTop: space(1) }}>
+            {headcount
+              ? "Decided one vote per lot"
+              : result.pollDemanded
+                ? "Decided by entitlement after a poll demand"
+                : "Decided by lot entitlement"}
+          </Text>
+        </View>
+      ) : null}
+
+      {motion.status === "draft" ? (
+        isOfficer ? (
+          <View style={{ marginTop: space(4) }}>
+            <Button
+              full
+              label="Open voting"
+              onPress={() => open.mutate()}
+              pending={open.isPending}
+            />
+          </View>
+        ) : (
+          <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(3) }}>
+            Voting has not opened yet.
+          </Text>
+        )
+      ) : null}
+
+      {motion.status === "open" ? (
+        <View style={{ marginTop: space(4), gap: space(2) }}>
+          <Text style={{ ...t.label, color: theme.muted }}>Vote for a lot</Text>
+          {lotsPending ? (
+            <Skeleton width="65%" height={44} />
+          ) : lots.length === 0 ? (
+            <Text style={{ ...t.bodySmall, color: theme.muted }}>
+              No lots are available to vote.
+            </Text>
+          ) : (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
+              {lots.map((lot) => (
+                <ChoiceOption
+                  key={lot.id}
+                  label={`Lot ${lot.lotNumber}`}
+                  selected={lotId === lot.id}
+                  onPress={() => setLotId(lot.id)}
+                  disabled={vote.isPending}
+                />
+              ))}
+            </View>
+          )}
+          {(["for", "against", "abstain"] as const).map((choice) => (
+            <Button
+              key={choice}
+              full
+              variant="secondary"
+              label={humanise(choice)}
+              onPress={() => vote.mutate(choice)}
+              pending={vote.isPending && vote.variables === choice}
+              disabled={!lotId || vote.isPending}
+            />
+          ))}
+
+          {motion.resolutionType === "ordinary" ? (
+            motion.pollDemanded ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
+                <StatusPill tone="info" label="Poll demanded" />
+                <Text style={{ ...t.caption, color: theme.muted, flex: 1 }}>
+                  This motion will be decided by lot entitlement.
+                </Text>
+              </View>
+            ) : (
+              <Button
+                full
+                variant="secondary"
+                label="Demand a poll"
+                onPress={() => demandPoll.mutate()}
+                pending={demandPoll.isPending}
+              />
+            )
+          ) : null}
+          {isOfficer ? (
+            <Button
+              full
+              variant="secondary"
+              label="Close and tally"
+              onPress={() => close.mutate()}
+              pending={close.isPending}
+            />
+          ) : null}
+        </View>
+      ) : null}
+
+      {error ? <InlineFeedback message={error} /> : null}
+      {message ? <InlineFeedback tone="ok" message={message} /> : null}
+    </Card>
+  );
+}
+
+function MeetingDetailSkeleton() {
+  return (
+    <View style={{ gap: space(4) }}>
+      <Card>
+        <View style={{ gap: space(3) }}>
+          <Skeleton width="45%" height={12} />
+          <Skeleton width="82%" height={22} />
+          <Skeleton width="68%" height={14} />
+        </View>
+      </Card>
+      <Card>
+        <View style={{ gap: space(3) }}>
+          <Skeleton width="34%" height={22} />
+          <Skeleton width="90%" height={14} />
         </View>
       </Card>
     </View>

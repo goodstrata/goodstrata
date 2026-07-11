@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "au.com.goodstrata.app",
       "supportsTablet": true,
+      "associatedDomains": ["applinks:my.goodstrata.com.au"],
       "config": {
         "usesNonExemptEncryption": false
       }
@@ -20,10 +21,21 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0c1220"
       },
-      "permissions": [
-        "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
-      ]
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "my.goodstrata.com.au",
+              "pathPrefix": "/join"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "permissions": ["android.permission.USE_BIOMETRIC", "android.permission.USE_FINGERPRINT"]
     },
     "plugins": [
       "expo-router",
@@ -31,12 +43,24 @@
       "expo-local-authentication",
       "expo-notifications",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GoodStrata to choose photos for your profile and building community.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
-          "image": "./assets/splash.png",
+          "image": "./assets/splash-light.png",
           "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#0c1220"
+          "backgroundColor": "#faf9f7",
+          "dark": {
+            "image": "./assets/splash.png",
+            "backgroundColor": "#0c1117"
+          }
         }
       ],
       [

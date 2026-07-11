@@ -1,6 +1,5 @@
 import { authClient } from "./auth";
-
-const BASE = "https://my.goodstrata.com.au";
+import { API_ORIGIN } from "./config";
 
 /** The shape the backend wraps every error in: { error: { code, message, details? } }. */
 export interface ApiErrorEnvelope {
@@ -60,7 +59,7 @@ async function toApiError(res: Response, path: string): Promise<ApiError> {
 
 /** Fetch wrapper that carries the better-auth session cookie from SecureStore. */
 export async function api<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_ORIGIN}${path}`, {
     headers: { ...cookieHeader(), Accept: "application/json" },
   });
   if (!res.ok) throw await toApiError(res, path);
@@ -78,7 +77,7 @@ async function write<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_ORIGIN}${path}`, {
     method,
     headers: {
       ...cookieHeader(),

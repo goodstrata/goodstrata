@@ -5,13 +5,19 @@ import {
   notificationPreferences,
   ownerships,
   people,
+  pushReceiptTickets,
   pushTokens,
   schemes,
   users,
 } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import type { EventRecord } from "@goodstrata/events";
-import { integrationsFromEnv, mockPaymentsProvider } from "@goodstrata/integrations";
+import {
+  integrationsFromEnv,
+  mockPaymentsProvider,
+  type OutboundPush,
+  type PushProvider,
+} from "@goodstrata/integrations";
 import { type Actor, fixedClock, systemActor } from "@goodstrata/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -136,6 +142,7 @@ beforeEach(async () => {
   memoryPush.sent.length = 0;
   memoryPush.deadTokens.clear();
   await tdb.db.delete(notificationPreferences);
+  await tdb.db.delete(pushReceiptTickets);
   await tdb.db.delete(pushTokens);
   // Baseline devices: chair has two, owner one, treasurer none.
   await notificationPreferencesService.registerPushToken(ctxAs(), CHAIR, {
@@ -239,6 +246,7 @@ describe("notifier sends push", () => {
       schemeId,
       category: "finance",
       related: { type: "levy_notice", id: levyNoticeId },
+      notificationId: expect.any(String),
     });
   });
 
@@ -253,6 +261,30 @@ describe("notifier sends push", () => {
     );
     // Committee = chair (2 devices) + treasurer (0 devices).
     expect(memoryPush.sent.map((m) => m.to).sort()).toEqual([CHAIR_TOKEN_1, CHAIR_TOKEN_2].sort());
+  });
+
+  it("does not resend push when the user opted out of the in-app bell", async () => {
+    await notificationPreferencesService.upsertPreference(ctxAs(), CHAIR, {
+      notificationType: "decision.requested",
+      channel: "in_app",
+      enabled: false,
+    });
+    const event = fakeEvent("decision.requested", {
+      decisionId: randomUUID(),
+      title: "Replace the foyer tiles",
+      kind: "committee",
+    });
+
+    await notifierService.handleEventForNotifications(ctxAs(systemActor("notifier")), event);
+    await notifierService.handleEventForNotifications(ctxAs(systemActor("notifier")), event);
+
+    expect(memoryPush.sent.map((message) => message.to).sort()).toEqual(
+      [CHAIR_TOKEN_1, CHAIR_TOKEN_2].sort(),
+    );
+    const chairBells = await tdb.db.query.notifications.findMany({
+      where: (t, { and, eq, like }) => and(eq(t.userId, CHAIR), like(t.dedupeKey, `${event.id}%`)),
+    });
+    expect(chairBells).toHaveLength(0);
   });
 
   it("prunes tokens that come back DeviceNotRegistered", async () => {
@@ -270,5 +302,125 @@ describe("notifier sends push", () => {
     });
     // The dead device is gone; the live one survives.
     expect(remaining.map((r) => r.token)).toEqual([CHAIR_TOKEN_1]);
+  });
+
+  it("retries only unsent push targets after a partial provider failure", async () => {
+    const batches: OutboundPush[][] = [];
+    let attempt = 0;
+    const partialProvider: PushProvider = {
+      name: "partial-test",
+      async send(messages) {
+        batches.push(messages);
+        attempt += 1;
+        if (attempt === 1) {
+          return {
+            invalidTokens: [],
+            receiptTickets: [{ receiptId: "partial-accepted", token: CHAIR_TOKEN_1 }],
+            processedTokens: [CHAIR_TOKEN_1],
+            retryTokens: [CHAIR_TOKEN_2],
+            error: "second Expo chunk failed",
+          };
+        }
+        return {
+          invalidTokens: [],
+          receiptTickets: [{ receiptId: "partial-retry", token: CHAIR_TOKEN_2 }],
+          processedTokens: messages.map((message) => message.to),
+          retryTokens: [],
+        };
+      },
+    };
+    const partialCtx: ServiceContext = {
+      ...ctxAs(systemActor("notifier")),
+      integrations: { ...integrations, push: partialProvider },
+    };
+    const event = fakeEvent("decision.requested", {
+      decisionId: randomUUID(),
+      title: "Partial Expo batch",
+      kind: "committee",
+    });
+
+    await expect(notifierService.handleEventForNotifications(partialCtx, event)).rejects.toThrow(
+      /notifier delivery incomplete/,
+    );
+    expect(batches[0]!.map((message) => message.to)).toEqual([CHAIR_TOKEN_1, CHAIR_TOKEN_2]);
+    const firstNotificationId = batches[0]![0]!.data?.notificationId;
+    expect(firstNotificationId).toEqual(expect.any(String));
+
+    const retry = await notifierService.handleEventForNotifications(partialCtx, event);
+    expect(retry.created).toBe(0);
+    expect(batches[1]!.map((message) => message.to)).toEqual([CHAIR_TOKEN_2]);
+    // Retry recovered the existing bell instead of losing its mark-read anchor
+    // when notifyUsers returned no newly-created rows.
+    expect(batches[1]![0]!.data?.notificationId).toBe(firstNotificationId);
+
+    const claims = await tdb.db.query.notificationDeliveryClaims.findMany({
+      where: (t, { and, eq }) =>
+        and(eq(t.eventId, event.id), eq(t.userId, CHAIR), eq(t.channel, "push")),
+    });
+    expect(claims[0]!.completedAt).not.toBeNull();
+    expect(claims[0]!.completedTargets.sort()).toEqual([CHAIR_TOKEN_1, CHAIR_TOKEN_2].sort());
+    expect(
+      (await tdb.db.query.pushReceiptTickets.findMany()).map((row) => row.receiptId).sort(),
+    ).toEqual(["partial-accepted", "partial-retry"].sort());
+  });
+
+  it("persists Expo ticket mappings and prunes receipt-only dead tokens", async () => {
+    const receiptProvider: PushProvider & { sent: OutboundPush[] } = {
+      name: "receipt-test",
+      sent: [],
+      async send(messages) {
+        this.sent.push(...messages);
+        // Simulate a sign-out racing the provider response. Receipt storage
+        // must still keep both mappings rather than fail the whole batch on a
+        // token FK that disappeared between resolution and persistence.
+        await tdb.db.delete(pushTokens).where(eq(pushTokens.token, CHAIR_TOKEN_2));
+        return {
+          invalidTokens: [],
+          receiptTickets: messages.map((message, index) => ({
+            receiptId: `receipt-${index}`,
+            token: message.to,
+          })),
+          processedTokens: messages.map((message) => message.to),
+          retryTokens: [],
+        };
+      },
+      async checkReceipts(tickets) {
+        return {
+          invalidTokens: [CHAIR_TOKEN_2],
+          processedReceiptIds: tickets.map((ticket) => ticket.receiptId),
+        };
+      },
+    };
+    const receiptCtx = (iso = NOW): ServiceContext => ({
+      ...ctxAs(systemActor("notifier")),
+      clock: fixedClock(iso),
+      integrations: { ...integrations, push: receiptProvider },
+    });
+
+    await notifierService.handleEventForNotifications(
+      receiptCtx(),
+      fakeEvent("decision.requested", {
+        decisionId: randomUUID(),
+        title: "Repair the lift",
+        kind: "committee",
+      }),
+    );
+    const queued = await tdb.db.query.pushReceiptTickets.findMany();
+    expect(queued).toHaveLength(2);
+    expect(queued.map((ticket) => ticket.token).sort()).toEqual(
+      [CHAIR_TOKEN_1, CHAIR_TOKEN_2].sort(),
+    );
+    expect(queued[0]!.availableAt.toISOString()).toBe("2026-07-02T00:15:00.000Z");
+
+    // Receipt sweep runs after the documented 15-minute availability delay.
+    const result = await notifierService.processPendingPushReceipts(
+      receiptCtx("2026-07-02T00:16:00Z"),
+    );
+    expect(result).toEqual({ checked: 2, processed: 2, pruned: 1, expired: 0 });
+    expect(await tdb.db.query.pushReceiptTickets.findMany()).toHaveLength(0);
+    const remaining = await tdb.db.query.pushTokens.findMany({
+      where: eq(pushTokens.userId, CHAIR),
+    });
+    expect(remaining.map((token) => token.token)).toEqual([CHAIR_TOKEN_1]);
   });
 });

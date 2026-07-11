@@ -1,10 +1,15 @@
 import * as Haptics from "expo-haptics";
+import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { useRef, useState } from "react";
 
 // Required for the OAuth browser session to hand control back to the app
 // cleanly on iOS — without it the redirect can leave the session dangling.
 WebBrowser.maybeCompleteAuthSession();
+
+import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -14,8 +19,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useEffect } from "react";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -24,11 +27,12 @@ import Animated, {
   withDelay,
   withTiming,
 } from "react-native-reanimated";
-import { useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { PressableScale } from "../src/components/ui/PressableScale";
 import { SkylineHeader } from "../src/components/ui/SkylineHeader";
 import { authClient } from "../src/lib/auth";
+import { useAuthPageInfo } from "../src/lib/authCapabilities";
+import { consumePendingInvite } from "../src/lib/invites";
 import { palette, radius, space, type as t } from "../src/theme/tokens";
 
 type Field = "email" | "password";
@@ -41,7 +45,7 @@ const SURFACE = palette.nightRaised; // #141c2e
 const LINE = palette.nightLine; // #232d42
 const TEXT = palette.nightText; // #eef0f4
 const MUTED = palette.nightMuted; // #98a2b3
-const ACCENT = palette.eucalyptNight; // #2f9d78 — green lifted for the navy ground
+const ACCENT = palette.eucalyptNight; // web-matched mint eucalypt on the navy ground
 
 const BUTTON_LABEL = {
   fontFamily: t.label.fontFamily,
@@ -52,6 +56,7 @@ const BUTTON_LABEL = {
 
 export default function SignIn() {
   const router = useRouter();
+  const { data: authInfo } = useAuthPageInfo();
   const reduceMotion = useReducedMotion();
   // A shared-value fade-up (not a layout `entering` animation, which can bail
   // the subtree under React 19 concurrent rendering) for the wordmark.
@@ -74,6 +79,18 @@ export default function SignIn() {
   const [pending, setPending] = useState(false);
   const [googlePending, setGooglePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsVerification, setNeedsVerification] = useState(false);
+
+  async function finishSignIn() {
+    try {
+      const accepted = await consumePendingInvite();
+      router.replace(accepted ? `/scheme/${accepted.schemeId}` : "/(tabs)");
+    } catch {
+      // The account is signed in even if a stale/mismatched invite could not
+      // be accepted; the user can reopen the invite for the precise error.
+      router.replace("/(tabs)");
+    }
+  }
 
   async function google() {
     setGooglePending(true);
@@ -92,7 +109,7 @@ export default function SignIn() {
       return;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.replace("/(tabs)");
+    await finishSignIn();
   }
 
   async function submit() {
@@ -103,10 +120,11 @@ export default function SignIn() {
     if (err) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setError(err.message ?? "Sign in failed. Check your details and try again.");
+      setNeedsVerification(/verif/i.test(err.message ?? ""));
       return;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.replace("/(tabs)");
+    await finishSignIn();
   }
 
   const canSubmit = !!email && !!password && !pending;
@@ -143,9 +161,7 @@ export default function SignIn() {
         {/* Self-running skyline — the visual for "the building runs itself",
             sitting just above the inputs, spaced down from the wordmark. */}
         <SkylineHeader height={108} />
-        <View
-          style={{ paddingHorizontal: space(6), paddingBottom: space(2), marginTop: space(5) }}
-        >
+        <View style={{ paddingHorizontal: space(6), paddingBottom: space(2), marginTop: space(5) }}>
           <Text style={{ ...t.display, color: TEXT }}>
             The building runs itself.{"\n"}You stay in charge.
           </Text>
@@ -160,6 +176,7 @@ export default function SignIn() {
         >
           <Text style={{ ...t.label, color: MUTED }}>Email</Text>
           <TextInput
+            keyboardAppearance="dark"
             autoCapitalize="none"
             autoComplete="email"
             keyboardType="email-address"
@@ -177,6 +194,7 @@ export default function SignIn() {
           <Text style={{ ...t.label, color: MUTED, marginTop: space(2) }}>Password</Text>
           <TextInput
             ref={passwordRef}
+            keyboardAppearance="dark"
             secureTextEntry
             autoComplete="password"
             textContentType="password"
@@ -190,9 +208,7 @@ export default function SignIn() {
             placeholderTextColor={MUTED}
             style={inputStyle("password")}
           />
-          {error ? (
-            <Text style={{ ...t.bodySmall, color: palette.critNight }}>{error}</Text>
-          ) : null}
+          {error ? <Text style={{ ...t.bodySmall, color: palette.critNight }}>{error}</Text> : null}
           <View style={{ marginTop: space(3) }}>
             <PressableScale
               onPress={submit}
@@ -207,53 +223,93 @@ export default function SignIn() {
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: palette.eucalypt,
+                backgroundColor: palette.eucalyptNight,
                 opacity: canSubmit ? 1 : 0.45,
               }}
             >
               {pending ? (
-                <ActivityIndicator color={palette.white} />
+                <ActivityIndicator color="#0a121f" />
               ) : (
-                <Text style={{ ...BUTTON_LABEL, color: palette.white }}>Sign in</Text>
+                <Text style={{ ...BUTTON_LABEL, color: "#0a121f" }}>Sign in</Text>
               )}
             </PressableScale>
           </View>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: space(3),
-              marginVertical: space(1),
-            }}
-          >
-            <View style={{ flex: 1, height: 1, backgroundColor: LINE }} />
-            <Text style={{ ...t.label, color: MUTED }}>or</Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: LINE }} />
+          {authInfo?.socialProviders?.includes("google") ? (
+            <>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: space(3),
+                  marginVertical: space(1),
+                }}
+              >
+                <View style={{ flex: 1, height: 1, backgroundColor: LINE }} />
+                <Text style={{ ...t.label, color: MUTED }}>or</Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: LINE }} />
+              </View>
+              <PressableScale
+                onPress={google}
+                disabled={pending}
+                haptic={!pending}
+                accessibilityRole="button"
+                accessibilityLabel="Continue with Google"
+                accessibilityState={{ disabled: pending, busy: googlePending }}
+                style={{
+                  height: 50,
+                  borderRadius: radius.control,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: SURFACE,
+                  borderWidth: 1,
+                  borderColor: LINE,
+                }}
+              >
+                {googlePending ? (
+                  <ActivityIndicator color={MUTED} />
+                ) : (
+                  <Text style={{ ...BUTTON_LABEL, color: TEXT }}>Continue with Google</Text>
+                )}
+              </PressableScale>
+            </>
+          ) : null}
+          {needsVerification ? (
+            <PressableScale
+              onPress={async () => {
+                const result = await authClient.sendVerificationEmail({
+                  email: email.trim().toLowerCase(),
+                  callbackURL: Linking.createURL("/verify-email"),
+                });
+                setError(
+                  result.error
+                    ? (result.error.message ?? "Couldn't resend the verification email.")
+                    : "Verification email sent. Check your inbox.",
+                );
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Resend verification email"
+              style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
+            >
+              <Text style={{ ...t.label, color: ACCENT }}>Resend verification email</Text>
+            </PressableScale>
+          ) : null}
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <PressableScale
+              onPress={() => router.push("/forgot-password")}
+              accessibilityRole="link"
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <Text style={{ ...t.bodySmall, color: ACCENT }}>Forgot password?</Text>
+            </PressableScale>
+            <PressableScale
+              onPress={() => router.push("/sign-up")}
+              accessibilityRole="link"
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <Text style={{ ...t.bodySmall, color: ACCENT }}>Create account</Text>
+            </PressableScale>
           </View>
-          <PressableScale
-            onPress={google}
-            disabled={pending}
-            haptic={!pending}
-            accessibilityRole="button"
-            accessibilityLabel="Continue with Google"
-            accessibilityState={{ disabled: pending, busy: googlePending }}
-            style={{
-              height: 50,
-              borderRadius: radius.control,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: SURFACE,
-              borderWidth: 1,
-              borderColor: LINE,
-            }}
-          >
-            {googlePending ? (
-              <ActivityIndicator color={MUTED} />
-            ) : (
-              <Text style={{ ...BUTTON_LABEL, color: TEXT }}>Continue with Google</Text>
-            )}
-          </PressableScale>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

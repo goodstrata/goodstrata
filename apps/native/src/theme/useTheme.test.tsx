@@ -1,15 +1,13 @@
 import { renderHook } from "@testing-library/react-native";
 import * as ReactNative from "react-native";
 import { palette } from "./tokens";
-import { useTheme, type Theme } from "./useTheme";
+import { type Theme, useTheme } from "./useTheme";
 
 function mockScheme(scheme: "light" | "dark" | null | undefined) {
   jest.spyOn(ReactNative, "useColorScheme").mockReturnValue(scheme);
 }
 
-async function resolveTheme(
-  scheme: "light" | "dark" | null | undefined,
-): Promise<Theme> {
+async function resolveTheme(scheme: "light" | "dark" | null | undefined): Promise<Theme> {
   mockScheme(scheme);
   const { result } = await renderHook(() => useTheme());
   return result.current;
@@ -57,18 +55,29 @@ describe("useTheme", () => {
     expect(nightAccent).toBe(palette.eucalyptNight);
   });
 
-  it("keeps solid accent fills eucalypt with a white label in BOTH themes", async () => {
+  it("uses web-parity primary fills and readable labels in both themes", async () => {
     const day = await resolveTheme("light");
     jest.restoreAllMocks();
     const night = await resolveTheme("dark");
 
-    // Invariant: dark mode swaps the ground, never the solid fill accent.
     expect(day.accentFill).toBe(palette.eucalypt);
-    expect(night.accentFill).toBe(palette.eucalypt);
+    expect(night.accentFill).toBe(palette.eucalyptNight);
+    expect(day.onPrimary).toBe(palette.white);
+    expect(night.onPrimary).toBe("#0a121f");
     expect(day.critFill).toBe(palette.crit);
     expect(night.critFill).toBe(palette.crit);
     expect(day.onAccent).toBe(palette.white);
     expect(night.onAccent).toBe(palette.white);
+  });
+
+  it("exposes all six Registry status tones", async () => {
+    const theme = await resolveTheme("dark");
+    expect(theme.ok).toBe(palette.okNight);
+    expect(theme.warn).toBe(palette.warnNight);
+    expect(theme.crit).toBe(palette.critNight);
+    expect(theme.info).toBe(palette.infoNight);
+    expect(theme.agent).toBe(palette.agentNight);
+    expect(theme.neutral).toBe(palette.neutralNight);
   });
 
   it("casts a card shadow in day but none in night", async () => {

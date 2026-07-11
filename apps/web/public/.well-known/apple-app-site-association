@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "P7K784CZJH.au.com.goodstrata.app",
+        "paths": ["/join", "/join/*"]
+      }
+    ]
+  }
+}

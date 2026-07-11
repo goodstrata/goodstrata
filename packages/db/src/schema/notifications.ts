@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -34,9 +35,9 @@ export const notifications = pgTable(
     /**
      * Delivery idempotency token, e.g. "<trigger event id>:<userId>". The
      * notifier inserts with onConflictDoNothing on this key so a redelivered
-     * pg-boss job can neither duplicate the bell row nor re-send email/SMS
-     * (sends are gated on the insert actually happening). Null for rows
-     * written outside the notifier (unique index ignores NULLs).
+     * pg-boss job cannot duplicate the bell row. Outbound channels use the
+     * separate leased delivery-state table below. Null for rows written
+     * outside the notifier (the unique index ignores NULLs).
      */
     dedupeKey: text(),
     readAt: timestamp({ withTimezone: true }),
@@ -49,6 +50,50 @@ export const notifications = pgTable(
 );
 
 /**
+ * Durable delivery state for notifier channels that leave the database
+ * (email, SMS, and OS push). These cannot use `notifications.dedupeKey` as
+ * their gate: a user may opt out of the visible in-app row while keeping any
+ * of the outbound channels enabled.
+ *
+ * A short owner-token lease serialises concurrent workers. Success is marked
+ * permanently; explicit failures release the lease for pg-boss retry, while a
+ * crashed worker's lease expires. Push additionally records terminal device
+ * targets so a partial Expo batch retry does not resend accepted chunks.
+ * `eventId` deliberately has no FK so historical state can survive event-log
+ * retention/export changes and tests can use synthetic event records.
+ */
+export const notificationDeliveryClaims = pgTable(
+  "notification_delivery_claims",
+  {
+    id: pk(),
+    eventId: uuid().notNull(),
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** email | sms | push — validated by the notifier. */
+    channel: text().notNull(),
+    /** Unique owner token: stale workers cannot finish a newer worker's lease. */
+    leaseId: uuid().notNull(),
+    leaseUntil: timestamp({ withTimezone: true }).notNull(),
+    completedAt: timestamp({ withTimezone: true }),
+    attempts: integer().notNull().default(0),
+    lastError: text(),
+    /** Push-only terminal device tokens retained across partial retries. */
+    completedTargets: jsonb().$type<string[]>().notNull().default([]),
+    claimedAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("notification_delivery_claims_event_user_channel_idx").on(
+      t.eventId,
+      t.userId,
+      t.channel,
+    ),
+    index("notification_delivery_claims_user_idx").on(t.userId),
+    index("notification_delivery_claims_lease_idx").on(t.completedAt, t.leaseUntil),
+  ],
+);
+
+/**
  * Per-user notification preferences, keyed (userId, notificationType, channel).
  * Sparse: a row exists only when the user's choice differs from the default —
  * an absent row means "use NOTIFICATION_DEFAULTS[type][channel]". This makes the
@@ -56,8 +101,8 @@ export const notifications = pgTable(
  * default, and no channel that fires today can be silenced by accident.
  *
  * `notificationType` ∈ NOTIFICATION_TYPES (the notifier event types) and
- * `channel` ∈ "in_app" | "email" | "sms" — validated in the app layer, stored
- * as text to stay in step with the other enum-as-text columns.
+ * `channel` ∈ "in_app" | "email" | "sms" | "push" — validated in the app
+ * layer, stored as text to stay in step with other enum-as-text columns.
  */
 export const notificationPreferences = pgTable(
   "notification_preferences",
@@ -108,4 +153,33 @@ export const pushTokens = pgTable(
     lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("push_tokens_user_idx").on(t.userId)],
+);
+
+/**
+ * Expo ticket ids waiting for their asynchronous delivery receipts. Expo
+ * recommends checking receipts about 15 minutes after send; keeping the
+ * ticket-to-token mapping here lets a short-lived API process restart without
+ * losing the ability to prune a receipt-only DeviceNotRegistered token.
+ */
+export const pushReceiptTickets = pgTable(
+  "push_receipt_tickets",
+  {
+    /** Expo's opaque push receipt id returned by the send endpoint. */
+    receiptId: text().primaryKey(),
+    // No FK: a concurrent sign-out/token prune must not abort persistence of
+    // every other valid ticket in the same Expo batch.
+    token: text().notNull(),
+    /** First time the receipt should be requested (normally sent + 15 min). */
+    availableAt: timestamp({ withTimezone: true }).notNull(),
+    /** Expo clears receipts after 24 hours; stale tickets are discarded then. */
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    attempts: integer().notNull().default(0),
+    lastCheckedAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("push_receipt_tickets_available_idx").on(t.availableAt),
+    index("push_receipt_tickets_expires_idx").on(t.expiresAt),
+    index("push_receipt_tickets_token_idx").on(t.token),
+  ],
 );

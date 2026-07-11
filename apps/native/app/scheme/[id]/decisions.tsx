@@ -1,41 +1,43 @@
-import { useEffect, useRef, useState } from "react";
-import { Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import * as LocalAuthentication from "expo-local-authentication";
+import { useLocalSearchParams } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import Animated, {
   FadeIn,
   FadeOut,
   LinearTransition,
   useReducedMotion,
 } from "react-native-reanimated";
+import type { StatusToneName } from "../../../src/components";
 import {
   Button,
   Card,
   EmptyState,
   ErrorState,
   Figure,
+  FormField,
+  formatDate,
+  humanise,
   ListRow,
   PressableScale,
+  plate,
+  radius,
   Screen,
   SectionHeader,
   Sheet,
   Skeleton,
   StatusPill,
-  statusTone,
-  formatDate,
-  humanise,
-  plate,
-  radius,
   space,
+  statusTone,
   type,
   useListEntering,
   useTheme,
 } from "../../../src/components";
-import type { StatusToneName } from "../../../src/components";
 import { api, apiPost } from "../../../src/lib/api";
-import { schemeQueryOptions } from "../../../src/lib/roles";
+import { authClient } from "../../../src/lib/auth";
+import { canDecide, schemeQueryOptions, useSchemeRoles } from "../../../src/lib/roles";
 
 // ---------------------------------------------------------------------------
 // Types (shapes from the API map — GET/POST /schemes/:id/decisions…)
@@ -62,7 +64,7 @@ interface Decision {
   status: string;
   requestedByRunId: string | null;
   decidedByUserId: string | null;
-  resolution: unknown;
+  resolution: { optionId?: string } | null;
   decisionNote: string | null;
   resolvedAt: string | null;
   remindedAt: string | null;
@@ -77,24 +79,48 @@ interface VoteResponse {
   eligible: number;
 }
 
+interface VoteTally {
+  votes: {
+    userId: string;
+    name: string;
+    choice: Choice;
+    note: string | null;
+    createdAt: string;
+  }[];
+  votesFor: number;
+  votesAgainst: number;
+  eligible: number;
+}
+
 type Choice = "approve" | "decline";
 
 type Override =
   | { kind: "resolved"; status: "approved" | "declined" }
   | { kind: "voted"; choice: Choice; votesIn: number; eligible: number };
 
+/** The API records binary votes as approve/decline, while each decision can
+ * supply human labels such as "Acknowledge" / "Flag for discussion". */
+function optionLabel(decision: Decision, optionId: string | undefined): string | undefined {
+  if (!optionId) return undefined;
+  return decision.options.find((option) => option.id === optionId)?.label ?? humanise(optionId);
+}
+
+function choiceLabel(decision: Decision, choice: Choice): string {
+  return optionLabel(decision, choice) ?? (choice === "approve" ? "Approve" : "Decline");
+}
+
 // ---------------------------------------------------------------------------
 // Local helpers
 
 /** Face ID / Touch ID gate before an on-the-record act. Devices without an
  * enrolled biometric fall through (authenticateAsync would only scold). */
-async function biometricGate(choice: Choice): Promise<boolean> {
+async function biometricGate(label: string): Promise<boolean> {
   try {
     const hasHardware = await LocalAuthentication.hasHardwareAsync();
     const enrolled = hasHardware && (await LocalAuthentication.isEnrolledAsync());
     if (!enrolled) return true;
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: choice === "approve" ? "Confirm approval" : "Confirm decline",
+      promptMessage: `Confirm: ${label}`,
     });
     return result.success;
   } catch {
@@ -130,20 +156,20 @@ function decisionCents(d: Decision): number | null {
   return findCents(d.evidence) ?? findCents(d.resolution);
 }
 
-/** First non-empty line of the markdown summary, plain-text. */
-function summaryLine(md: string | null): string | undefined {
+/** Full decision context without exposing markdown syntax in the native UI. */
+function summaryText(md: string | null): string | undefined {
   if (!md) return undefined;
-  const line = md
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.length > 0);
-  if (!line) return undefined;
-  return (
-    line
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/[#*_`>]/g, "")
-      .trim() || undefined
-  );
+  const text = md
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "• ")
+    .replace(/^\s*\d+[.)]\s+/gm, "• ")
+    .replace(/[*_`~]/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text || undefined;
 }
 
 /** Tone via the shared statusTone helper; decision-vocabulary statuses are
@@ -164,15 +190,18 @@ function decidedPill(status: string): { tone: StatusToneName; label: string } {
 // Screen
 
 export default function DecisionsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, focus } = useLocalSearchParams<{ id: string; focus?: string }>();
   const theme = useTheme();
   const reduceMotion = useReducedMotion();
   const queryClient = useQueryClient();
+  const roles = useSchemeRoles(id);
+  const { data: session } = authClient.useSession();
 
   const decisionsQuery = useQuery({
     queryKey: ["scheme", id, "decisions"],
     queryFn: () => api<{ decisions: Decision[] }>(`/api/schemes/${id}/decisions`),
     enabled: !!id,
+    refetchInterval: 5000,
   });
 
   const schemeQuery = useQuery({ ...schemeQueryOptions(id), enabled: !!id });
@@ -185,6 +214,8 @@ export default function DecisionsScreen() {
   const [sheetVisible, setSheetVisible] = useState(false);
   const [sheetData, setSheetData] = useState<{ decision: Decision; choice: Choice } | null>(null);
   const [sheetError, setSheetError] = useState<string | null>(null);
+  const [sheetNote, setSheetNote] = useState("");
+  const [resolvedDetail, setResolvedDetail] = useState<Decision | null>(null);
 
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -203,11 +234,18 @@ export default function DecisionsScreen() {
 
   const voteMutation = useMutation({
     mutationFn: ({ decision, choice }: { decision: Decision; choice: Choice }) =>
-      apiPost<VoteResponse>(`/api/schemes/${id}/decisions/${decision.id}/vote`, { choice }),
+      apiPost<VoteResponse>(`/api/schemes/${id}/decisions/${decision.id}/vote`, {
+        choice,
+        ...(sheetNote.trim() ? { note: sheetNote.trim() } : {}),
+      }),
     onSuccess: (resp, { decision, choice }) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSheetVisible(false);
+      setSheetNote("");
       setSheetError(null);
+      void queryClient.invalidateQueries({
+        queryKey: ["scheme", id, "decision-votes", decision.id],
+      });
       if (resp.status === "approved" || resp.status === "declined") {
         const status = resp.status;
         setOverrides((prev) => ({ ...prev, [decision.id]: { kind: "resolved", status } }));
@@ -230,17 +268,14 @@ export default function DecisionsScreen() {
         queryClient.invalidateQueries({ queryKey: ["scheme", id, "overview"] });
       }
     },
-    onError: (_err, { choice }) => {
-      setSheetError(
-        choice === "approve"
-          ? "Couldn't record your approval — try again."
-          : "Couldn't record your decline — try again.",
-      );
+    onError: (_err, { decision, choice }) => {
+      setSheetError(`Couldn't record “${choiceLabel(decision, choice)}” — try again.`);
     },
   });
 
   const openConfirm = (decision: Decision, choice: Choice) => {
     setSheetData({ decision, choice });
+    setSheetNote("");
     setSheetError(null);
     setSheetVisible(true);
   };
@@ -254,7 +289,7 @@ export default function DecisionsScreen() {
   const confirm = async () => {
     if (!sheetData || voteMutation.isPending) return;
     setSheetError(null);
-    const passed = await biometricGate(sheetData.choice);
+    const passed = await biometricGate(choiceLabel(sheetData.decision, sheetData.choice));
     if (!passed) return; // sheet stays, no scolding
     voteMutation.mutate(sheetData);
   };
@@ -268,6 +303,7 @@ export default function DecisionsScreen() {
   return (
     <Screen
       title="Decisions"
+      topInset={false}
       eyebrow={plate(schemeQuery.data?.scheme)}
       reserveEyebrow
       refreshing={decisionsQuery.isRefetching && !decisionsQuery.isLoading}
@@ -303,10 +339,12 @@ export default function DecisionsScreen() {
               >
                 <PendingDecisionCard
                   decision={decision}
+                  schemeId={id}
+                  currentUserId={session?.user.id}
+                  highlighted={focus === decision.id}
+                  allowed={canDecide(roles, decision.deciderRole ?? "all_owners")}
                   override={overrides[decision.id]}
-                  overdue={
-                    !!decision.dueAt && new Date(decision.dueAt).getTime() < now
-                  }
+                  overdue={!!decision.dueAt && new Date(decision.dueAt).getTime() < now}
                   onApprove={() => openConfirm(decision, "approve")}
                   onDecline={() => openConfirm(decision, "decline")}
                 />
@@ -325,15 +363,22 @@ export default function DecisionsScreen() {
                   {decided.map((decision, index) => {
                     const pill = decidedPill(decision.status);
                     const when = decision.resolvedAt ?? decision.createdAt;
-                    const subtitle = [formatDate(when), decision.decidedByName]
+                    const subtitle = [
+                      formatDate(when),
+                      decision.decidedByName,
+                      decision.decisionNote ? `“${decision.decisionNote}”` : null,
+                    ]
                       .filter(Boolean)
                       .join(" · ");
                     return (
                       <ListRow
                         key={decision.id}
                         title={decision.title}
+                        highlighted={focus === decision.id}
                         subtitle={subtitle || undefined}
                         right={<StatusPill tone={pill.tone} label={pill.label} />}
+                        onPress={() => setResolvedDetail(decision)}
+                        accessibilityHint="Shows the recorded outcome and decision context"
                         divider={index < decided.length - 1}
                       />
                     );
@@ -350,10 +395,20 @@ export default function DecisionsScreen() {
           <ConfirmSheetContent
             decision={sheetData.decision}
             choice={sheetData.choice}
+            note={sheetNote}
+            onNoteChange={setSheetNote}
             error={sheetError}
             pending={voteMutation.isPending}
             onConfirm={confirm}
             onCancel={closeSheet}
+          />
+        ) : null}
+      </Sheet>
+      <Sheet visible={resolvedDetail != null} onClose={() => setResolvedDetail(null)}>
+        {resolvedDetail ? (
+          <ResolvedDecisionDetail
+            decision={resolvedDetail}
+            onClose={() => setResolvedDetail(null)}
           />
         ) : null}
       </Sheet>
@@ -365,22 +420,42 @@ export default function DecisionsScreen() {
 // Pieces (local to this screen)
 
 function PendingDecisionCard({
+  schemeId,
+  currentUserId,
   decision,
   override,
   overdue,
+  allowed,
+  highlighted,
   onApprove,
   onDecline,
 }: {
+  schemeId: string;
+  currentUserId?: string;
   decision: Decision;
   override: Override | undefined;
   overdue: boolean;
+  allowed: boolean;
+  highlighted: boolean;
   onApprove: () => void;
   onDecline: () => void;
 }) {
   const theme = useTheme();
   const reduceMotion = useReducedMotion();
   const cents = decisionCents(decision);
-  const summary = summaryLine(decision.summaryMd);
+  const summary = summaryText(decision.summaryMd);
+  const approveLabel = choiceLabel(decision, "approve");
+  const declineLabel = choiceLabel(decision, "decline");
+  const isMultiVoter = decision.deciderRole !== "treasurer";
+  const tallyQuery = useQuery({
+    queryKey: ["scheme", schemeId, "decision-votes", decision.id],
+    queryFn: () => api<VoteTally>(`/api/schemes/${schemeId}/decisions/${decision.id}/votes`),
+    enabled: isMultiVoter,
+    retry: false,
+    refetchInterval: 5000,
+  });
+  const tally = tallyQuery.data;
+  const recordedVote = tally?.votes.find((vote) => vote.userId === currentUserId);
 
   const pill: { tone: StatusToneName; label: string } =
     override?.kind === "resolved"
@@ -402,7 +477,12 @@ function PendingDecisionCard({
     .join(" · ");
 
   return (
-    <Card style={{ marginBottom: space(3) }}>
+    <Card
+      style={{
+        marginBottom: space(3),
+        backgroundColor: highlighted ? theme.accentSoft : theme.surface,
+      }}
+    >
       <View
         style={{
           flexDirection: "row",
@@ -425,12 +505,7 @@ function PendingDecisionCard({
 
       <Text style={[type.title, { color: theme.text }]}>{decision.title}</Text>
       {summary ? (
-        <Text
-          numberOfLines={2}
-          style={[type.bodySmall, { color: theme.muted, marginTop: space(1) }]}
-        >
-          {summary}
-        </Text>
+        <Text style={[type.bodySmall, { color: theme.muted, marginTop: space(1) }]}>{summary}</Text>
       ) : null}
 
       {cents != null ? (
@@ -439,7 +514,22 @@ function PendingDecisionCard({
         </View>
       ) : null}
 
-      <Text style={[type.figureSmall, { color: theme.muted, marginTop: space(2) }]}>{meta}</Text>
+      {decision.requestedByRunId ? (
+        <View style={{ marginTop: space(2) }}>
+          <StatusPill tone="agent" label="Raised by an agent" />
+        </View>
+      ) : null}
+      <Text
+        style={[
+          type.figureSmall,
+          {
+            color: decision.requestedByRunId ? theme.agent : theme.muted,
+            marginTop: space(2),
+          },
+        ]}
+      >
+        {meta}
+      </Text>
 
       {override?.kind === "resolved" ? (
         <Text style={[type.bodySmall, { color: theme.muted, marginTop: space(3) }]}>
@@ -451,23 +541,176 @@ function PendingDecisionCard({
             ? `Your vote is recorded · ${override.votesIn} of ${override.eligible} votes in`
             : "Your vote is recorded"}
         </Text>
-      ) : (
+      ) : recordedVote ? (
+        <View style={{ gap: space(1), marginTop: space(3) }}>
+          <Text style={[type.bodySmall, { color: theme.text }]}>
+            You voted {choiceLabel(decision, recordedVote.choice)}. Your vote is recorded while the
+            remaining eligible voters decide.
+          </Text>
+          {recordedVote.note ? (
+            <Text style={[type.bodySmall, { color: theme.muted, fontStyle: "italic" }]}>
+              “{recordedVote.note}”
+            </Text>
+          ) : null}
+        </View>
+      ) : allowed && (!isMultiVoter || (!!currentUserId && !tallyQuery.isPending)) ? (
         <View style={{ flexDirection: "row", gap: space(3), marginTop: space(4) }}>
           <View style={{ flex: 1 }}>
-            <Button variant="secondary" label="Decline" full onPress={onDecline} />
+            <Button variant="secondary" label={declineLabel} full onPress={onDecline} />
           </View>
           <View style={{ flex: 1 }}>
-            <Button variant="primary" label="Approve" full onPress={onApprove} />
+            <Button variant="primary" label={approveLabel} full onPress={onApprove} />
           </View>
         </View>
+      ) : (
+        <Text style={[type.bodySmall, { color: theme.muted, marginTop: space(3) }]}>
+          {allowed && isMultiVoter
+            ? "Checking your recorded vote…"
+            : `This decision is assigned to ${humanise(decision.deciderRole ?? "the committee")}.`}
+        </Text>
       )}
+      {isMultiVoter && tally ? <VoteTallyPanel decision={decision} tally={tally} /> : null}
     </Card>
+  );
+}
+
+function VoteTallyPanel({ decision, tally }: { decision: Decision; tally: VoteTally }) {
+  const theme = useTheme();
+  const approveLabel = choiceLabel(decision, "approve");
+  const declineLabel = choiceLabel(decision, "decline");
+  const needed = Math.floor(tally.eligible / 2) + 1;
+  const progress = Math.min(1, tally.votesFor / Math.max(1, needed));
+  return (
+    <View
+      style={{
+        gap: space(2),
+        marginTop: space(4),
+        paddingTop: space(3),
+        borderTopWidth: 1,
+        borderTopColor: theme.line,
+      }}
+    >
+      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space(2) }}>
+        <StatusPill tone="ok" label={`${approveLabel}: ${tally.votesFor}`} />
+        {tally.votesAgainst > 0 ? (
+          <StatusPill tone="crit" label={`${declineLabel}: ${tally.votesAgainst}`} />
+        ) : null}
+        <Text style={{ ...type.caption, color: theme.muted }}>
+          {needed} needed · {tally.eligible} eligible
+        </Text>
+      </View>
+      <View
+        accessibilityRole="progressbar"
+        accessibilityValue={{ min: 0, max: needed, now: tally.votesFor }}
+        style={{
+          height: 5,
+          borderRadius: radius.pill,
+          backgroundColor: theme.line,
+          overflow: "hidden",
+        }}
+      >
+        <View style={{ width: `${progress * 100}%`, height: "100%", backgroundColor: theme.ok }} />
+      </View>
+      {tally.votes.map((vote) => (
+        <View key={vote.userId} style={{ gap: 2 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
+            <Text style={{ ...type.bodySmall, color: theme.text, flex: 1 }}>{vote.name}</Text>
+            <StatusPill
+              tone={vote.choice === "approve" ? "ok" : "crit"}
+              label={choiceLabel(decision, vote.choice)}
+            />
+          </View>
+          {vote.note ? (
+            <Text style={{ ...type.caption, color: theme.muted, fontStyle: "italic" }}>
+              {vote.note}
+            </Text>
+          ) : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ResolvedDecisionDetail({
+  decision,
+  onClose,
+}: {
+  decision: Decision;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const { height } = useWindowDimensions();
+  const pill = decidedPill(decision.status);
+  const chosen = optionLabel(decision, decision.resolution?.optionId);
+  const summary = summaryText(decision.summaryMd);
+  const resolvedAt = decision.resolvedAt
+    ? new Date(decision.resolvedAt).toLocaleString("en-AU", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+
+  return (
+    <ScrollView
+      style={{ maxHeight: height * 0.78 }}
+      contentContainerStyle={{ gap: space(3) }}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
+        <Text style={[type.eyebrow, { color: theme.muted, flex: 1 }]}>
+          {humanise(decision.kind)}
+        </Text>
+        <StatusPill tone={pill.tone} label={pill.label} />
+      </View>
+      <Text style={[type.title, { color: theme.text }]}>{decision.title}</Text>
+
+      <View
+        style={{
+          gap: space(2),
+          paddingVertical: space(3),
+          borderTopWidth: 1,
+          borderBottomWidth: 1,
+          borderColor: theme.line,
+        }}
+      >
+        {chosen ? (
+          <Text style={[type.body, { color: theme.text }]}>Recorded outcome: {chosen}</Text>
+        ) : null}
+        {decision.decidedByName ? (
+          <Text style={[type.bodySmall, { color: theme.muted }]}>By {decision.decidedByName}</Text>
+        ) : null}
+        {resolvedAt ? (
+          <Text style={[type.bodySmall, { color: theme.muted }]}>On {resolvedAt}</Text>
+        ) : null}
+        {decision.decisionNote ? (
+          <Text style={[type.bodySmall, { color: theme.muted, fontStyle: "italic" }]}>
+            “{decision.decisionNote}”
+          </Text>
+        ) : null}
+      </View>
+
+      {summary ? (
+        <View style={{ gap: space(1) }}>
+          <Text style={[type.eyebrow, { color: theme.muted }]}>Decision context</Text>
+          <Text style={[type.bodySmall, { color: theme.text }]}>{summary}</Text>
+        </View>
+      ) : null}
+
+      <View style={{ marginTop: space(2) }}>
+        <Button variant="secondary" label="Done" full onPress={onClose} />
+      </View>
+    </ScrollView>
   );
 }
 
 function ConfirmSheetContent({
   decision,
   choice,
+  note,
+  onNoteChange,
   error,
   pending,
   onConfirm,
@@ -475,6 +718,8 @@ function ConfirmSheetContent({
 }: {
   decision: Decision;
   choice: Choice;
+  note: string;
+  onNoteChange: (value: string) => void;
   error: string | null;
   pending: boolean;
   onConfirm: () => void;
@@ -483,12 +728,11 @@ function ConfirmSheetContent({
   const theme = useTheme();
   const cents = decisionCents(decision);
   const approve = choice === "approve";
+  const label = choiceLabel(decision, choice);
 
   return (
     <View>
-      <Text style={[type.eyebrow, { color: theme.muted, marginBottom: space(2) }]}>
-        {approve ? "Approve decision" : "Decline decision"}
-      </Text>
+      <Text style={[type.eyebrow, { color: theme.muted, marginBottom: space(2) }]}>{label}</Text>
       <Text style={[type.title, { color: theme.text }]}>{decision.title}</Text>
 
       {cents != null ? (
@@ -502,16 +746,26 @@ function ConfirmSheetContent({
         This will be recorded on the scheme's register.
       </Text>
 
+      <View style={{ marginTop: space(4) }}>
+        <FormField
+          label="Note for the record (optional)"
+          placeholder="Why you decided this way"
+          value={note}
+          onChangeText={onNoteChange}
+          multiline
+          maxLength={2000}
+          editable={!pending}
+        />
+      </View>
+
       {error ? (
-        <Text style={[type.bodySmall, { color: theme.crit, marginTop: space(3) }]}>
-          {error}
-        </Text>
+        <Text style={[type.bodySmall, { color: theme.crit, marginTop: space(3) }]}>{error}</Text>
       ) : null}
 
       <View style={{ marginTop: space(5) }}>
         <Button
           variant={approve ? "primary" : "destructive"}
-          label={approve ? "Approve" : "Decline"}
+          label={label}
           full
           pending={pending}
           onPress={onConfirm}

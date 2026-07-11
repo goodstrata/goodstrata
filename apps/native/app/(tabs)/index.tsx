@@ -1,26 +1,33 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
-import { ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 import {
+  Button,
   Card,
   EmptyState,
   ErrorState,
   Figure,
+  formatDate,
+  ListRow,
+  PressableScale,
   Screen,
   Skeleton,
   StatusPill,
-  formatDate,
+  type StatusToneName,
   space,
   statusTone,
   type as t,
   useListEntering,
   useTheme,
 } from "../../src/components";
-import { api } from "../../src/lib/api";
+import { api, apiPost } from "../../src/lib/api";
 import { authClient } from "../../src/lib/auth";
+import { API_ORIGIN } from "../../src/lib/config";
+import { OFFICER_ROLES } from "../../src/lib/roles";
 
 interface SchemeRow {
   id: string;
@@ -34,6 +41,12 @@ interface SchemesResponse {
 }
 
 interface SchemeOverview {
+  onboarding?: {
+    hasLots: boolean;
+    hasInsurance: boolean;
+    ready: boolean;
+    status: string;
+  };
   glance?: { lots?: number; people?: number; members?: number };
   finance?: {
     hasBudget?: boolean;
@@ -44,13 +57,28 @@ interface SchemeOverview {
   attention?: {
     pendingDecisions?: number;
     overdueDecisions?: number;
+    openMaintenanceRequests?: number;
+    openWorkOrders?: number;
     complianceOverdue?: number;
   };
   nextMeeting?: { id: string; kind: string; title: string; scheduledAt: string } | null;
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
 
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -62,7 +90,8 @@ interface AttentionItem {
   schemeName: string;
   label: string;
   pillLabel: string;
-  tone: "ok" | "warn" | "crit";
+  tone: StatusToneName;
+  target?: "decisions" | "maintenance" | "compliance";
 }
 
 /** Things that need the owner's eye, drawn from each scheme's overview. */
@@ -87,6 +116,7 @@ function attentionItems(
         label: `${plural(pending, "decision")} waiting`,
         pillLabel: "Pending",
         tone: statusTone("pending"),
+        target: "decisions",
       });
     }
     const outstanding = ov.finance?.arrearsOutstandingCents ?? 0;
@@ -100,6 +130,19 @@ function attentionItems(
         tone: statusTone("overdue"),
       });
     }
+    const openMaintenance =
+      (ov.attention?.openMaintenanceRequests ?? 0) + (ov.attention?.openWorkOrders ?? 0);
+    if (openMaintenance > 0) {
+      items.push({
+        key: `${entry.scheme.id}-maintenance`,
+        schemeId: entry.scheme.id,
+        schemeName: entry.scheme.name,
+        label: `${plural(openMaintenance, "maintenance item")} open`,
+        pillLabel: "Open",
+        tone: statusTone("open"),
+        target: "maintenance",
+      });
+    }
     const compliance = ov.attention?.complianceOverdue ?? 0;
     if (compliance > 0) {
       items.push({
@@ -109,6 +152,7 @@ function attentionItems(
         label: `${plural(compliance, "compliance item")} overdue`,
         pillLabel: "Overdue",
         tone: statusTone("overdue"),
+        target: "compliance",
       });
     }
   });
@@ -133,9 +177,305 @@ function SchemeCardSkeleton() {
   );
 }
 
+function hasOfficerRole(roles: string[]): boolean {
+  return roles.some((role) => OFFICER_ROLES.includes(role));
+}
+
+function ChecklistRow({
+  label,
+  done,
+  actionLabel,
+  onAction,
+}: {
+  label: string;
+  done: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space(3) }}>
+      <View
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: done ? theme.okSoft : theme.neutralSoft,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: done ? theme.ok : theme.line,
+        }}
+      >
+        <Ionicons
+          name={done ? "checkmark" : "ellipse"}
+          size={done ? 15 : 6}
+          color={done ? theme.ok : theme.muted}
+        />
+      </View>
+      <View style={{ flex: 1, paddingTop: 1 }}>
+        <Text
+          style={{
+            ...t.bodySmall,
+            color: done ? theme.text : theme.muted,
+            fontFamily: done ? "PublicSans_600SemiBold" : t.bodySmall.fontFamily,
+          }}
+        >
+          {label}
+        </Text>
+        {!done && actionLabel && onAction ? (
+          <PressableScale
+            onPress={onAction}
+            accessibilityRole="button"
+            style={{ alignSelf: "flex-start", minHeight: 36, justifyContent: "center" }}
+          >
+            <Text style={[t.label, { color: theme.accent }]}>{actionLabel}</Text>
+          </PressableScale>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function OnboardingChecklistCard({
+  scheme,
+  overview,
+  roles,
+}: {
+  scheme: SchemeRow;
+  overview: SchemeOverview;
+  roles: string[];
+}) {
+  const theme = useTheme();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const onboarding = overview.onboarding;
+  const isOfficer = hasOfficerRole(roles);
+
+  const activate = useMutation({
+    mutationFn: () => apiPost<{ ok: boolean }>(`/api/schemes/${scheme.id}/activate`),
+    onSuccess: () => {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["schemes"] }),
+        queryClient.invalidateQueries({ queryKey: ["scheme", scheme.id] }),
+        queryClient.invalidateQueries({ queryKey: ["scheme", scheme.id, "overview"] }),
+      ]);
+    },
+  });
+
+  const uploadInsurance = useMutation({
+    mutationFn: async () => {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "image/*"],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets[0]) return false;
+      const asset = result.assets[0];
+      const form = new FormData();
+      form.append("title", asset.name);
+      form.append("category", "insurance");
+      form.append("accessLevel", "owners");
+      form.append("file", {
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream",
+      } as unknown as Blob);
+      const cookie = authClient.getCookie();
+      const response = await fetch(`${API_ORIGIN}/api/schemes/${scheme.id}/documents`, {
+        method: "POST",
+        headers: { Accept: "application/json", ...(cookie ? { Cookie: cookie } : {}) },
+        body: form,
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(body?.error?.message ?? "Couldn't upload that certificate.");
+      }
+      return true;
+    },
+    onSuccess: (uploaded) => {
+      if (!uploaded) return;
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["scheme", scheme.id, "documents"] }),
+        queryClient.invalidateQueries({ queryKey: ["scheme", scheme.id, "overview"] }),
+      ]);
+    },
+  });
+
+  if (!onboarding) return null;
+  const completed = 1 + Number(onboarding.hasLots) + Number(onboarding.hasInsurance);
+
+  return (
+    <Card style={{ marginTop: space(3) }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}>
+        <View style={{ flex: 1 }}>
+          <Text style={[t.title, { color: theme.text }]}>Onboarding checklist</Text>
+          <Text style={[t.bodySmall, { color: theme.muted, marginTop: space(1) }]}>
+            Everything needed before this owners corporation goes live.
+          </Text>
+        </View>
+        <StatusPill tone={onboarding.ready ? "ok" : "warn"} label={`${completed} / 3`} />
+      </View>
+
+      <View style={{ gap: space(4), marginTop: space(5) }}>
+        <ChecklistRow label="Scheme registered" done />
+        <ChecklistRow
+          label="Lots imported from plan of subdivision"
+          done={onboarding.hasLots}
+          actionLabel={isOfficer ? "Import lots" : undefined}
+          onAction={
+            isOfficer
+              ? () => router.push({ pathname: "/scheme/[id]/lots", params: { id: scheme.id } })
+              : undefined
+          }
+        />
+        <ChecklistRow
+          label="Insurance certificate of currency uploaded"
+          done={onboarding.hasInsurance}
+          actionLabel={isOfficer ? "Upload certificate" : undefined}
+          onAction={isOfficer ? () => uploadInsurance.mutate() : undefined}
+        />
+      </View>
+
+      {uploadInsurance.isPending ? (
+        <Text style={[t.bodySmall, { color: theme.muted, marginTop: space(3) }]}>
+          Uploading certificate…
+        </Text>
+      ) : null}
+      {uploadInsurance.error ? (
+        <Text style={[t.bodySmall, { color: theme.crit, marginTop: space(3) }]}>
+          {uploadInsurance.error.message}
+        </Text>
+      ) : null}
+      {activate.error ? (
+        <Text style={[t.bodySmall, { color: theme.crit, marginTop: space(3) }]}>
+          {activate.error.message}
+        </Text>
+      ) : null}
+
+      <View style={{ marginTop: space(5) }}>
+        {isOfficer ? (
+          <Button
+            full
+            label="Activate scheme"
+            onPress={() => activate.mutate()}
+            pending={activate.isPending}
+            disabled={!onboarding.ready || uploadInsurance.isPending}
+          />
+        ) : (
+          <Text style={[t.bodySmall, { color: theme.muted }]}>
+            An office holder will activate the scheme once the checklist is complete.
+          </Text>
+        )}
+      </View>
+    </Card>
+  );
+}
+
+interface OwnerLot {
+  id: string;
+  lotNumber: string;
+  unitNumber: string | null;
+}
+
+interface OwnerStatement {
+  entries: unknown[];
+  balanceCents: number;
+}
+
+function OwnerLeviesCard({ schemeId }: { schemeId: string }) {
+  const theme = useTheme();
+  const router = useRouter();
+  const lotsQuery = useQuery({
+    queryKey: ["scheme", schemeId, "lots", "mine"],
+    queryFn: () => api<{ lots: OwnerLot[] }>(`/api/schemes/${schemeId}/lots/mine`),
+  });
+  const myLots = lotsQuery.data?.lots ?? [];
+  const statements = useQueries({
+    queries: myLots.map((lot) => ({
+      queryKey: ["scheme", schemeId, "lot-statement", lot.id] as const,
+      queryFn: () => api<OwnerStatement>(`/api/schemes/${schemeId}/lots/${lot.id}/statement`),
+    })),
+  });
+  const loading = lotsQuery.isPending || statements.some((statement) => statement.isPending);
+  const total = statements.reduce((sum, statement) => sum + (statement.data?.balanceCents ?? 0), 0);
+
+  return (
+    <Card style={{ marginTop: space(3) }}>
+      <Text style={[t.title, { color: theme.text }]}>My levies</Text>
+      {loading ? (
+        <View style={{ marginTop: space(4), gap: space(3) }}>
+          <Skeleton width="55%" height={40} radius={8} />
+          <Skeleton width="100%" height={48} />
+        </View>
+      ) : lotsQuery.isError ? (
+        <Text style={[t.bodySmall, { color: theme.muted, marginTop: space(3) }]}>
+          Couldn't load your lots. Pull to refresh and try again.
+        </Text>
+      ) : myLots.length === 0 ? (
+        <EmptyState
+          icon="receipt-outline"
+          title="No lot linked to your account yet"
+          body="Once your lot is on the register, your levy balance will show here."
+        />
+      ) : (
+        <>
+          <View style={{ marginTop: space(3) }}>
+            <Figure cents={Math.abs(total)} size="hero" tone={total > 0 ? "crit" : "ok"} />
+            <Text style={[t.bodySmall, { color: theme.muted, marginTop: space(1) }]}>
+              {total > 0
+                ? "Amount due"
+                : total < 0
+                  ? "In credit — nothing due right now"
+                  : "You're all paid up. Nothing due right now."}
+            </Text>
+          </View>
+          <View
+            style={{
+              marginTop: space(4),
+              paddingTop: space(1),
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderTopColor: theme.line,
+            }}
+          >
+            {myLots.map((lot, index) => {
+              const balance = statements[index]?.data?.balanceCents ?? 0;
+              return (
+                <ListRow
+                  key={lot.id}
+                  title={`Lot ${lot.lotNumber}`}
+                  subtitle={
+                    lot.unitNumber ? `Unit ${lot.unitNumber} · Open statement` : "Open statement"
+                  }
+                  right={
+                    <Figure
+                      cents={Math.abs(balance)}
+                      size="small"
+                      tone={balance > 0 ? "crit" : "ok"}
+                    />
+                  }
+                  onPress={() =>
+                    router.push({
+                      pathname: "/scheme/[id]/finance-statement",
+                      params: { id: schemeId, lotId: lot.id, lotNumber: lot.lotNumber },
+                    })
+                  }
+                  divider={index < myLots.length - 1}
+                />
+              );
+            })}
+          </View>
+        </>
+      )}
+    </Card>
+  );
+}
+
 export default function Overview() {
   const theme = useTheme();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
 
   const schemesQuery = useQuery({
@@ -154,10 +494,17 @@ export default function Overview() {
   // Entrance stagger runs on the first successful load only — never on
   // refetch, pull-to-refresh, or tab return.
   const seenData = useRef(false);
+  const openedFirstRun = useRef(false);
   const entering = useListEntering(!seenData.current);
   useEffect(() => {
     if (entries) seenData.current = true;
   }, [entries]);
+  useEffect(() => {
+    if (entries?.length === 0 && !openedFirstRun.current) {
+      openedFirstRun.current = true;
+      router.push("/onboarding");
+    }
+  }, [entries, router]);
 
   const now = new Date();
   const hour = now.getHours();
@@ -168,10 +515,11 @@ export default function Overview() {
   const eyebrow = `${WEEKDAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
 
   const refreshing = schemesQuery.isRefetching || overviewQueries.some((q) => q.isRefetching);
-  const onRefresh = () => {
-    schemesQuery.refetch();
-    for (const q of overviewQueries) q.refetch();
-  };
+  const onRefresh = () =>
+    Promise.all([
+      schemesQuery.refetch(),
+      queryClient.refetchQueries({ queryKey: ["scheme"], type: "active" }),
+    ]);
 
   let content: ReactNode;
 
@@ -189,7 +537,9 @@ export default function Overview() {
       <EmptyState
         icon="business-outline"
         title="No schemes yet"
-        body="Accept an invitation to see your owners corporation here."
+        body="Register your building or accept an invitation to see it here."
+        actionLabel="Set up your first building"
+        onAction={() => router.push("/onboarding")}
       />
     );
   } else {
@@ -200,18 +550,36 @@ export default function Overview() {
     content = (
       <View style={{ gap: space(3) }}>
         {attention.map((item) => (
-          <Card key={item.key} onPress={() => router.push(`/scheme/${item.schemeId}`)}>
+          <Card
+            key={item.key}
+            onPress={() => {
+              if (item.target === "decisions") {
+                router.push({
+                  pathname: "/scheme/[id]/decisions",
+                  params: { id: item.schemeId },
+                });
+              } else if (item.target === "maintenance") {
+                router.push({
+                  pathname: "/scheme/[id]/maintenance",
+                  params: { id: item.schemeId },
+                });
+              } else if (item.target === "compliance") {
+                router.push({
+                  pathname: "/scheme/[id]/compliance",
+                  params: { id: item.schemeId },
+                });
+              } else {
+                router.push({ pathname: "/scheme/[id]", params: { id: item.schemeId } });
+              }
+            }}
+          >
             <View style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}>
               <View style={{ flex: 1 }}>
-                <Text
-                  style={[t.body, { fontFamily: "PublicSans_600SemiBold", color: theme.text }]}
-                >
+                <Text style={[t.body, { fontFamily: "PublicSans_600SemiBold", color: theme.text }]}>
                   {item.label}
                 </Text>
                 {manySchemes ? (
-                  <Text style={[t.bodySmall, { color: theme.muted }]}>
-                    {item.schemeName}
-                  </Text>
+                  <Text style={[t.bodySmall, { color: theme.muted }]}>{item.schemeName}</Text>
                 ) : null}
               </View>
               <StatusPill tone={item.tone} label={item.pillLabel} />
@@ -221,7 +589,7 @@ export default function Overview() {
         ))}
 
         {entries.map((entry, index) => {
-          const { scheme } = entry;
+          const { scheme, roles } = entry;
           const query = overviewQueries[index];
           const ov = query?.data;
           const outstanding = ov?.finance?.arrearsOutstandingCents ?? 0;
@@ -229,6 +597,7 @@ export default function Overview() {
           const noticeCount = ov?.finance?.noticeCount ?? 0;
           const lots = ov?.glance?.lots ?? 0;
           const people = ov?.glance?.people ?? 0;
+          const schemeStatus = ov?.onboarding?.status ?? scheme.status;
 
           const footerLeft = ov?.nextMeeting
             ? `Next meeting ${formatDate(ov.nextMeeting.scheduledAt)}`
@@ -242,8 +611,8 @@ export default function Overview() {
               : noticeCount > 0
                 ? { tone: statusTone("paid"), label: "Paid" }
                 : {
-                    tone: statusTone(scheme.status),
-                    label: scheme.status.charAt(0).toUpperCase() + scheme.status.slice(1),
+                    tone: statusTone(schemeStatus),
+                    label: schemeStatus.charAt(0).toUpperCase() + schemeStatus.slice(1),
                   };
 
           return (
@@ -268,9 +637,7 @@ export default function Overview() {
                         tone={outstanding > 0 ? "crit" : "default"}
                       />
                       {outstanding > 0 && lotsInArrears > 0 ? (
-                        <Text
-                          style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}
-                        >
+                        <Text style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}>
                           {plural(lotsInArrears, "lot")} in arrears
                         </Text>
                       ) : null}
@@ -295,12 +662,19 @@ export default function Overview() {
                     borderTopColor: theme.line,
                   }}
                 >
-                  <Text style={[t.bodySmall, { color: theme.muted }]}>
-                    {ov ? footerLeft : " "}
-                  </Text>
+                  <Text style={[t.bodySmall, { color: theme.muted }]}>{ov ? footerLeft : " "}</Text>
                   {ov ? <StatusPill tone={pill.tone} label={pill.label} /> : null}
                 </View>
               </Card>
+              {schemeStatus !== "active" && ov ? (
+                <OnboardingChecklistCard scheme={scheme} overview={ov} roles={roles} />
+              ) : null}
+              {schemeStatus === "active" &&
+              roles.length > 0 &&
+              !hasOfficerRole(roles) &&
+              session?.user?.email ? (
+                <OwnerLeviesCard schemeId={scheme.id} />
+              ) : null}
             </Animated.View>
           );
         })}
@@ -308,8 +682,26 @@ export default function Overview() {
     );
   }
 
+  const createAction =
+    entries && entries.length > 0 ? (
+      <PressableScale
+        onPress={() => router.push("/onboarding")}
+        accessibilityRole="button"
+        accessibilityLabel="Register a new scheme"
+        style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
+      >
+        <Ionicons name="add" size={24} color={theme.accent} />
+      </PressableScale>
+    ) : undefined;
+
   return (
-    <Screen title={greeting} eyebrow={eyebrow} refreshing={refreshing} onRefresh={onRefresh}>
+    <Screen
+      title={greeting}
+      eyebrow={eyebrow}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      headerRight={createAction}
+    >
       {content}
     </Screen>
   );

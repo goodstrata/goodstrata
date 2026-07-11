@@ -11,7 +11,7 @@ describe("pushDataToTarget — well-formed notifier payloads", () => {
     });
     expect(target).toEqual({
       pathname: `/scheme/${SCHEME}/finance`,
-      params: { focus: "levy-7" },
+      params: { focus: "levy-7", focusType: "levy_notice" },
     });
   });
 

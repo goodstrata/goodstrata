@@ -1,8 +1,10 @@
+import { useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
+import * as Network from "expo-network";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { apiDelete, apiPost } from "./api";
 import { authClient } from "./auth";
 import { pushDataToTarget } from "./pushTarget";
@@ -51,20 +53,19 @@ function pushSupported(): boolean {
 async function fetchExpoPushToken(opts: { requestPermission: boolean }): Promise<string | null> {
   if (!pushSupported()) return null;
 
-  let { status } = await Notifications.getPermissionsAsync();
-  if (status !== "granted" && opts.requestPermission) {
-    status = (await Notifications.requestPermissionsAsync()).status;
-  }
-  if (status !== "granted") return null;
-
   if (Platform.OS === "android") {
-    // Android 13+ requires a channel to exist before a token can be minted;
-    // the API sends with channelId "default" to match.
+    // Android 13+ needs a channel before the permission prompt can appear.
     await Notifications.setNotificationChannelAsync("default", {
       name: "Default",
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   }
+
+  let { status } = await Notifications.getPermissionsAsync();
+  if (status !== "granted" && opts.requestPermission) {
+    status = (await Notifications.requestPermissionsAsync()).status;
+  }
+  if (status !== "granted") return null;
 
   const projectId: string | undefined =
     Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
@@ -82,18 +83,20 @@ let registeredToken: string | null = null;
  * time: simulators (no APNs), Expo Go, web, declined permission, and offline
  * all resolve to a silent no-op — push simply stays off for this device.
  */
-export async function registerPushToken(): Promise<void> {
+export async function registerPushToken(): Promise<boolean> {
   try {
     const token = await fetchExpoPushToken({ requestPermission: true });
-    if (!token) return;
+    if (!token) return false;
     await apiPost("/api/profile/push-tokens", {
       token,
       platform: Platform.OS as "ios" | "android",
       deviceName: Constants.deviceName ?? null,
     });
     registeredToken = token;
+    return true;
   } catch {
     // No push on this device for now; the server prunes dead tokens anyway.
+    return false;
   }
 }
 
@@ -122,9 +125,49 @@ export async function unregisterPushToken(): Promise<void> {
 export function usePushNotifications(): void {
   const { data: session } = authClient.useSession();
   const userId = session?.user?.id;
+  const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (userId) void registerPushToken();
+    if (!userId) return;
+    void registerPushToken();
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "active") void registerPushToken();
+    });
+    const network = Network.addNetworkStateListener((state) => {
+      if (state.isConnected && state.isInternetReachable !== false) void registerPushToken();
+    });
+    return () => {
+      appState.remove();
+      network.remove();
+    };
+  }, [userId]);
+
+  // A foreground banner does not remount the Notifications tab. Refresh the
+  // cached bell rows/badge as soon as a push arrives while the app is open.
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data;
+      const schemeId =
+        typeof data === "object" && data !== null && typeof data.schemeId === "string"
+          ? data.schemeId
+          : null;
+      if (schemeId) {
+        void queryClient.invalidateQueries({
+          queryKey: ["scheme", schemeId, "notifications"],
+        });
+      }
+    });
+    return () => subscription.remove();
+  }, [queryClient]);
+
+  // APNs/FCM can rotate the underlying device token while the app is alive.
+  // Re-fetch the corresponding Expo token and upsert it immediately.
+  useEffect(() => {
+    if (!userId || !pushSupported()) return;
+    const subscription = Notifications.addPushTokenListener(() => {
+      void registerPushToken();
+    });
+    return () => subscription.remove();
   }, [userId]);
 
   // useLastNotificationResponse covers both the cold-start tap and taps while
@@ -135,13 +178,49 @@ export function usePushNotifications(): void {
     if (!lastResponse) return;
     const responseId = lastResponse.notification.request.identifier;
     if (handledResponseId.current === responseId) return;
-    handledResponseId.current = responseId;
+    // A cold-start tap may arrive before SecureStore restores the session.
+    // Leave it pending and retry this effect once the user is authenticated.
+    if (!userId) return;
 
-    const target = pushDataToTarget(lastResponse.notification.request.content.data);
+    if (lastResponse.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
+      handledResponseId.current = responseId;
+      Notifications.clearLastNotificationResponse();
+      return;
+    }
+
+    const data = lastResponse.notification.request.content.data;
+    const target = pushDataToTarget(data);
+    handledResponseId.current = responseId;
     if (target) {
       router.push(target);
     } else {
       router.push("/(tabs)/notifications");
     }
-  }, [lastResponse]);
+    const readAnchor = pushDataToReadAnchor(data);
+    if (readAnchor) {
+      void apiPost(`/api/schemes/${readAnchor.schemeId}/notifications/read`, {
+        notificationId: readAnchor.notificationId,
+      })
+        .catch(() => undefined)
+        .finally(() =>
+          queryClient.invalidateQueries({
+            queryKey: ["scheme", readAnchor.schemeId, "notifications"],
+          }),
+        );
+    }
+    // Prevent the same cold-start response from routing again after a root
+    // layout remount or a later sign-in.
+    Notifications.clearLastNotificationResponse();
+  }, [lastResponse, queryClient, userId]);
+}
+
+/** Validate the optional bell-row anchor carried by a remote push. */
+export function pushDataToReadAnchor(
+  data: unknown,
+): { schemeId: string; notificationId: string } | null {
+  if (typeof data !== "object" || data === null) return null;
+  const raw = data as Record<string, unknown>;
+  if (typeof raw.schemeId !== "string" || raw.schemeId.length === 0) return null;
+  if (typeof raw.notificationId !== "string" || raw.notificationId.length === 0) return null;
+  return { schemeId: raw.schemeId, notificationId: raw.notificationId };
 }

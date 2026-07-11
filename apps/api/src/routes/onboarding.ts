@@ -47,6 +47,19 @@ const INLINE_SAFE_DOC_TYPES: ReadonlySet<string> = new Set([
 
 export function lotsRoutes(deps: AppDeps) {
   return new Hono<AppEnv>()
+    .get("/:schemeId/lots/mine", requireSchemeMember(deps), async (c) => {
+      const ctx = deps.serviceContext(userActor(c.get("user").id));
+      const userId = c.get("user").id;
+      const allLots = await lotsService.listLots(ctx, c.get("schemeId"));
+      const lots = allLots
+        .filter((lot) => lot.owners.some((owner) => owner.userId === userId))
+        .map((lot) => ({
+          ...lot,
+          // A personal endpoint never returns the other co-owner's contact details.
+          owners: lot.owners.filter((owner) => owner.userId === userId),
+        }));
+      return c.json({ lots });
+    })
     .get("/:schemeId/lots", requireSchemeMember(deps), async (c) => {
       const ctx = deps.serviceContext(userActor(c.get("user").id));
       return c.json({ lots: await lotsService.listLots(ctx, c.get("schemeId")) });

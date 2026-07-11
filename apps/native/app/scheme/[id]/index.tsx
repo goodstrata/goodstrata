@@ -7,14 +7,14 @@ import {
   Card,
   ErrorState,
   Figure,
+  formatDate,
+  formatMoney,
   ListRow,
+  plate,
   Screen,
   SectionHeader,
   Skeleton,
   StatusPill,
-  formatDate,
-  formatMoney,
-  plate,
   space,
   type as t,
   useTheme,
@@ -23,7 +23,13 @@ import { api } from "../../../src/lib/api";
 import { schemeQueryOptions, useIsOfficer } from "../../../src/lib/roles";
 
 interface SchemeOverview {
-  scheme: { id: string; name: string; planOfSubdivision: string | null; tier: number | string | null; status: string };
+  scheme: {
+    id: string;
+    name: string;
+    planOfSubdivision: string | null;
+    tier: number | string | null;
+    status: string;
+  };
   glance: { lots: number; people: number; members: number };
   finance: {
     hasBudget: boolean;
@@ -44,7 +50,13 @@ interface SchemeOverview {
     complianceOpen: number;
     complianceOverdue: number;
   };
-  nextMeeting: { id: string; kind: string; title: string; scheduledAt: string; status: string } | null;
+  nextMeeting: {
+    id: string;
+    kind: string;
+    title: string;
+    scheduledAt: string;
+    status: string;
+  } | null;
 }
 
 /** "$1,234.56" as one string — for muted breakdown lines, not Figures. */
@@ -85,10 +97,8 @@ export default function SchemeHub() {
 
   const refetchAll = () => queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
   const refreshing = detailQuery.isRefetching || overviewQuery.isRefetching;
-  const loading =
-    (detailQuery.isPending || overviewQuery.isPending) && !scheme && !finance;
-  const failed =
-    (detailQuery.isError && !scheme) || (overviewQuery.isError && !overview);
+  const loading = (detailQuery.isPending || overviewQuery.isPending) && !scheme && !finance;
+  const failed = (detailQuery.isError && !scheme) || (overviewQuery.isError && !overview);
 
   const outstanding = finance?.arrearsOutstandingCents ?? 0;
   const lotsInArrears = finance?.lotsInArrears ?? 0;
@@ -101,6 +111,7 @@ export default function SchemeHub() {
   // roles resolve. The API still enforces every read — hiding a row is UX.
   const isOfficer = useIsOfficer(schemeId);
   const rolesLoaded = !!detailQuery.data;
+  const isCommitteeMember = detailQuery.data?.roles.includes("committee_member") ?? false;
 
   const financeSubtitle =
     lotsInArrears > 0
@@ -179,17 +190,43 @@ export default function SchemeHub() {
       path: `/scheme/${schemeId}/people`,
     },
     {
+      key: "lots",
+      icon: "layers-outline",
+      title: "Lots",
+      subtitle: `${overview?.glance.lots ?? 0} on the register`,
+      path: `/scheme/${schemeId}/lots`,
+    },
+    {
+      key: "committee",
+      icon: "people-circle-outline",
+      title: "Committee",
+      subtitle: "Office holders and roles",
+      path: `/scheme/${schemeId}/committee`,
+    },
+    {
       key: "documents",
       icon: "document-text-outline",
       title: "Documents",
       subtitle: "The scheme's records",
       path: `/scheme/${schemeId}/documents`,
     },
+    {
+      key: "activity",
+      icon: "pulse-outline",
+      title: "Activity",
+      subtitle: "The live event register",
+      path: `/scheme/${schemeId}/activity`,
+    },
+    {
+      key: "community",
+      icon: "chatbubbles-outline",
+      title: "Community",
+      subtitle: "Posts, notices and neighbours",
+      path: `/scheme/${schemeId}/community`,
+    },
   ];
 
-  // Owner-voiced subset. "Report an issue" (maintenance) and "My building"
-  // (community) have no mobile route yet — they render as quiet "Soon" rows
-  // until parity lands, matching the web owner nav order.
+  // Owner-voiced subset, matching the web owner nav order.
   const ownerLinks: HubLink[] = [
     {
       key: "maintenance",
@@ -217,6 +254,7 @@ export default function SchemeHub() {
       icon: "people-outline",
       title: "My building",
       subtitle: "Neighbours and notices",
+      path: `/scheme/${schemeId}/community`,
     },
     {
       key: "grievances",
@@ -234,11 +272,20 @@ export default function SchemeHub() {
     },
   ];
 
-  const links = isOfficer ? officerLinks : ownerLinks;
+  // A committee member keeps the resident-focused hub, but decisions are
+  // part of their statutory role. Reuse only that row from the officer index;
+  // finance admin, compliance management and the registers remain hidden.
+  const committeeDecisionLink = officerLinks.find((link) => link.key === "decisions");
+  const links = isOfficer
+    ? officerLinks
+    : isCommitteeMember && committeeDecisionLink
+      ? [committeeDecisionLink, ...ownerLinks]
+      : ownerLinks;
 
   return (
     <Screen
       title={scheme?.name ?? "Scheme"}
+      topInset={false}
       eyebrow={plate(scheme)}
       reserveEyebrow
       refreshing={refreshing}
@@ -272,11 +319,7 @@ export default function SchemeHub() {
           <Card onPress={() => router.push(`/scheme/${schemeId}/finance`)}>
             <Text style={[t.label, { color: theme.muted }]}>Levies outstanding</Text>
             <View style={{ marginTop: space(1) }}>
-              <Figure
-                cents={outstanding}
-                size="hero"
-                tone={outstanding > 0 ? "crit" : "default"}
-              />
+              <Figure cents={outstanding} size="hero" tone={outstanding > 0 ? "crit" : "default"} />
             </View>
             {finance?.hasBudget ? (
               <Text style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}>
@@ -318,11 +361,7 @@ export default function SchemeHub() {
                     leading={<Ionicons name={link.icon} size={18} color={theme.accent} />}
                     onPress={link.path ? () => router.push(link.path!) : undefined}
                     chevron={!!link.path}
-                    right={
-                      link.path ? undefined : (
-                        <Text style={[t.caption, { color: theme.muted }]}>Soon</Text>
-                      )
-                    }
+                    right={undefined}
                     divider={i < links.length - 1}
                   />
                 ))

@@ -44,9 +44,19 @@ export default function SchemeLayout() {
         }}
       />
       <Stack.Screen name="finance" />
+      <Stack.Screen name="finance-statement" />
+      <Stack.Screen name="finance-admin" />
       <Stack.Screen name="decisions" />
       <Stack.Screen name="meetings" />
       <Stack.Screen name="documents" />
+      <Stack.Screen name="maintenance" />
+      <Stack.Screen name="grievances" />
+      <Stack.Screen name="compliance" />
+      <Stack.Screen name="people" />
+      <Stack.Screen name="lots" />
+      <Stack.Screen name="committee" />
+      <Stack.Screen name="activity" />
+      <Stack.Screen name="community" />
     </Stack>
   );
 }

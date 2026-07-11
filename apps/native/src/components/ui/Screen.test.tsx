@@ -1,6 +1,32 @@
-import { render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Text } from "react-native";
 import { Screen } from "./Screen";
+
+jest.mock("react-native", () => {
+  const React = require("react");
+  const actual = jest.requireActual("react-native");
+  const MockRefreshControl = (props: Record<string, unknown>) =>
+    React.createElement(actual.View, { testID: "screen-refresh-control", ...props });
+  return new Proxy(actual, {
+    get(target, property, receiver) {
+      return property === "RefreshControl"
+        ? MockRefreshControl
+        : Reflect.get(target, property, receiver);
+    },
+  });
+});
+
+jest.mock("react-native-safe-area-context", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return {
+    SafeAreaView: ({
+      children,
+      ...props
+    }: { children?: import("react").ReactNode } & Record<string, unknown>) =>
+      React.createElement(View, { testID: "screen-safe-area", ...props }, children),
+  };
+});
 
 describe("Screen", () => {
   it("renders its children within the scaffold", async () => {
@@ -47,5 +73,53 @@ describe("Screen", () => {
     );
     expect(screen.getByText("list body")).toBeOnTheScreen();
     expect(screen.getByText("Documents")).toBeOnTheScreen();
+  });
+
+  it("keeps the top safe-area edge by default for screens without a native header", async () => {
+    await render(
+      <Screen title="Home">
+        <Text>rows</Text>
+      </Screen>,
+    );
+
+    expect(screen.getByTestId("screen-safe-area").props.edges).toEqual(["top"]);
+  });
+
+  it("omits the top safe-area edge when the native stack header already owns it", async () => {
+    await render(
+      <Screen title="Finance" topInset={false}>
+        <Text>rows</Text>
+      </Screen>,
+    );
+
+    expect(screen.getByTestId("screen-safe-area").props.edges).toEqual([]);
+  });
+
+  it("keeps pull-to-refresh active until the refresh promise settles", async () => {
+    let resolveRefresh!: () => void;
+    const refreshPromise = new Promise<void>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    const onRefresh = jest.fn(() => refreshPromise);
+    await render(
+      <Screen title="Documents" onRefresh={onRefresh}>
+        <Text>rows</Text>
+      </Screen>,
+    );
+
+    await act(async () => {
+      fireEvent(screen.getByTestId("screen-refresh-control"), "refresh");
+    });
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("screen-refresh-control").props.refreshing).toBe(true);
+
+    await act(async () => {
+      resolveRefresh();
+      await refreshPromise;
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("screen-refresh-control").props.refreshing).toBe(false);
   });
 });

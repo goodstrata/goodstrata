@@ -1,19 +1,26 @@
-import { useQuery } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
+  Button,
   Card,
   EmptyState,
   ErrorState,
+  FormField,
+  plate,
+  radius,
   Screen,
+  SectionHeader,
+  Sheet,
   Skeleton,
   StatusPill,
-  plate,
   space,
   type as t,
   useTheme,
 } from "../../../src/components";
-import { api } from "../../../src/lib/api";
+import { api, apiPost } from "../../../src/lib/api";
 import { schemeQueryOptions, useIsOfficer } from "../../../src/lib/roles";
 
 // Mirrors GET /schemes/:id/people (peopleService.listPeople — the roll).
@@ -44,6 +51,15 @@ export default function PeopleScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const schemeId = String(params.id ?? "");
   const isOfficer = useIsOfficer(schemeId);
+  const theme = useTheme();
+  const queryClient = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const [givenName, setGivenName] = useState("");
+  const [familyName, setFamilyName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
   const schemeQuery = useQuery({ ...schemeQueryOptions(schemeId), enabled: !!schemeId });
   const peopleQuery = useQuery({
@@ -53,15 +69,65 @@ export default function PeopleScreen() {
   });
 
   const people = peopleQuery.data?.people ?? [];
+  const refreshPeople = () =>
+    queryClient.invalidateQueries({ queryKey: ["scheme", schemeId, "people"] });
+  const addPerson = useMutation({
+    mutationFn: () => {
+      const trimmed = {
+        givenName: givenName.trim() || undefined,
+        familyName: familyName.trim() || undefined,
+        companyName: companyName.trim() || undefined,
+        email: email.trim().toLowerCase() || undefined,
+        phone: phone.trim() || undefined,
+      };
+      if (!trimmed.givenName && !trimmed.familyName && !trimmed.companyName && !trimmed.email) {
+        throw new Error("Add a name, company or email address.");
+      }
+      return apiPost<{ person: Person }>(`/api/schemes/${schemeId}/people`, trimmed);
+    },
+    onSuccess: async () => {
+      await refreshPeople();
+      setGivenName("");
+      setFamilyName("");
+      setCompanyName("");
+      setEmail("");
+      setPhone("");
+      setFormError(null);
+      setAdding(false);
+    },
+    onError: (error) =>
+      setFormError(error instanceof Error ? error.message : "Couldn't add person."),
+  });
 
   return (
     <Screen
       title="People"
+      topInset={false}
       eyebrow={plate(schemeQuery.data?.scheme)}
       reserveEyebrow
       refreshing={peopleQuery.isRefetching}
       onRefresh={() => peopleQuery.refetch()}
     >
+      {isOfficer ? (
+        <SectionHeader
+          label="The roll"
+          right={
+            <Pressable
+              onPress={() => {
+                setFormError(null);
+                setAdding(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Add person"
+              hitSlop={8}
+              style={{ flexDirection: "row", alignItems: "center", gap: space(1) }}
+            >
+              <Ionicons name="add" size={18} color={theme.accent} />
+              <Text style={{ ...t.label, color: theme.accent }}>Add person</Text>
+            </Pressable>
+          }
+        />
+      ) : null}
       {peopleQuery.isPending ? (
         <Card padded={false} style={{ paddingHorizontal: space(4) }}>
           {[0, 1, 2, 3].map((i) => (
@@ -77,22 +143,72 @@ export default function PeopleScreen() {
       ) : (
         <Card padded={false} style={{ paddingHorizontal: space(4) }}>
           {people.map((p, i) => (
-            <PersonRow key={p.id} person={p} isOfficer={isOfficer} divider={i < people.length - 1} />
+            <PersonRow
+              key={p.id}
+              person={p}
+              schemeId={schemeId}
+              isOfficer={isOfficer}
+              divider={i < people.length - 1}
+              onChanged={refreshPeople}
+            />
           ))}
         </Card>
       )}
+      <Sheet visible={adding} onClose={() => !addPerson.isPending && setAdding(false)}>
+        <View style={{ gap: space(4) }}>
+          <View style={{ gap: space(1) }}>
+            <Text style={{ ...t.title, color: theme.text }}>Add a person</Text>
+            <Text style={{ ...t.bodySmall, color: theme.muted }}>
+              Record an owner or contact. Add an email so they can be invited to GoodStrata.
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: space(3) }}>
+            <View style={{ flex: 1 }}>
+              <FormField label="Given name" value={givenName} onChangeText={setGivenName} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <FormField label="Family name" value={familyName} onChangeText={setFamilyName} />
+            </View>
+          </View>
+          <FormField label="Company" value={companyName} onChangeText={setCompanyName} />
+          <FormField
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <FormField label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+          {formError ? (
+            <Text style={{ ...t.bodySmall, color: theme.critFill }}>{formError}</Text>
+          ) : null}
+          <Button
+            label="Add person"
+            full
+            pending={addPerson.isPending}
+            onPress={() => {
+              setFormError(null);
+              addPerson.mutate();
+            }}
+          />
+        </View>
+      </Sheet>
     </Screen>
   );
 }
 
 function PersonRow({
   person: p,
+  schemeId,
   isOfficer,
   divider,
+  onChanged,
 }: {
   person: Person;
+  schemeId: string;
   isOfficer: boolean;
   divider: boolean;
+  onChanged: () => Promise<unknown>;
 }) {
   const theme = useTheme();
   const name = personName(p);
@@ -101,6 +217,14 @@ function PersonRow({
     : "No lot on the roll";
   // Contact details are officer-only (privacy); everyone sees names + lots.
   const contact = isOfficer ? [p.email, p.phone].filter(Boolean).join(" · ") : "";
+  const invite = useMutation({
+    mutationFn: () =>
+      apiPost<{ linked: boolean; expiresAt: string | null }>(
+        `/api/schemes/${schemeId}/people/${p.id}/invite`,
+        { role: "owner" },
+      ),
+    onSuccess: () => onChanged(),
+  });
 
   return (
     <View
@@ -117,7 +241,7 @@ function PersonRow({
         style={{
           width: 38,
           height: 38,
-          borderRadius: 19,
+          borderRadius: radius.pill,
           backgroundColor: theme.surface,
           borderWidth: 1,
           borderColor: theme.line,
@@ -132,7 +256,23 @@ function PersonRow({
           <Text style={{ ...t.body, color: theme.text, flex: 1 }} numberOfLines={1}>
             {name}
           </Text>
-          {p.pendingInvite ? <StatusPill tone="warn" label="Invite pending" /> : null}
+          {p.userId ? (
+            <StatusPill tone="ok" label="Joined" />
+          ) : p.pendingInvite ? (
+            <StatusPill tone="warn" label="Invite pending" />
+          ) : isOfficer && p.email ? (
+            <Pressable
+              onPress={() => invite.mutate()}
+              disabled={invite.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={`Invite ${name}`}
+              hitSlop={8}
+            >
+              <Text style={{ ...t.label, color: theme.accent }}>
+                {invite.isPending ? "Sending…" : "Invite"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
         <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: 2 }} numberOfLines={1}>
           {lots}
@@ -140,6 +280,11 @@ function PersonRow({
         {contact ? (
           <Text style={{ ...t.caption, color: theme.muted, marginTop: 1 }} numberOfLines={1}>
             {contact}
+          </Text>
+        ) : null}
+        {invite.isError ? (
+          <Text style={{ ...t.caption, color: theme.critFill, marginTop: 2 }} numberOfLines={2}>
+            {invite.error instanceof Error ? invite.error.message : "Couldn't send invite."}
           </Text>
         ) : null}
       </View>

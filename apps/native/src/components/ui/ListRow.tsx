@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { space, type } from "../../theme/tokens";
@@ -11,6 +11,8 @@ const DOT_SIZE = 6;
 
 export interface ListRowProps {
   title: string;
+  /** Default one line; feeds may opt into two before truncation. */
+  titleLines?: number;
   /** Muted second line. */
   subtitle?: string;
   /** Figure, StatusPill, or date text. */
@@ -20,6 +22,8 @@ export interface ListRowProps {
   onPress?: () => void;
   /** Optional 36pt icon disc, ground accentSoft. */
   leading?: ReactNode;
+  /** Deep-link target emphasis; semantic tint, never the only cue. */
+  highlighted?: boolean;
   /**
    * 6pt accent dot left of the title, title weight up. Pass a boolean (even
    * false) to reserve the dot slot so the cross-fade on read never shifts
@@ -36,11 +40,13 @@ export interface ListRowProps {
 
 export function ListRow({
   title,
+  titleLines = 1,
   subtitle,
   right,
   chevron,
   onPress,
   leading,
+  highlighted = false,
   unread,
   divider,
   accessibilityLabel,
@@ -64,6 +70,9 @@ export function ListRow({
         alignItems: "center",
         minHeight: subtitle ? 56 : 44,
         paddingVertical: space(3),
+        paddingHorizontal: highlighted ? space(2) : 0,
+        borderRadius: highlighted ? space(2) : 0,
+        backgroundColor: highlighted ? theme.accentSoft : "transparent",
       }}
     >
       {leading ? (
@@ -98,7 +107,7 @@ export function ListRow({
             />
           ) : null}
           <Text
-            numberOfLines={1}
+            numberOfLines={titleLines}
             style={{
               ...type.body,
               flexShrink: 1,
@@ -110,10 +119,7 @@ export function ListRow({
           </Text>
         </View>
         {subtitle ? (
-          <Text
-            numberOfLines={1}
-            style={{ ...type.bodySmall, color: theme.muted }}
-          >
+          <Text numberOfLines={1} style={{ ...type.bodySmall, color: theme.muted }}>
             {subtitle}
           </Text>
         ) : null}

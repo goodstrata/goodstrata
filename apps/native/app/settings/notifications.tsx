@@ -1,16 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as Linking from "expo-linking";
+import * as Notifications from "expo-notifications";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Switch, Text, View } from "react-native";
 import {
+  Button,
   Card,
   ErrorState,
   Screen,
   SectionHeader,
   Skeleton,
+  StatusPill,
   space,
   type as t,
   useTheme,
 } from "../../src/components";
 import { api, apiPatch } from "../../src/lib/api";
+import { registerPushToken } from "../../src/lib/pushNotifications";
 
 // Mirrors GET/PATCH /profile/notification-preferences (apps/web NotificationsSection).
 type Channel = "in_app" | "email" | "sms" | "push";
@@ -64,6 +70,29 @@ export default function NotificationSettings() {
     queryKey: PREFS_KEY,
     queryFn: () => api<PrefsPayload>("/api/profile/notification-preferences"),
   });
+  const [pushPermission, setPushPermission] = useState<string | null>(null);
+  const [requestingPush, setRequestingPush] = useState(false);
+  const [pushRegistrationFailed, setPushRegistrationFailed] = useState(false);
+  const refreshPermission = useCallback(async () => {
+    const permission = await Notifications.getPermissionsAsync();
+    setPushPermission(permission.status);
+  }, []);
+  useEffect(() => {
+    void refreshPermission();
+  }, [refreshPermission]);
+
+  const enableDevicePush = async () => {
+    setRequestingPush(true);
+    try {
+      const permission = await Notifications.requestPermissionsAsync();
+      setPushPermission(permission.status);
+      if (permission.status === "granted") {
+        setPushRegistrationFailed(!(await registerPushToken()));
+      }
+    } finally {
+      setRequestingPush(false);
+    }
+  };
 
   // Per-toggle optimistic autosave: flip the cached value now, PATCH one
   // { type, channel, enabled }, revert on error.
@@ -80,6 +109,9 @@ export default function NotificationSettings() {
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(PREFS_KEY, ctx.prev);
     },
+    onSuccess: (_data, value) => {
+      if (value.channel === "push" && value.enabled) void registerPushToken();
+    },
     onSettled: () => void queryClient.invalidateQueries({ queryKey: PREFS_KEY }),
   });
 
@@ -88,8 +120,9 @@ export default function NotificationSettings() {
   return (
     <Screen
       title="Notifications"
+      topInset={false}
       refreshing={prefsQuery.isRefetching}
-      onRefresh={() => prefsQuery.refetch()}
+      onRefresh={() => Promise.all([prefsQuery.refetch(), refreshPermission()])}
     >
       {prefsQuery.isPending ? (
         <Card>
@@ -107,6 +140,63 @@ export default function NotificationSettings() {
             Choose what reaches you, and how. In-app shows in your bell; add email or text for the
             ones that matter.
           </Text>
+          <SectionHeader label="This device" />
+          <Card>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
+              <Text style={{ ...t.body, color: theme.text, flex: 1 }}>Push notifications</Text>
+              <StatusPill
+                tone={
+                  pushPermission === "granted"
+                    ? pushRegistrationFailed
+                      ? "warn"
+                      : "ok"
+                    : pushPermission === "denied"
+                      ? "crit"
+                      : "warn"
+                }
+                label={
+                  pushPermission === "granted"
+                    ? pushRegistrationFailed
+                      ? "Needs retry"
+                      : "Allowed"
+                    : pushPermission === "denied"
+                      ? "Blocked"
+                      : "Not enabled"
+                }
+              />
+            </View>
+            <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(2) }}>
+              {pushPermission === "granted"
+                ? pushRegistrationFailed
+                  ? "System alerts are allowed, but this phone could not register. Check your connection and try again."
+                  : "System alerts are allowed. GoodStrata registers this phone whenever the app opens or reconnects."
+                : pushPermission === "denied"
+                  ? "Push is blocked in system settings. Your in-app feed will still work."
+                  : "Allow alerts so selected events can reach you when GoodStrata is closed."}
+            </Text>
+            <View style={{ marginTop: space(3), alignItems: "flex-start" }}>
+              {pushPermission === "granted" && pushRegistrationFailed ? (
+                <Button
+                  variant="secondary"
+                  label="Retry registration"
+                  pending={requestingPush}
+                  onPress={() => void enableDevicePush()}
+                />
+              ) : pushPermission === "denied" ? (
+                <Button
+                  variant="secondary"
+                  label="Open system settings"
+                  onPress={() => void Linking.openSettings()}
+                />
+              ) : pushPermission !== "granted" ? (
+                <Button
+                  label="Enable push"
+                  pending={requestingPush}
+                  onPress={() => void enableDevicePush()}
+                />
+              ) : null}
+            </View>
+          </Card>
           {!data.smsAvailable ? (
             <Text style={{ ...t.caption, color: theme.muted, marginBottom: space(2) }}>
               Add a mobile number to your profile to turn on SMS.
@@ -169,9 +259,10 @@ function TypeRow({
               style={{ alignItems: "center", gap: space(1), opacity: disabled ? 0.4 : 1 }}
             >
               <Switch
-                value={ty.channels[ch.key]}
+                value={disabled ? false : ty.channels[ch.key]}
                 onValueChange={(v) => onToggle(ch.key, v)}
                 disabled={disabled}
+                accessibilityLabel={`${ty.label}, ${ch.label}`}
                 trackColor={{ true: theme.accent, false: theme.line }}
               />
               <Text style={{ ...t.caption, color: theme.muted }}>{ch.label}</Text>

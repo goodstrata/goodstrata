@@ -19,25 +19,20 @@ export default function SettingsLayout() {
         headerTintColor: theme.accent,
         headerBackTitle: "Back",
         contentStyle: { backgroundColor: theme.bg },
+        // Each settings URL can be the first screen mounted in this nested
+        // stack, so Expo may have no automatic back item to draw. Always take
+        // the user back to More (or pop when the parent stack is available).
+        headerLeft: () => (
+          <PressableScale
+            onPress={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)/more"))}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            style={{ width: 44, height: 44, alignItems: "flex-start", justifyContent: "center" }}
+          >
+            <Ionicons name="chevron-back" size={24} color={theme.accent} />
+          </PressableScale>
+        ),
       }}
-    >
-      <Stack.Screen
-        name="notifications"
-        options={{
-          // First screen of this nested stack, so no native back renders —
-          // supply one that pops back to the More tab.
-          headerLeft: () => (
-            <PressableScale
-              onPress={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)/more"))}
-              accessibilityRole="button"
-              accessibilityLabel="Back"
-              style={{ width: 44, height: 44, alignItems: "flex-start", justifyContent: "center" }}
-            >
-              <Ionicons name="chevron-back" size={24} color={theme.accent} />
-            </PressableScale>
-          ),
-        }}
-      />
-    </Stack>
+    />
   );
 }

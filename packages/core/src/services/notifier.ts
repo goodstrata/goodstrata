@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   communityPosts,
   complaints,
@@ -11,9 +12,12 @@ import {
   maintenanceRequests,
   meetings,
   memberships,
+  notificationDeliveryClaims,
+  notifications,
   ownerships,
   paymentAllocations,
   people,
+  pushReceiptTickets,
   pushTokens,
   schemes,
   users,
@@ -27,7 +31,7 @@ import {
   type MembershipRole,
   type NotificationType,
 } from "@goodstrata/shared";
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import type { ServiceContext } from "../context.js";
 import { type EmailInput, emailBrand, paragraph, renderEmail } from "../email/index.js";
 import { sendEmail as sendCommsEmail, sendSms as sendCommsSms } from "./comms.js";
@@ -38,19 +42,21 @@ import { unsubscribeUrl } from "./unsubscribe.js";
 
 /**
  * The notifier: a pure-code event consumer (never an LLM) that turns domain
- * events into notifications. Every event type can reach three channels —
- * in-app (the bell), email, and SMS — gated per recipient by their saved
+ * events into notifications. Every event type can reach four channels —
+ * in-app (the bell), email, SMS, and OS push — gated per recipient by saved
  * preferences (defaults applied where they haven't chosen) and, for SMS, by a
  * phone on file. Wired to the "notify" queue in the API boot.
  *
  * Delivery guarantees:
- *  - Idempotent per (event, recipient): the bell insert carries a dedupeKey
- *    derived from the trigger event id + recipient, and email/SMS are gated on
- *    that insert actually happening — a redelivered pg-boss job is a no-op.
+ *  - Redelivery-safe per (event, recipient, channel): bell rows carry their
+ *    own dedupeKey; outbound channels use leased durable state with terminal
+ *    success markers and partial push-target progress. As with any external
+ *    provider lacking idempotency keys, a process crash after provider
+ *    acceptance but before the success write can still cause a duplicate.
  *  - Audited: email/SMS go through the comms service, so every send is a
  *    `messages` row (queued → sent/failed with providerMessageId).
- *  - Isolated per recipient: one failed send logs (and its messages row
- *    records "failed") without aborting the rest of the fan-out.
+ *  - Isolated per recipient: one failed send is recorded without aborting the
+ *    rest of the fan-out; an aggregate is thrown afterwards for pg-boss retry.
  */
 
 export const NOTIFIER_EVENT_TYPES = [
@@ -158,7 +164,7 @@ async function sendNotifierEmail(
     spec: EmailSpec;
     related?: { type: string; id: string };
   },
-): Promise<void> {
+): Promise<Error | null> {
   try {
     const unsubscribe = unsubscribeUrlFor(ctx, opts.recipient.userId, opts.notificationType);
     const { html, text } = renderEmail({
@@ -175,8 +181,10 @@ async function sendNotifierEmail(
       related: opts.related,
       ...(unsubscribe ? { listUnsubscribeUrl: unsubscribe } : {}),
     });
+    return null;
   } catch (err) {
     console.error(`[notifier] email to ${opts.recipient.email} failed`, err);
+    return err instanceof Error ? err : new Error(String(err));
   }
 }
 
@@ -190,7 +198,7 @@ async function sendNotifierSms(
     body: string;
     related?: { type: string; id: string };
   },
-): Promise<void> {
+): Promise<Error | null> {
   try {
     await sendCommsSms(ctx, {
       schemeId: opts.schemeId,
@@ -199,41 +207,371 @@ async function sendNotifierSms(
       template: `notifier:${opts.notificationType}`,
       related: opts.related,
     });
+    return null;
   } catch (err) {
     console.error(`[notifier] sms to ${opts.recipient.phone} failed`, err);
+    return err instanceof Error ? err : new Error(String(err));
   }
 }
 
+type OutboundNotificationChannel = "email" | "sms" | "push";
+const DELIVERY_LEASE_MS = 2 * 60 * 1_000;
+
+interface DeliveryLease {
+  userId: string;
+  leaseId: string;
+  completedTargets: string[];
+}
+
+interface AcquiredDeliveries {
+  leases: Map<string, DeliveryLease>;
+  busyUserIds: string[];
+}
+
 /**
- * Best-effort OS push to a batch of already-resolved device tokens. One
- * provider call for the whole fan-out (the expo driver chunks ≤100 itself);
- * tokens Expo reports DeviceNotRegistered are pruned here so the next
- * delivery never retries a dead device. Transport failures only log — the
- * bell row already exists.
+ * Acquire new, explicitly released, or expired delivery leases in one upsert.
+ * Completed rows are immutable; a live lease is returned as busy so the
+ * caller can fail the job and let pg-boss retry rather than silently consume
+ * the only retry while a crashed worker's lease is still active.
  */
-async function sendPush(ctx: ServiceContext, messages: OutboundPush[]): Promise<void> {
-  if (messages.length === 0) return;
+async function acquireOutboundDeliveries(
+  ctx: ServiceContext,
+  eventId: string,
+  userIds: string[],
+  channel: OutboundNotificationChannel,
+): Promise<AcquiredDeliveries> {
+  const uniqueUserIds = [...new Set(userIds)];
+  if (uniqueUserIds.length === 0) return { leases: new Map(), busyUserIds: [] };
+
+  const now = ctx.clock.now();
+  const leaseId = randomUUID();
+  const leaseUntil = new Date(now.getTime() + DELIVERY_LEASE_MS);
+
+  const rows = await ctx.db
+    .insert(notificationDeliveryClaims)
+    .values(
+      uniqueUserIds.map((userId) => ({
+        eventId,
+        userId,
+        channel,
+        leaseId,
+        leaseUntil,
+        attempts: 1,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [
+        notificationDeliveryClaims.eventId,
+        notificationDeliveryClaims.userId,
+        notificationDeliveryClaims.channel,
+      ],
+      set: {
+        leaseId,
+        leaseUntil,
+        attempts: sql`${notificationDeliveryClaims.attempts} + 1`,
+        lastError: null,
+      },
+      setWhere: and(
+        isNull(notificationDeliveryClaims.completedAt),
+        lte(notificationDeliveryClaims.leaseUntil, now),
+      ),
+    })
+    .returning({
+      userId: notificationDeliveryClaims.userId,
+      leaseId: notificationDeliveryClaims.leaseId,
+      completedTargets: notificationDeliveryClaims.completedTargets,
+    });
+
+  const leases = new Map(
+    rows.map((row) => [
+      row.userId,
+      {
+        userId: row.userId,
+        leaseId: row.leaseId,
+        completedTargets: row.completedTargets,
+      },
+    ]),
+  );
+  const state = await ctx.db.query.notificationDeliveryClaims.findMany({
+    where: and(
+      eq(notificationDeliveryClaims.eventId, eventId),
+      eq(notificationDeliveryClaims.channel, channel),
+      inArray(notificationDeliveryClaims.userId, uniqueUserIds),
+    ),
+    columns: { userId: true, completedAt: true },
+  });
+  const busyUserIds = state
+    .filter((row) => row.completedAt === null && !leases.has(row.userId))
+    .map((row) => row.userId);
+  return { leases, busyUserIds };
+}
+
+async function completeOutboundDelivery(
+  ctx: ServiceContext,
+  eventId: string,
+  channel: OutboundNotificationChannel,
+  lease: DeliveryLease,
+  completedTargets = lease.completedTargets,
+): Promise<boolean> {
+  const rows = await ctx.db
+    .update(notificationDeliveryClaims)
+    .set({
+      completedAt: ctx.clock.now(),
+      leaseUntil: ctx.clock.now(),
+      lastError: null,
+      completedTargets,
+    })
+    .where(
+      and(
+        eq(notificationDeliveryClaims.eventId, eventId),
+        eq(notificationDeliveryClaims.userId, lease.userId),
+        eq(notificationDeliveryClaims.channel, channel),
+        eq(notificationDeliveryClaims.leaseId, lease.leaseId),
+        isNull(notificationDeliveryClaims.completedAt),
+      ),
+    )
+    .returning({ id: notificationDeliveryClaims.id });
+  return rows.length === 1;
+}
+
+async function releaseOutboundDelivery(
+  ctx: ServiceContext,
+  eventId: string,
+  channel: OutboundNotificationChannel,
+  lease: DeliveryLease,
+  error: Error,
+  completedTargets = lease.completedTargets,
+): Promise<void> {
+  await ctx.db
+    .update(notificationDeliveryClaims)
+    .set({
+      leaseUntil: ctx.clock.now(),
+      lastError: error.message.slice(0, 2_000),
+      completedTargets,
+    })
+    .where(
+      and(
+        eq(notificationDeliveryClaims.eventId, eventId),
+        eq(notificationDeliveryClaims.userId, lease.userId),
+        eq(notificationDeliveryClaims.channel, channel),
+        eq(notificationDeliveryClaims.leaseId, lease.leaseId),
+        isNull(notificationDeliveryClaims.completedAt),
+      ),
+    );
+}
+
+function busyDeliveryError(channel: OutboundNotificationChannel, userIds: string[]): Error {
+  return new Error(`${channel} delivery lease still active for ${userIds.join(", ")}`);
+}
+
+function staleDeliveryError(channel: OutboundNotificationChannel, userId: string): Error {
+  return new Error(`${channel} delivery lease changed while sending to ${userId}`);
+}
+
+const EXPO_RECEIPT_INITIAL_DELAY_MS = 15 * 60 * 1_000;
+const EXPO_RECEIPT_RETRY_DELAY_MS = 5 * 60 * 1_000;
+const EXPO_RECEIPT_TTL_MS = 24 * 60 * 60 * 1_000;
+const EXPO_RECEIPT_SWEEP_LIMIT = 300;
+
+/**
+ * Send the pending device targets for the acquired per-user push leases.
+ * Terminal token progress is persisted on the delivery row, so a partial
+ * Expo chunk failure can release the user for retry without resending earlier
+ * accepted chunks. Returns retryable failures after updating every user.
+ */
+async function sendPush(
+  ctx: ServiceContext,
+  eventId: string,
+  leases: Map<string, DeliveryLease>,
+  deliveries: Array<{ userId: string; message: OutboundPush }>,
+): Promise<Error[]> {
+  const failures: Error[] = [];
+  const pending = deliveries.filter(({ userId, message }) => {
+    const lease = leases.get(userId);
+    return lease !== undefined && !lease.completedTargets.includes(message.to);
+  });
+
+  const pendingByUser = new Map<string, OutboundPush[]>();
+  for (const delivery of pending) {
+    pendingByUser.set(delivery.userId, [
+      ...(pendingByUser.get(delivery.userId) ?? []),
+      delivery.message,
+    ]);
+  }
+
+  // A retry can find that every current device was already accepted in an
+  // earlier partial attempt (or that the remaining token was removed).
+  for (const lease of leases.values()) {
+    if ((pendingByUser.get(lease.userId)?.length ?? 0) > 0) continue;
+    if (!(await completeOutboundDelivery(ctx, eventId, "push", lease))) {
+      failures.push(staleDeliveryError("push", lease.userId));
+    }
+  }
+  if (pending.length === 0) return failures;
+
+  let outcome: Awaited<ReturnType<ServiceContext["integrations"]["push"]["send"]>>;
   try {
-    const outcome = await ctx.integrations.push.send(messages);
+    outcome = await ctx.integrations.push.send(pending.map((delivery) => delivery.message));
+  } catch (err) {
+    const failure = err instanceof Error ? err : new Error(String(err));
+    for (const lease of leases.values()) {
+      if (!pendingByUser.has(lease.userId)) continue;
+      await releaseOutboundDelivery(ctx, eventId, "push", lease, failure);
+    }
+    return [failure];
+  }
+
+  try {
+    // Receipt mappings no longer FK the live token table, so a concurrent
+    // sign-out/prune cannot abort persistence of every other valid ticket.
+    if (outcome.receiptTickets.length > 0) {
+      const sentAt = ctx.clock.now();
+      await ctx.db
+        .insert(pushReceiptTickets)
+        .values(
+          outcome.receiptTickets.map((ticket) => ({
+            receiptId: ticket.receiptId,
+            token: ticket.token,
+            availableAt: new Date(sentAt.getTime() + EXPO_RECEIPT_INITIAL_DELAY_MS),
+            expiresAt: new Date(sentAt.getTime() + EXPO_RECEIPT_TTL_MS),
+          })),
+        )
+        .onConflictDoNothing({ target: pushReceiptTickets.receiptId });
+    }
     if (outcome.invalidTokens.length > 0) {
       await ctx.db.delete(pushTokens).where(inArray(pushTokens.token, outcome.invalidTokens));
+      await ctx.db
+        .delete(pushReceiptTickets)
+        .where(inArray(pushReceiptTickets.token, outcome.invalidTokens));
     }
   } catch (err) {
-    console.error("[notifier] push send failed", err);
+    // The provider has already accepted some targets. Keep the leases until
+    // expiry rather than immediately duplicating them; pg-boss will retry and
+    // the active-lease path keeps that retry alive.
+    return [err instanceof Error ? err : new Error(String(err))];
   }
+
+  const processed = new Set(outcome.processedTokens);
+  const retry = new Set(outcome.retryTokens);
+  for (const [userId, messages] of pendingByUser) {
+    const lease = leases.get(userId)!;
+    const terminal = messages
+      .map((message) => message.to)
+      .filter((token) => processed.has(token) && !retry.has(token));
+    const completedTargets = [...new Set([...lease.completedTargets, ...terminal])];
+    const hasRetry = messages.some(
+      (message) => retry.has(message.to) || !processed.has(message.to),
+    );
+    if (hasRetry) {
+      const failure = new Error(outcome.error ?? `push provider left targets unsent for ${userId}`);
+      await releaseOutboundDelivery(ctx, eventId, "push", lease, failure, completedTargets);
+      failures.push(failure);
+    } else if (!(await completeOutboundDelivery(ctx, eventId, "push", lease, completedTargets))) {
+      failures.push(staleDeliveryError("push", userId));
+    }
+  }
+  return failures;
+}
+
+/**
+ * Process the durable Expo receipt queue. Available terminal receipts are
+ * removed, DeviceNotRegistered tokens are pruned (cascading their remaining
+ * tickets), and omitted/not-yet-ready receipt ids are retried on a later tick.
+ * Tickets older than Expo's 24-hour retention window are discarded.
+ */
+export async function processPendingPushReceipts(
+  ctx: ServiceContext,
+  limit = EXPO_RECEIPT_SWEEP_LIMIT,
+): Promise<{ checked: number; processed: number; pruned: number; expired: number }> {
+  const now = ctx.clock.now();
+  const expired = await ctx.db
+    .delete(pushReceiptTickets)
+    .where(lte(pushReceiptTickets.expiresAt, now))
+    .returning({ receiptId: pushReceiptTickets.receiptId });
+
+  const due = await ctx.db.query.pushReceiptTickets.findMany({
+    where: lte(pushReceiptTickets.availableAt, now),
+    orderBy: (t, { asc }) => asc(t.availableAt),
+    limit,
+  });
+  if (due.length === 0 || !ctx.integrations.push.checkReceipts) {
+    return { checked: 0, processed: 0, pruned: 0, expired: expired.length };
+  }
+
+  const outcome = await ctx.integrations.push.checkReceipts(
+    due.map((ticket) => ({ receiptId: ticket.receiptId, token: ticket.token })),
+  );
+  const invalidTokens = [...new Set(outcome.invalidTokens)];
+  if (invalidTokens.length > 0) {
+    await ctx.db.delete(pushTokens).where(inArray(pushTokens.token, invalidTokens));
+    await ctx.db.delete(pushReceiptTickets).where(inArray(pushReceiptTickets.token, invalidTokens));
+  }
+
+  const processedIds = [...new Set(outcome.processedReceiptIds)];
+  if (processedIds.length > 0) {
+    await ctx.db
+      .delete(pushReceiptTickets)
+      .where(inArray(pushReceiptTickets.receiptId, processedIds));
+  }
+
+  const processed = new Set(processedIds);
+  const missingIds = due
+    .map((ticket) => ticket.receiptId)
+    .filter((receiptId) => !processed.has(receiptId));
+  if (missingIds.length > 0) {
+    await ctx.db
+      .update(pushReceiptTickets)
+      .set({
+        availableAt: new Date(now.getTime() + EXPO_RECEIPT_RETRY_DELAY_MS),
+        lastCheckedAt: now,
+        attempts: sql`${pushReceiptTickets.attempts} + 1`,
+      })
+      .where(inArray(pushReceiptTickets.receiptId, missingIds));
+  }
+
+  return {
+    checked: due.length,
+    processed: processedIds.length,
+    pruned: invalidTokens.length,
+    expired: expired.length,
+  };
 }
 
 /**
  * The push `data` payload: the same deep-link anchor the in-app row carries
- * ({ schemeId, category, related }), so the app's tap handler can route with
- * the shared notification-target resolver.
+ * ({ schemeId, category, related, notificationId }), so the app's tap handler
+ * can route and mark the matching in-app row read in one interaction.
  */
 function pushData(
   schemeId: string | null,
   category: string,
   related: { type: string; id: string } | null,
+  notificationId: string | null = null,
 ): Record<string, unknown> {
-  return { schemeId, category, related };
+  return { schemeId, category, related, notificationId };
+}
+
+async function notificationIdsByDedupeKey(
+  ctx: ServiceContext,
+  dedupeKeys: string[],
+): Promise<Map<string, string>> {
+  const unique = [...new Set(dedupeKeys)];
+  if (unique.length === 0) return new Map();
+  const rows = await ctx.db
+    .select({ id: notifications.id, dedupeKey: notifications.dedupeKey })
+    .from(notifications)
+    .where(inArray(notifications.dedupeKey, unique));
+  return new Map(rows.flatMap((row) => (row.dedupeKey ? [[row.dedupeKey, row.id] as const] : [])));
+}
+
+function throwDeliveryFailures(failures: Error[]): void {
+  if (failures.length === 0) return;
+  throw new AggregateError(
+    failures,
+    `notifier delivery incomplete (${failures.length} failure(s)): ${failures
+      .map((failure) => failure.message)
+      .join("; ")}`,
+  );
 }
 
 /**
@@ -243,10 +581,9 @@ function pushData(
  * (email/SMS through the comms log). Returns the count of in-app rows actually
  * written (the historical meaning of `created` — a redelivered event returns 0).
  *
- * Idempotency gate: an in-app recipient whose bell insert was absorbed by the
- * dedupe key was already delivered by an earlier attempt of this same event,
- * so their email/SMS/push are skipped too. (A recipient who opted OUT of
- * in-app has no token; their email/SMS stay best-effort.)
+ * Each outbound channel has its own durable claim, independent of whether the
+ * user kept the in-app channel enabled. This also avoids one channel's choice
+ * or failure changing another channel's idempotency.
  */
 async function deliver(
   ctx: ServiceContext,
@@ -271,51 +608,100 @@ async function deliver(
     dedupeKey: (userId) => `${content.eventId}:${userId}`,
   });
 
-  const inAppSet = new Set(resolved.inApp);
-  const fresh = new Set(created.map((n) => n.userId).filter((id): id is string => id !== null));
-  const alreadyDelivered = (userId: string) => inAppSet.has(userId) && !fresh.has(userId);
+  const failures: Error[] = [];
 
   if (content.email) {
+    const acquired = await acquireOutboundDeliveries(
+      ctx,
+      content.eventId,
+      resolved.email.map((recipient) => recipient.userId),
+      "email",
+    );
+    if (acquired.busyUserIds.length > 0) {
+      failures.push(busyDeliveryError("email", acquired.busyUserIds));
+    }
     for (const r of resolved.email) {
-      if (alreadyDelivered(r.userId)) continue;
-      await sendNotifierEmail(ctx, {
+      const lease = acquired.leases.get(r.userId);
+      if (!lease) continue;
+      const error = await sendNotifierEmail(ctx, {
         schemeId: content.schemeId,
         notificationType: content.notificationType,
         recipient: r,
         spec: content.email,
         related: content.inApp.related,
       });
+      if (error) {
+        await releaseOutboundDelivery(ctx, content.eventId, "email", lease, error);
+        failures.push(error);
+      } else if (!(await completeOutboundDelivery(ctx, content.eventId, "email", lease))) {
+        failures.push(staleDeliveryError("email", r.userId));
+      }
     }
   }
 
   if (content.smsBody) {
+    const acquired = await acquireOutboundDeliveries(
+      ctx,
+      content.eventId,
+      resolved.sms.map((recipient) => recipient.userId),
+      "sms",
+    );
+    if (acquired.busyUserIds.length > 0) {
+      failures.push(busyDeliveryError("sms", acquired.busyUserIds));
+    }
     for (const r of resolved.sms) {
-      if (alreadyDelivered(r.userId)) continue;
-      await sendNotifierSms(ctx, {
+      const lease = acquired.leases.get(r.userId);
+      if (!lease) continue;
+      const error = await sendNotifierSms(ctx, {
         schemeId: content.schemeId,
         notificationType: content.notificationType,
         recipient: r,
         body: content.smsBody,
         related: content.inApp.related,
       });
+      if (error) {
+        await releaseOutboundDelivery(ctx, content.eventId, "sms", lease, error);
+        failures.push(error);
+      } else if (!(await completeOutboundDelivery(ctx, content.eventId, "sms", lease))) {
+        failures.push(staleDeliveryError("sms", r.userId));
+      }
     }
   }
 
-  // Push mirrors the in-app content — every registered device of each
-  // recipient who kept the push channel on (redelivered events skip, same
-  // gate as email/SMS).
-  await sendPush(
+  // Push mirrors the in-app content. Resolve ids from the durable bell rows,
+  // not only `created`, so a failed push retry still carries mark-read data.
+  const pushUserIds = [...new Set(resolved.push.map((recipient) => recipient.userId))];
+  const bellIds = await notificationIdsByDedupeKey(
     ctx,
-    resolved.push
-      .filter((r) => !alreadyDelivered(r.userId))
-      .map((r) => ({
-        to: r.token,
-        title: content.inApp.title,
-        body: content.inApp.body,
-        data: pushData(content.schemeId, content.inApp.category, content.inApp.related ?? null),
+    pushUserIds.map((userId) => `${content.eventId}:${userId}`),
+  );
+  const acquiredPush = await acquireOutboundDeliveries(ctx, content.eventId, pushUserIds, "push");
+  if (acquiredPush.busyUserIds.length > 0) {
+    failures.push(busyDeliveryError("push", acquiredPush.busyUserIds));
+  }
+  failures.push(
+    ...(await sendPush(
+      ctx,
+      content.eventId,
+      acquiredPush.leases,
+      resolved.push.map((r) => ({
+        userId: r.userId,
+        message: {
+          to: r.token,
+          title: content.inApp.title,
+          body: content.inApp.body,
+          data: pushData(
+            content.schemeId,
+            content.inApp.category,
+            content.inApp.related ?? null,
+            bellIds.get(`${content.eventId}:${r.userId}`) ?? null,
+          ),
+        },
       })),
+    )),
   );
 
+  throwDeliveryFailures(failures);
   return created.length;
 }
 
@@ -465,7 +851,6 @@ async function handleOrgObligationDue(
     byScheme.set(t.schemeId, [...(byScheme.get(t.schemeId) ?? []), t.userId]);
   }
   let created = 0;
-  const fresh = new Set<string>();
   for (const [schemeId, userIds] of byScheme) {
     const rows = await notifyUsers(
       ctx,
@@ -475,11 +860,7 @@ async function handleOrgObligationDue(
       { dedupeKey: (userId) => `${event.id}:${schemeId}:${userId}` },
     );
     created += rows.length;
-    for (const row of rows) {
-      if (row.userId) fresh.add(row.userId);
-    }
   }
-  const alreadyDelivered = (userId: string) => inAppAllowed.has(userId) && !fresh.has(userId);
 
   // Anchor each admin's CTA (and correspondence-log scheme) to a scheme they
   // administer under this org.
@@ -487,14 +868,30 @@ async function handleOrgObligationDue(
   for (const t of targets) {
     if (!anchorScheme.has(t.userId)) anchorScheme.set(t.userId, t.schemeId);
   }
+  const failures: Error[] = [];
 
   // Email: once per distinct admin who kept email on, audited + isolated.
+  const acquiredEmail = await acquireOutboundDeliveries(
+    ctx,
+    event.id,
+    resolved.email.map((recipient) => recipient.userId),
+    "email",
+  );
+  if (acquiredEmail.busyUserIds.length > 0) {
+    failures.push(busyDeliveryError("email", acquiredEmail.busyUserIds));
+  }
   for (const r of resolved.email) {
-    if (alreadyDelivered(r.userId)) continue;
+    const lease = acquiredEmail.leases.get(r.userId);
+    if (!lease) continue;
     const schemeId = anchorScheme.get(r.userId);
-    if (!schemeId) continue;
+    if (!schemeId) {
+      const error = new Error(`org compliance email has no anchor scheme for ${r.userId}`);
+      await releaseOutboundDelivery(ctx, event.id, "email", lease, error);
+      failures.push(error);
+      continue;
+    }
     const managerUrl = `${emailBrand.urls.app}/schemes/${schemeId}/manager`;
-    await sendNotifierEmail(ctx, {
+    const error = await sendNotifierEmail(ctx, {
       schemeId,
       notificationType: "compliance.obligation.due",
       recipient: r,
@@ -518,37 +915,87 @@ async function handleOrgObligationDue(
         },
       },
     });
+    if (error) {
+      await releaseOutboundDelivery(ctx, event.id, "email", lease, error);
+      failures.push(error);
+    } else if (!(await completeOutboundDelivery(ctx, event.id, "email", lease))) {
+      failures.push(staleDeliveryError("email", r.userId));
+    }
   }
 
   // SMS: once per distinct admin who opted in and has a phone on file.
+  const acquiredSms = await acquireOutboundDeliveries(
+    ctx,
+    event.id,
+    resolved.sms.map((recipient) => recipient.userId),
+    "sms",
+  );
+  if (acquiredSms.busyUserIds.length > 0) {
+    failures.push(busyDeliveryError("sms", acquiredSms.busyUserIds));
+  }
   for (const r of resolved.sms) {
-    if (alreadyDelivered(r.userId)) continue;
+    const lease = acquiredSms.leases.get(r.userId);
+    if (!lease) continue;
     const schemeId = anchorScheme.get(r.userId);
-    if (!schemeId) continue;
-    await sendNotifierSms(ctx, {
+    if (!schemeId) {
+      const error = new Error(`org compliance SMS has no anchor scheme for ${r.userId}`);
+      await releaseOutboundDelivery(ctx, event.id, "sms", lease, error);
+      failures.push(error);
+      continue;
+    }
+    const error = await sendNotifierSms(ctx, {
       schemeId,
       notificationType: "compliance.obligation.due",
       recipient: r,
       body: `GoodStrata: ${title}`,
       related,
     });
+    if (error) {
+      await releaseOutboundDelivery(ctx, event.id, "sms", lease, error);
+      failures.push(error);
+    } else if (!(await completeOutboundDelivery(ctx, event.id, "sms", lease))) {
+      failures.push(staleDeliveryError("sms", r.userId));
+    }
   }
 
   // Push: every registered device of each opted-in admin, anchored (like the
   // email CTA) to a scheme they administer so the tap has somewhere to land.
-  await sendPush(
-    ctx,
-    resolved.push.map((r) => ({
-      to: r.token,
-      title,
-      body,
-      data: pushData(anchorScheme.get(r.userId) ?? null, "general", {
-        type: "compliance_obligation",
-        id: payload.obligationId,
+  const pushUserIds = [...new Set(resolved.push.map((recipient) => recipient.userId))];
+  const orgBellKeys = pushUserIds.flatMap((userId) => {
+    const schemeId = anchorScheme.get(userId);
+    return schemeId ? [`${event.id}:${schemeId}:${userId}`] : [];
+  });
+  const bellIds = await notificationIdsByDedupeKey(ctx, orgBellKeys);
+  const acquiredPush = await acquireOutboundDeliveries(ctx, event.id, pushUserIds, "push");
+  if (acquiredPush.busyUserIds.length > 0) {
+    failures.push(busyDeliveryError("push", acquiredPush.busyUserIds));
+  }
+  failures.push(
+    ...(await sendPush(
+      ctx,
+      event.id,
+      acquiredPush.leases,
+      resolved.push.map((r) => {
+        const schemeId = anchorScheme.get(r.userId) ?? null;
+        return {
+          userId: r.userId,
+          message: {
+            to: r.token,
+            title,
+            body,
+            data: pushData(
+              schemeId,
+              "general",
+              { type: "compliance_obligation", id: payload.obligationId },
+              schemeId ? (bellIds.get(`${event.id}:${schemeId}:${r.userId}`) ?? null) : null,
+            ),
+          },
+        };
       }),
-    })),
+    )),
   );
 
+  throwDeliveryFailures(failures);
   return { created };
 }
 
@@ -637,7 +1084,7 @@ export async function handleEventForNotifications(
       // The AI chair thinks discussion is done — nudge the officers to run the
       // binding close/tally themselves. Bell-only: it is a live-meeting prompt,
       // not correspondence.
-      const payload = event.payload as { motionId: string; title: string };
+      const payload = event.payload as { motionId: string; meetingId: string; title: string };
       const committee = await userIdsWithRoles(ctx, schemeId, COMMITTEE_NOTIFY_ROLES);
       const created = await deliver(ctx, {
         eventId: event.id,
@@ -648,7 +1095,10 @@ export async function handleEventForNotifications(
           title: `Motion ready to close: ${payload.title}`,
           body: "The AI chair suggests discussion is finished. Close the motion to tally the votes.",
           category: "meeting",
-          related: { type: "motion", id: payload.motionId },
+          // The native meeting detail owns motions. Anchor the parent meeting
+          // so a tap opens the live agenda instead of focusing an unrelated
+          // decision id.
+          related: { type: "meeting", id: payload.meetingId },
         },
       });
       return { created };
@@ -686,7 +1136,7 @@ export async function handleEventForNotifications(
           intro: `Levy notice ${payload.noticeNumber} has been issued.`,
           body: `${amountLine} Open your levies to view the notice and payment details.`,
           ctaLabel: "View levy notice",
-          url: schemeUrl(schemeId, "levies"),
+          url: schemeUrl(schemeId, "finance"),
         }),
         smsBody: `GoodStrata: levy notice ${payload.noticeNumber} — ${amountLine}`,
       });
@@ -724,7 +1174,7 @@ export async function handleEventForNotifications(
           intro: title,
           body: `${body} Open arrears to review the ledger and next steps.`,
           ctaLabel: "Review arrears",
-          url: schemeUrl(schemeId, "arrears"),
+          url: schemeUrl(schemeId, "finance"),
         }),
         smsBody: `GoodStrata: ${title} — ${body}`,
       });
@@ -967,7 +1417,7 @@ export async function handleEventForNotifications(
           intro: body,
           body: "Open your messages to read it and reply. The message itself stays in the app.",
           ctaLabel: "Open messages",
-          url: schemeUrl(schemeId, "messages"),
+          url: schemeUrl(schemeId, "community"),
         }),
         smsBody: `GoodStrata: ${body}`,
       });
@@ -1156,7 +1606,7 @@ export async function handleEventForNotifications(
               .map((p) => p.trim())
               .filter(Boolean)
               .map(paragraph),
-            cta: { label: "Open announcements", url: schemeUrl(schemeId, "announcements") },
+            cta: { label: "Open announcements", url: schemeUrl(schemeId, "community") },
           },
         },
       });
@@ -1329,7 +1779,7 @@ export async function handleEventForNotifications(
             intro: ownerBody,
             body: "Open your levies to see the receipt and your lot's up-to-date balance.",
             ctaLabel: "View your levies",
-            url: schemeUrl(schemeId, "levies"),
+            url: schemeUrl(schemeId, "finance"),
           }),
           smsBody: `GoodStrata: payment of ${amount} received. Thank you.`,
         });
@@ -1392,7 +1842,11 @@ export async function handleEventForNotifications(
           title,
           body,
           category: "maintenance",
-          related: { type: "work_order", id: payload.workOrderId },
+          // The requester can read their own maintenance request on every
+          // client, while the work-order register is an officer surface. Link
+          // the completion notice to the parent request so an owner tap lands
+          // on the completed job they originally reported.
+          related: { type: "maintenance_request", id: request.id },
         },
         email: genericEmail({
           subject: title,

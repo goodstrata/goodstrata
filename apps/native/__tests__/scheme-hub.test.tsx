@@ -24,8 +24,12 @@ jest.mock("react-native-safe-area-context", () => {
   const React = require("react");
   const { View } = require("react-native");
   return {
-    SafeAreaView: ({ children, ...p }: any) => React.createElement(View, p, children),
-    SafeAreaProvider: ({ children }: any) => children,
+    SafeAreaView: ({
+      children,
+      ...p
+    }: { children?: import("react").ReactNode } & Record<string, unknown>) =>
+      React.createElement(View, p, children),
+    SafeAreaProvider: ({ children }: { children?: import("react").ReactNode }) => children,
     useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
   };
 });
@@ -35,7 +39,13 @@ import { useQuery } from "@tanstack/react-query";
 const mockUseQuery = useQuery as unknown as jest.Mock;
 
 const overviewData = {
-  scheme: { id: "s1", name: "Marina Views", planOfSubdivision: "PS 543921K", tier: 2, status: "active" },
+  scheme: {
+    id: "s1",
+    name: "Marina Views",
+    planOfSubdivision: "PS 543921K",
+    tier: 2,
+    status: "active",
+  },
   glance: { lots: 12, people: 20, members: 12 },
   finance: {
     hasBudget: true,
@@ -104,12 +114,15 @@ describe("SchemeHub — role-gated navigation", () => {
     expect(screen.queryByText("Finance")).toBeNull();
   });
 
-  it("hides Decisions from a committee member (they get the owner view)", async () => {
+  it("shows Decisions to a committee member without exposing the officer register", async () => {
     seed(["committee_member"]);
     await render(<SchemeHub />);
 
-    expect(screen.queryByText("Decisions")).toBeNull();
+    expect(screen.getByText("Decisions")).toBeOnTheScreen();
     expect(screen.getByText("What I owe")).toBeOnTheScreen();
+    expect(screen.queryByText("Finance")).toBeNull();
+    expect(screen.queryByText("Compliance")).toBeNull();
+    expect(screen.queryByText("Lots")).toBeNull();
   });
 
   it("shows Decisions and the full finance register to an officer", async () => {

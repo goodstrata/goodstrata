@@ -223,6 +223,63 @@ describe("acceptInvite", () => {
     ).rejects.toMatchObject({ code: "INVALID_INVITE", status: 410 });
   });
 
+  it("refuses a different signed-in email without consuming the invite", async () => {
+    const { person } = await makeInvitee("imani");
+    const { token } = await issueInvite(person.id);
+    const wrongUserId = "user-imani-wrong-account";
+    await tdb.db.insert(users).values({
+      id: wrongUserId,
+      name: "Wrong account",
+      email: "someone-else@example.com",
+    });
+
+    await expect(
+      invitesService.acceptInvite(ctxAt(NOW, userActor(wrongUserId)), token),
+    ).rejects.toMatchObject({
+      code: "INVITE_EMAIL_MISMATCH",
+      status: 403,
+      message: "Sign in as imani@example.com to accept this invite",
+    });
+
+    // The guard runs before the token is burned or either relationship is
+    // written, so the addressed recipient can still accept it later.
+    await expect(invitesService.previewInvite(ctxAt(NOW), token)).resolves.toMatchObject({
+      email: "imani@example.com",
+    });
+    const linked = await tdb.db.query.people.findFirst({ where: eq(people.id, person.id) });
+    expect(linked?.userId).toBeNull();
+    const membershipsForWrongUser = await tdb.db.query.memberships.findMany({
+      where: and(eq(memberships.schemeId, schemeId), eq(memberships.userId, wrongUserId)),
+    });
+    expect(membershipsForWrongUser).toHaveLength(0);
+  });
+
+  it("accepts the addressed account when email casing differs", async () => {
+    const person = await peopleService.createPerson(ctxAt(NOW), schemeId, {
+      givenName: "Jules",
+      email: "Jules.Owner@Example.com",
+    });
+    const { token } = await issueInvite(person.id);
+    const userId = "user-jules-normalized-email";
+    await tdb.db.insert(users).values({
+      id: userId,
+      name: "Jules Owner",
+      email: "jules.owner@example.com",
+    });
+
+    await expect(
+      invitesService.acceptInvite(ctxAt(NOW, userActor(userId)), token),
+    ).resolves.toEqual({ schemeId });
+
+    const linked = await tdb.db.query.people.findFirst({ where: eq(people.id, person.id) });
+    expect(linked?.userId).toBe(userId);
+    const rows = await tdb.db.query.memberships.findMany({
+      where: and(eq(memberships.schemeId, schemeId), eq(memberships.userId, userId)),
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ role: "owner", endedOn: null });
+  });
+
   it("does not duplicate an open membership when re-invited with the same role", async () => {
     const { person, userId } = await makeInvitee("gus");
     const first = await issueInvite(person.id);

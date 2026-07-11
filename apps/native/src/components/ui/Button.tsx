@@ -1,5 +1,12 @@
-import { ReactNode, useState } from "react";
-import { ActivityIndicator, LayoutChangeEvent, Text, StyleSheet, View, ViewStyle } from "react-native";
+import { type ReactNode, useState } from "react";
+import {
+  ActivityIndicator,
+  type LayoutChangeEvent,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
 import { radius, space, type } from "../../theme/tokens";
 import { useTheme } from "../../theme/useTheme";
 import { PressableScale } from "./PressableScale";
@@ -46,8 +53,9 @@ export function Button({
             borderWidth: StyleSheet.hairlineWidth,
             borderColor: theme.line,
           };
-  const labelColor = variant === "secondary" ? theme.text : theme.onAccent;
-  const spinnerColor = variant === "secondary" ? theme.muted : theme.onAccent;
+  const fillLabel = variant === "primary" ? theme.onPrimary : theme.onAccent;
+  const labelColor = variant === "secondary" ? theme.text : fillLabel;
+  const spinnerColor = variant === "secondary" ? theme.muted : fillLabel;
 
   return (
     <PressableScale
