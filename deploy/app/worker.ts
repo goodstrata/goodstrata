@@ -4,6 +4,11 @@ interface Env {
   APP: DurableObjectNamespace<GoodstrataApp>;
   // --- required secrets (wrangler secret put) ---
   DATABASE_URL: string; // Supabase session pooler, ?sslmode=require
+  // Supabase Root 2021 CA (inline PEM). Production verifies the DB TLS chain
+  // (client.ts fails closed), and Supabase's chain roots at their own CA — so
+  // without this pin every connection dies with SELF_SIGNED_CERT_IN_CHAIN and
+  // the container crash-loops at runMigrations before the port ever opens.
+  DB_SSL_CA: string;
   BETTER_AUTH_SECRET: string;
   // --- optional secrets: presence flips the matching provider on ---
   OPENROUTER_API_KEY?: string; // agents → local:qwen via OpenRouter
@@ -143,6 +148,7 @@ export class GoodstrataApp extends Container<Env> {
     super(ctx, env, {
       envVars: {
         DATABASE_URL: env.DATABASE_URL,
+        DB_SSL_CA: env.DB_SSL_CA,
         BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
         APP_URL,
         // The MCP resource server + protected-resource metadata host. The same
