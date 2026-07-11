@@ -30,7 +30,7 @@ function PageHeader({
       <div className="min-w-0 space-y-1">
         <Heading
           className={cn(
-            Heading === "h2" ? "font-display text-xl font-semibold tracking-tight" : "page-title",
+            Heading === "h2" ? "font-display text-2xl font-semibold tracking-tight" : "page-title",
           )}
         >
           {title}

@@ -22,6 +22,9 @@ export function schemeQueryOptions(schemeId: string) {
 export const OFFICER_ROLES = ["chair", "secretary", "treasurer", "manager_admin"];
 const COMMITTEE_ROLES = ["committee_member", "chair", "secretary", "treasurer"];
 
+/** Everyone who sits on the committee, plus the manager. Drives the full hub. */
+const COMMITTEE_VIEW_ROLES = [...COMMITTEE_ROLES, "manager_admin"];
+
 /** Roles the signed-in user holds on this scheme ([] while loading). */
 export function useSchemeRoles(schemeId: string): string[] {
   const { data } = useQuery(schemeQueryOptions(schemeId));
@@ -37,15 +40,19 @@ export function useIsOfficer(schemeId: string): boolean {
 }
 
 /**
- * True for a plain member — someone who holds a membership on this scheme but
- * no officer role (a committee_member gets this focused owner view). Drives the
- * focused owner presentation. Returns false while roles are still loading
- * (roles === []), so the officer layout is never flashed before the owner
+ * True for a plain resident — a member who does NOT sit on the committee.
+ * Drives the focused owner presentation.
+ *
+ * A committee member is NOT an owner viewer: they sit on the governing body, so
+ * they get the full hub (governance, finance, the registers). What they don't
+ * get is officer POWERS — those hang off useIsOfficer. Mirrors web's
+ * apps/web/src/lib/roles.ts. Returns false while roles are still loading
+ * (roles === []), so the committee layout is never flashed before the owner
  * layout resolves. Presentation only; the API still enforces access.
  */
 export function useIsOwnerView(schemeId: string): boolean {
   const roles = useSchemeRoles(schemeId);
-  return roles.length > 0 && !roles.some((r) => OFFICER_ROLES.includes(r));
+  return roles.length > 0 && !roles.some((r) => COMMITTEE_VIEW_ROLES.includes(r));
 }
 
 /** Mirrors core's rolesAllowedToDecide for a decision's decider tier. */

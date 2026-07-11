@@ -1,5 +1,4 @@
 /* GoodStrata — "The Registry" theme. Normative reference: docs/DESIGN.md */
-@import "@fontsource-variable/newsreader";
 @import "@fontsource-variable/public-sans";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
@@ -109,7 +108,9 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Newsreader Variable", ui-serif, Georgia, serif;
+  /* Display is the same face as the UI sans — the serif (Newsreader) was
+     retired. Kept as its own token so the display ramp stays a single knob. */
+  --font-display: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   /* dense label / metadata size — the app's default 'small label', sits
      between text-xs (12px) and text-sm (14px). Use text-13, never a raw pixel size. */
@@ -132,7 +133,7 @@
 }
 
 @utility page-title {
-  /* top-level display heading (h1) — the 28px-at-md hero ramp (DESIGN.md §4).
+  /* top-level display heading (h1) — the 32px-at-md hero ramp (DESIGN.md §4).
      Single knob for auth/onboarding hero titles and PageHeader. */
-  @apply font-display text-2xl font-bold tracking-tight md:text-[1.75rem];
+  @apply font-display text-3xl font-bold tracking-tight md:text-[2rem];
 }

@@ -18,6 +18,9 @@ export function schemeQueryOptions(schemeId: string) {
 export const OFFICER_ROLES = ["chair", "secretary", "treasurer", "manager_admin"];
 const COMMITTEE_ROLES = ["committee_member", "chair", "secretary", "treasurer"];
 
+/** Everyone who sits on the committee, plus the manager. Drives the full nav. */
+const COMMITTEE_VIEW_ROLES = [...COMMITTEE_ROLES, "manager_admin"];
+
 /** Roles the signed-in user holds on this scheme ([] while loading). */
 export function useSchemeRoles(schemeId: string): string[] {
   const { data } = useQuery(schemeQueryOptions(schemeId));
@@ -33,29 +36,32 @@ export function useIsOfficer(schemeId: string): boolean {
 }
 
 /**
- * True for a non-officer member — someone who holds a membership on this scheme
- * but no officer role. Drives the focused owner presentation (nav set +
- * landing). A committee member gets this focused view too, plus Decisions (see
- * useIsCommitteeMember). Returns false while roles are still loading
- * (roles === []), so the committee layout is never flashed before the owner
- * layout resolves. This is presentation only; the API still enforces access via
- * requireScope.
+ * True for a plain resident — someone who holds a membership on this scheme but
+ * does NOT sit on the committee. Drives the focused owner presentation (nav set
+ * + landing).
+ *
+ * A committee member is NOT an owner viewer: they sit on the governing body, so
+ * they get the full register (governance, finance, the registers) — deciding,
+ * meetings and grievances are their job, and they are notified to act on them.
+ * What they don't get is officer POWERS; those hang off useIsOfficer, and the
+ * API enforces them independently.
+ *
+ * Returns false while roles are still loading (roles === []), so the committee
+ * layout is never flashed before the owner layout resolves.
  */
 export function useIsOwnerView(schemeId: string): boolean {
   const roles = useSchemeRoles(schemeId);
-  return roles.length > 0 && !roles.some((r) => OFFICER_ROLES.includes(r));
+  return roles.length > 0 && !roles.some((r) => COMMITTEE_VIEW_ROLES.includes(r));
 }
 
 /**
- * True for a committee member who holds no officer role. They keep the focused
- * owner presentation, but deciding is their statutory job — they are notified
- * to vote, and the API lets them read and vote on committee-tier decisions
- * (requireSchemeMember + rolesAllowedToDecide). So the Decisions section is
- * added back to their nav. Mirrors the native hub's committee row.
+ * True for anyone who sits on the committee (a plain committee_member included)
+ * or manages the scheme. Use this to decide what a viewer may SEE — the
+ * governance registers are the committee's business. Use useIsOfficer to decide
+ * what they may DO; the API draws the same line.
  */
-export function useIsCommitteeMember(schemeId: string): boolean {
-  const roles = useSchemeRoles(schemeId);
-  return roles.includes("committee_member") && !roles.some((r) => OFFICER_ROLES.includes(r));
+export function useIsCommittee(schemeId: string): boolean {
+  return useSchemeRoles(schemeId).some((r) => COMMITTEE_VIEW_ROLES.includes(r));
 }
 
 /** Mirrors core's rolesAllowedToDecide for a decision's decider tier. */

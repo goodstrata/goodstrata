@@ -53,7 +53,7 @@ function RegistryPlate({
           <Name
             className={cn(
               "mt-0.5 truncate font-display font-bold tracking-tight",
-              compact ? "text-lg" : "text-2xl md:text-3xl",
+              compact ? "text-xl" : "text-3xl md:text-4xl",
             )}
           >
             {name}

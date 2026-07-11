@@ -272,15 +272,11 @@ export default function SchemeHub() {
     },
   ];
 
-  // A committee member keeps the resident-focused hub, but decisions are
-  // part of their statutory role. Reuse only that row from the officer index;
-  // finance admin, compliance management and the registers remain hidden.
-  const committeeDecisionLink = officerLinks.find((link) => link.key === "decisions");
-  const links = isOfficer
-    ? officerLinks
-    : isCommitteeMember && committeeDecisionLink
-      ? [committeeDecisionLink, ...ownerLinks]
-      : ownerLinks;
+  // Anyone on the committee gets the full hub — governance, finance and the
+  // registers are their job, not a privilege of office. Officer POWERS (issuing
+  // levies, running the grievance procedure, …) still hang off isOfficer inside
+  // each screen, and the API enforces them independently.
+  const links = isOfficer || isCommitteeMember ? officerLinks : ownerLinks;
 
   return (
     <Screen

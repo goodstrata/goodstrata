@@ -137,7 +137,17 @@ function RootLayout() {
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => void signOut()}>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      // Land on the home page rather than sitting on a now-
+                      // unauthorised screen. A full document load (not a router
+                      // navigate) also drops the React Query cache, so nothing
+                      // from the previous session survives into the next one.
+                      void signOut().finally(() => {
+                        window.location.href = "/";
+                      });
+                    }}
+                  >
                     <LogOut className="size-4" /> Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>

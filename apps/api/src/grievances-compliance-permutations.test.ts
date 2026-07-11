@@ -5,8 +5,9 @@
  * the contracts GrievancesTab and ComplianceTab lean on:
  *
  *   - any member lodges a complaint; only their own show in /complaints/mine,
- *   - the register + advance + breach notices are officer-gated (a forced
- *     committee_member/owner call gets 403, not a silent success),
+ *   - the committee READS the register (complaints + breach notices) but only
+ *     officers ACT on it — advance/issue/close stay officer-gated, and a forced
+ *     plain-owner register read gets 403, not a silent success,
  *   - zv() maps bad fields to 422 VALIDATION with zod issues (dialog fields),
  *   - state-machine conflicts (stale sheet, double close, double complete)
  *     come back 409 for the inline role=alert / toast.error paths.
@@ -171,18 +172,37 @@ const complaintBody = (subject: string, withRespondent = false) => ({
 // ---------------------------------------------------------------------------
 
 describe("role gating — grievance register", () => {
-  it("officer (chair) reads the register; owner and committee_member get 403", async () => {
+  it("officer and committee_member read the register; a plain owner gets 403", async () => {
     expect((await req(CHAIR, "GET", `/schemes/${schemeId}/complaints`)).status).toBe(200);
+
+    // The committee is the body the grievance procedure answers to, so it READS
+    // the register (and the breach-notice register with it).
+    expect((await req(COMMITTEE, "GET", `/schemes/${schemeId}/complaints`)).status).toBe(200);
+    expect((await req(COMMITTEE, "GET", `/schemes/${schemeId}/breach-notices`)).status).toBe(200);
 
     const owner = await req(OWNER, "GET", `/schemes/${schemeId}/complaints`);
     expect(owner.status).toBe(403);
     expect(owner.json.error.code).toBe("FORBIDDEN");
+  });
 
-    // Committee members are NOT grievance officers: the tab falls back to the
-    // owner "mine" view, and a forced register read is refused server-side.
-    const cm = await req(COMMITTEE, "GET", `/schemes/${schemeId}/complaints`);
-    expect(cm.status).toBe(403);
-    expect(cm.json.error.code).toBe("FORBIDDEN");
+  it("reading the register does not let a committee_member run the procedure", async () => {
+    const complaint = await req(
+      OWNER,
+      "POST",
+      `/schemes/${schemeId}/complaints`,
+      complaintBody("Committee member may not advance this"),
+    );
+    expect(complaint.status).toBe(201);
+
+    // Acting on a complaint stays officerOrAdmin, even though the read opened up.
+    const advance = await req(
+      COMMITTEE,
+      "POST",
+      `/schemes/${schemeId}/complaints/${complaint.json.complaint.id}/advance`,
+      { status: "under_review" },
+    );
+    expect(advance.status).toBe(403);
+    expect(advance.json.error.code).toBe("FORBIDDEN");
   });
 
   it("hides the scheme entirely from a non-member (404, not 403)", async () => {

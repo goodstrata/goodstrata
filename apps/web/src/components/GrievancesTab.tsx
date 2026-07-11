@@ -41,7 +41,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { useIsOfficer } from "@/lib/roles";
+import { useIsCommittee, useIsOfficer } from "@/lib/roles";
 import { useSheetSide } from "@/lib/use-sheet-side";
 import { cn } from "@/lib/utils";
 
@@ -193,7 +193,10 @@ function DeadlineClock({ complaint }: { complaint: Complaint }) {
 
 export function GrievancesTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
-  const isOfficer = useIsOfficer(schemeId);
+  // The committee READS the register (it is the body the procedure answers to);
+  // only officers ACT on it. The API draws the same line — committeeOrAdmin on
+  // the register reads, officerOrAdmin on every write.
+  const isCommittee = useIsCommittee(schemeId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const invalidate = () => {
@@ -211,7 +214,7 @@ export function GrievancesTab({ schemeId }: { schemeId: string }) {
         description="The owners corporation's approved dispute procedure (OC Act Part 10). Every complaint must be dealt with within 28 days."
         actions={<RaiseComplaintDialog schemeId={schemeId} onChange={invalidate} />}
       />
-      {isOfficer ? (
+      {isCommittee ? (
         <>
           <ComplaintRegister schemeId={schemeId} onOpen={setSelectedId} />
           <ComplaintDetailSheet
@@ -640,6 +643,8 @@ function ComplaintDetailBody({
   onChange: () => void;
 }) {
   const queryClient = useQueryClient();
+  // A committee member reads this sheet; only an officer runs the procedure.
+  const isOfficer = useIsOfficer(schemeId);
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["complaint", schemeId, complaintId],
     queryFn: async () =>
@@ -706,16 +711,25 @@ function ComplaintDetailBody({
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">{complaint.details}</p>
         </section>
 
-        <StatusControls schemeId={schemeId} complaint={complaint} onChanged={refresh} />
-
-        <IssueBreachNotice schemeId={schemeId} complaint={complaint} onChanged={refresh} />
+        {isOfficer && (
+          <>
+            <StatusControls schemeId={schemeId} complaint={complaint} onChanged={refresh} />
+            <IssueBreachNotice schemeId={schemeId} complaint={complaint} onChanged={refresh} />
+          </>
+        )}
 
         {breachNotices.length > 0 && (
           <section>
             <h3 className="mb-2 text-sm font-semibold">Breach notices</h3>
             <div className="space-y-2">
               {breachNotices.map((n) => (
-                <BreachNoticeRow key={n.id} schemeId={schemeId} notice={n} onChanged={refresh} />
+                <BreachNoticeRow
+                  key={n.id}
+                  schemeId={schemeId}
+                  notice={n}
+                  onChanged={refresh}
+                  canAct={isOfficer}
+                />
               ))}
             </div>
           </section>
@@ -746,10 +760,13 @@ function BreachNoticeRow({
   schemeId,
   notice,
   onChanged,
+  canAct,
 }: {
   schemeId: string;
   notice: BreachNotice;
   onChanged: () => void;
+  /** Officers close a notice out; a committee member reads it. */
+  canAct: boolean;
 }) {
   const close = useMutation({
     mutationFn: async (status: "rectified" | "escalated" | "withdrawn") =>
@@ -804,7 +821,7 @@ function BreachNoticeRow({
           {close.error.message}
         </p>
       )}
-      {notice.status === "issued" && (
+      {canAct && notice.status === "issued" && (
         <div className="mt-2 flex flex-wrap gap-2">
           <Button
             size="sm"

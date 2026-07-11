@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { Bell, BellOff, CheckCheck } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,6 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { formatDateTime } from "@/lib/format";
+import { sectionForNotification } from "@/lib/notificationTarget";
 import { cn } from "@/lib/utils";
 
 interface AppNotification {
@@ -20,6 +23,9 @@ interface AppNotification {
   createdAt: string;
   readAt?: string | null;
   read?: boolean | null;
+  /** Deep-link anchor written by the notifier: the entity this is about. */
+  related?: { type: string; id: string } | null;
+  category?: string | null;
 }
 
 /**
@@ -41,6 +47,8 @@ function isUnread(n: AppNotification): boolean {
 
 export function NotificationsBell({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
   const { data } = useQuery({
     queryKey: ["notifications", schemeId],
     queryFn: () => fetchNotifications(schemeId),
@@ -61,13 +69,28 @@ export function NotificationsBell({ schemeId }: { schemeId: string }) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["notifications", schemeId] }),
   });
 
+  /**
+   * Open the record the notice is about, and mark it read on the way. The read
+   * write is fire-and-forget: the navigation is what the reader asked for, so
+   * it must not wait on (or be lost to) the mutation.
+   */
+  function openNotification(n: AppNotification) {
+    if (isUnread(n)) markRead.mutate({ notificationId: n.id });
+    setOpen(false);
+    void navigate({
+      to: "/schemes/$schemeId",
+      params: { schemeId },
+      search: { section: sectionForNotification(n) },
+    });
+  }
+
   // Endpoint missing (pre-merge backend) — hide the feature entirely.
   if (data === null || data === undefined) return null;
 
   const unread = data.filter(isUnread);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -117,7 +140,7 @@ export function NotificationsBell({ schemeId }: { schemeId: string }) {
                 <li key={n.id}>
                   <button
                     type="button"
-                    onClick={() => isUnread(n) && markRead.mutate({ notificationId: n.id })}
+                    onClick={() => openNotification(n)}
                     className={cn(
                       "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors hover:bg-accent/50",
                       isUnread(n) && "bg-accent/40",

@@ -108,16 +108,16 @@ visible; do not repurpose patina for anything else.
 
 | Role | Face | Usage |
 | --- | --- | --- |
-| Display | **Newsreader** (variable, opsz+wght 500–600) | page titles, the Registry Plate, auth headline, big figures on stat cards. Restraint: never below 20 px, never for body or labels. |
+| Display | **Public Sans** (variable, wght 600–700) | page titles, the Registry Plate, auth headline, big figures on stat cards. Restraint: never below 20 px, never for body or labels. The Newsreader serif was retired — display is the sans, set larger and heavier, and `--font-display` stays a separate token so the ramp keeps one knob. |
 | UI / body | **Public Sans** (variable) | everything else. 14 px body, 13 px secondary, 16 px on mobile inputs (prevents iOS zoom). |
 | Registry mono | **IBM Plex Mono** (400/500/600) | money, lot numbers, plan numbers, event types, seq numbers, timestamps in feeds, CSV/code. Always `tabular-nums`. |
 
-Self-hosted via Fontsource (`@fontsource-variable/newsreader`,
-`@fontsource-variable/public-sans`, `@fontsource/ibm-plex-mono`). Tokens:
-`--font-display`, `--font-sans`, `--font-mono`.
+Self-hosted via Fontsource (`@fontsource-variable/public-sans`,
+`@fontsource/ibm-plex-mono`). Tokens: `--font-display`, `--font-sans`,
+`--font-mono`.
 
 Type scale (rem): 0.75 / 0.8125 / 0.875 / 1 / 1.125 / 1.375 / 1.75 / 2.25.
-Page title = `display 1.75/2.25`, card title = `sans 1rem/600`, small label =
+Page title = `display 1.875/2rem`, card title = `sans 1rem/600`, small label =
 `sans 0.75rem/500 muted`. Hierarchy is carried by size and weight — no
 mono-uppercase eyebrows; mono is reserved for figures and registry identifiers.
 

@@ -19,6 +19,15 @@ import { zv } from "../validate.js";
 const officerOrAdmin = requireRole("chair", "secretary", "treasurer");
 
 /**
+ * The committee is the body the grievance procedure answers to, so a committee
+ * member may READ the registers (complaints, breach notices) even though only
+ * officers may act on them. Running the procedure — advancing a complaint,
+ * issuing a breach notice, pulling the s 159 report — stays officerOrAdmin, as
+ * does the complainant/officer comment thread (THREAD_OFFICER_ROLES).
+ */
+const committeeOrAdmin = requireRole("chair", "secretary", "treasurer", "committee_member");
+
+/**
  * Officer verdict for the comment-thread endpoints. Middleware can't express
  * "complainant OR officer", so the service enforces it (non-participants —
  * the respondent included — get 404, never 403).
@@ -58,8 +67,9 @@ export function grievancesRoutes(deps: AppDeps) {
           complaints: await grievancesService.listMyComplaints(ctx, c.get("schemeId")),
         });
       })
-      // The grievance register and everything downstream is officer-only.
-      .get("/:schemeId/complaints", requireSchemeMember(deps), officerOrAdmin, async (c) => {
+      // The grievance register is readable by the committee; acting on it is
+      // officer-only (see committeeOrAdmin).
+      .get("/:schemeId/complaints", requireSchemeMember(deps), committeeOrAdmin, async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({
           complaints: await grievancesService.listComplaints(ctx, c.get("schemeId")),
@@ -68,7 +78,7 @@ export function grievancesRoutes(deps: AppDeps) {
       .get(
         "/:schemeId/complaints/:complaintId",
         requireSchemeMember(deps),
-        officerOrAdmin,
+        committeeOrAdmin,
         async (c) => {
           const ctx = deps.serviceContext(userActor(c.get("user").id));
           const detail = await grievancesService.getComplaintDetail(
@@ -136,7 +146,7 @@ export function grievancesRoutes(deps: AppDeps) {
         );
         return c.json(result);
       })
-      .get("/:schemeId/breach-notices", requireSchemeMember(deps), officerOrAdmin, async (c) => {
+      .get("/:schemeId/breach-notices", requireSchemeMember(deps), committeeOrAdmin, async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({
           breachNotices: await grievancesService.listBreachNotices(ctx, c.get("schemeId")),
