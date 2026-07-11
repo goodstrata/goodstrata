@@ -16,7 +16,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { api, unwrap } from "@/lib/api";
+import { ApiError, api, unwrap } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { canDecide, useSchemeRoles } from "@/lib/roles";
@@ -326,6 +326,11 @@ function ResolveButtons({
       toast.success("Decision recorded");
       onChange();
     },
+    onError: (e) => {
+      // 409 = already voted/resolved elsewhere — refetch so the card shows
+      // the recorded state instead of dead-ending on a retry.
+      if (e instanceof ApiError && e.status === 409) onChange();
+    },
   });
 
   return (
@@ -398,9 +403,9 @@ function VoteTallyView({ tally }: { tally: VoteTally }) {
 
 /**
  * Multi-voter tiers (committee, all owners) collect one vote per person.
- * `readOnly` shows the running tally to members who can't vote. Falls back
- * to the classic resolve buttons if the tally can't be loaded (resolving
- * casts the caller's vote through the same tally underneath).
+ * `readOnly` shows the running tally to members who can't vote. The vote
+ * buttons only render once the tally has confirmed the caller hasn't voted —
+ * an unavailable tally shows an error, never actions that might duplicate.
  */
 function CommitteeVotePanel({
   schemeId,
@@ -421,6 +426,7 @@ function CommitteeVotePanel({
     data: tally,
     isLoading,
     isError,
+    refetch,
   } = useQuery({
     queryKey: ["decision-votes", schemeId, decision.id],
     queryFn: async () =>
@@ -446,6 +452,14 @@ function CommitteeVotePanel({
       void queryClient.invalidateQueries({ queryKey: ["decision-votes", schemeId, decision.id] });
       onChange();
     },
+    onError: (e) => {
+      // 409 = already voted/resolved elsewhere — refetch so the panel shows
+      // the recorded vote instead of dead-ending on a retry.
+      if (e instanceof ApiError && e.status === 409) {
+        void queryClient.invalidateQueries({ queryKey: ["decision-votes", schemeId, decision.id] });
+        onChange();
+      }
+    },
   });
 
   if (readOnly) {
@@ -460,9 +474,10 @@ function CommitteeVotePanel({
   }
 
   if (isLoading) return <Skeleton className="h-16" />;
-  // Tally unavailable — fall back to the single approve/decline flow.
+  // Tally unavailable means the caller's vote state is unknown — never offer
+  // buttons they may already have used; surface the failure and retry instead.
   if (isError || !tally)
-    return <ResolveButtons schemeId={schemeId} decision={decision} onChange={onChange} />;
+    return <ErrorState message="Couldn't check your vote." onRetry={() => void refetch()} />;
 
   const myVote = tally.votes.find((v) => v.userId === session?.user?.id);
   // Custom option labels (e.g. "Acknowledge" / "Flag for discussion") ride on

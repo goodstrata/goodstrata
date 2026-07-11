@@ -69,6 +69,8 @@ interface Rfq {
   status: string;
   awardedQuoteId: string | null;
   decisionId: string | null;
+  /** Status of the linked award decision ("pending" = with the committee). */
+  decisionStatus: string | null;
   createdAt: string;
   quoteCount: number;
   requestTitle: string | null;
@@ -782,6 +784,9 @@ function RfqCard({
   const current = detail.data?.rfq ?? rfq;
   const quotes = detail.data?.quotes ?? [];
   const channels = detail.data?.channels ?? [];
+  // While an award decision is with the committee, nominating again is not on
+  // offer — the server would 409 it, and the committee already has a ballot.
+  const awardPending = current.decisionStatus === "pending";
 
   return (
     <Card style={{ backgroundColor: highlighted ? theme.accentSoft : theme.surface }}>
@@ -858,6 +863,12 @@ function RfqCard({
 
               <View style={{ marginTop: space(4), gap: space(3) }}>
                 <Text style={{ ...t.label, color: theme.muted }}>Quote comparison</Text>
+                {awardPending ? (
+                  <Text style={{ ...t.bodySmall, color: theme.muted }}>
+                    An award decision is with the committee — the quote is awarded once a majority
+                    approves it under Decisions.
+                  </Text>
+                ) : null}
                 {quotes.length === 0 ? (
                   <Text style={{ ...t.bodySmall, color: theme.muted }}>
                     {channels.some((channel) => channel.status !== "failed")
@@ -871,7 +882,9 @@ function RfqCard({
                       quote={quote}
                       divider={index < quotes.length - 1}
                       canNominate={
-                        QUOTABLE_STATUSES.has(current.status) && quote.status === "received"
+                        QUOTABLE_STATUSES.has(current.status) &&
+                        quote.status === "received" &&
+                        !awardPending
                       }
                       onNominate={() => setAwardQuote(quote)}
                     />

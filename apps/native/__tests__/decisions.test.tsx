@@ -7,7 +7,11 @@ jest.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
 }));
 
-jest.mock("../src/lib/api", () => ({ api: jest.fn(), apiPost: jest.fn() }));
+jest.mock("../src/lib/api", () => ({
+  api: jest.fn(),
+  apiPost: jest.fn(),
+  ApiError: class MockApiError extends Error {},
+}));
 jest.mock("../src/lib/auth", () => ({
   authClient: {
     useSession: () => ({ data: { user: { id: "current-user" } }, isPending: false }),
@@ -71,7 +75,11 @@ const baseDecision = {
   decidedByName: null,
 };
 
-function seed(decisions: Record<string, unknown>[], votes: unknown = undefined) {
+function seed(
+  decisions: Record<string, unknown>[],
+  votes: unknown = undefined,
+  voteQuery: Record<string, unknown> = {},
+) {
   mockUseQuery.mockImplementation((opts: { queryKey: readonly unknown[] }) => {
     const key = opts.queryKey;
     if (key[2] === "decisions") {
@@ -89,6 +97,7 @@ function seed(decisions: Record<string, unknown>[], votes: unknown = undefined) 
         isPending: false,
         isError: false,
         refetch: jest.fn(),
+        ...voteQuery,
       };
     }
     return {
@@ -133,6 +142,36 @@ describe("Decisions", () => {
     expect(screen.getAllByText(/engineer's report is clear/).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Proceed" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Return for quotes" })).toBeNull();
+  });
+
+  it("offers the vote buttons once the tally confirms no recorded vote", async () => {
+    seed([baseDecision], { votes: [], votesFor: 0, votesAgainst: 0, eligible: 4 });
+
+    await render(<DecisionsScreen />);
+
+    expect(screen.getByRole("button", { name: "Proceed" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Return for quotes" })).toBeOnTheScreen();
+  });
+
+  it("never offers vote buttons while the recorded-vote check is unavailable", async () => {
+    // The tally query failed (e.g. flaky network): the user may already have
+    // voted, so the actions must not be offered on an unknown state.
+    seed([baseDecision], undefined, { isError: true });
+
+    await render(<DecisionsScreen />);
+
+    expect(screen.queryByRole("button", { name: "Proceed" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Return for quotes" })).toBeNull();
+    expect(screen.getByText(/Couldn't check your recorded vote/)).toBeOnTheScreen();
+  });
+
+  it("never offers vote buttons while the recorded-vote check is still loading", async () => {
+    seed([baseDecision], undefined, { isPending: true });
+
+    await render(<DecisionsScreen />);
+
+    expect(screen.queryByRole("button", { name: "Proceed" })).toBeNull();
+    expect(screen.getByText(/Checking your recorded vote/)).toBeOnTheScreen();
   });
 
   it("opens resolved decisions with the chosen option, audit metadata, note and full context", async () => {

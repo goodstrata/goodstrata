@@ -35,7 +35,7 @@ import {
   useListEntering,
   useTheme,
 } from "../../../src/components";
-import { api, apiPost } from "../../../src/lib/api";
+import { ApiError, api, apiPost } from "../../../src/lib/api";
 import { authClient } from "../../../src/lib/auth";
 import { canDecide, schemeQueryOptions, useSchemeRoles } from "../../../src/lib/roles";
 
@@ -268,7 +268,19 @@ export default function DecisionsScreen() {
         queryClient.invalidateQueries({ queryKey: ["scheme", id, "overview"] });
       }
     },
-    onError: (_err, { decision, choice }) => {
+    onError: (err, { decision, choice }) => {
+      // 409 = the vote/decision already exists on the register (voted from
+      // another device, or resolved meanwhile). Retrying can never succeed —
+      // refetch so the card shows the recorded state instead.
+      if (err instanceof ApiError && err.status === 409) {
+        setSheetVisible(false);
+        setSheetError(null);
+        void queryClient.invalidateQueries({ queryKey: ["scheme", id, "decisions"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["scheme", id, "decision-votes", decision.id],
+        });
+        return;
+      }
       setSheetError(`Couldn't record “${choiceLabel(decision, choice)}” — try again.`);
     },
   });
@@ -553,7 +565,10 @@ function PendingDecisionCard({
             </Text>
           ) : null}
         </View>
-      ) : allowed && (!isMultiVoter || (!!currentUserId && !tallyQuery.isPending)) ? (
+      ) : allowed && (!isMultiVoter || (!!currentUserId && !!tally)) ? (
+        // Multi-voter tiers only offer the buttons once the server tally has
+        // confirmed there's no recorded vote — an errored check must never
+        // re-offer an action the user may already have taken.
         <View style={{ flexDirection: "row", gap: space(3), marginTop: space(4) }}>
           <View style={{ flex: 1 }}>
             <Button variant="secondary" label={declineLabel} full onPress={onDecline} />
@@ -565,7 +580,9 @@ function PendingDecisionCard({
       ) : (
         <Text style={[type.bodySmall, { color: theme.muted, marginTop: space(3) }]}>
           {allowed && isMultiVoter
-            ? "Checking your recorded vote…"
+            ? tallyQuery.isError
+              ? "Couldn't check your recorded vote — retrying…"
+              : "Checking your recorded vote…"
             : `This decision is assigned to ${humanise(decision.deciderRole ?? "the committee")}.`}
         </Text>
       )}

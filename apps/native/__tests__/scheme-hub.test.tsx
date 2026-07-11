@@ -114,15 +114,16 @@ describe("SchemeHub — role-gated navigation", () => {
     expect(screen.queryByText("Finance")).toBeNull();
   });
 
-  it("shows Decisions to a committee member without exposing the officer register", async () => {
+  it("gives a committee member the full register — governance is their job", async () => {
     seed(["committee_member"]);
     await render(<SchemeHub />);
 
     expect(screen.getByText("Decisions")).toBeOnTheScreen();
-    expect(screen.getByText("What I owe")).toBeOnTheScreen();
-    expect(screen.queryByText("Finance")).toBeNull();
-    expect(screen.queryByText("Compliance")).toBeNull();
-    expect(screen.queryByText("Lots")).toBeNull();
+    expect(screen.getByText("Finance")).toBeOnTheScreen();
+    expect(screen.getByText("Compliance")).toBeOnTheScreen();
+    expect(screen.getByText("Lots")).toBeOnTheScreen();
+    // They read the register as the committee, not as a resident.
+    expect(screen.queryByText("What I owe")).toBeNull();
   });
 
   it("shows Decisions and the full finance register to an officer", async () => {

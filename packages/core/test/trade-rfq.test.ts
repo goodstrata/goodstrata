@@ -225,11 +225,7 @@ describe("anonymization is enforced in code", () => {
     expect(after.status).toBe("published");
     expect(channels).toHaveLength(3);
     expect(channels.every((c) => c.status === "sent")).toBe(true);
-    expect(channels.map((c) => c.provider).sort()).toEqual([
-      "console",
-      "email_rfq",
-      "scheme_book",
-    ]);
+    expect(channels.map((c) => c.provider).sort()).toEqual(["console", "email_rfq", "scheme_book"]);
     const requests = await maintenanceService.listRequests(ctx(), schemeId);
     expect(requests.find((r) => r.id === request.id)!.status).toBe("quoting");
   });
@@ -340,12 +336,7 @@ describe("fees always surface (zero hidden margin)", () => {
     });
 
     // And the committee decision summary renders the fee line.
-    const { decisionId } = await tradeRfqService.requestAward(
-      ctx(),
-      schemeId,
-      rfq.id,
-      feeQuote.id,
-    );
+    const { decisionId } = await tradeRfqService.requestAward(ctx(), schemeId, rfq.id, feeQuote.id);
     const decisions = await decisionsService.listDecisions(ctx(), schemeId);
     const decision = decisions.find((d) => d.id === decisionId)!;
     expect(decision.summaryMd).toContain(
@@ -410,6 +401,47 @@ describe("award is impossible without an approved human decision", () => {
       where: eq(workOrders.quoteId, quote.id),
     });
     expect(orders).toHaveLength(0);
+  });
+
+  it("one nomination at a time: a second requestAward 409s while the first is with the committee", async () => {
+    const rfq = await newQuotingRfq();
+    const first = await tradeRfqService.recordQuote(ctx(), schemeId, rfq.id, {
+      contractorId,
+      amountCents: 110_000,
+      licenceConfirmed: true,
+      insuranceConfirmed: true,
+      platformFeeCents: 0,
+      referralFeeCents: 0,
+    });
+    const second = await tradeRfqService.recordQuote(ctx(), schemeId, rfq.id, {
+      contractorId,
+      amountCents: 90_000,
+      licenceConfirmed: true,
+      insuranceConfirmed: true,
+      platformFeeCents: 0,
+      referralFeeCents: 0,
+    });
+
+    const { decisionId } = await tradeRfqService.requestAward(ctx(), schemeId, rfq.id, first.id);
+
+    // The read shapes tell clients the award is with the committee…
+    const { rfq: pendingRead } = await tradeRfqService.getRfq(ctx(), schemeId, rfq.id);
+    expect(pendingRead.decisionStatus).toBe("pending");
+    const listed = await tradeRfqService.listRfqs(ctx(), schemeId);
+    expect(listed.find((r) => r.id === rfq.id)!.decisionStatus).toBe("pending");
+
+    // …and the service refuses to open a second live ballot.
+    await expect(
+      tradeRfqService.requestAward(ctx(), schemeId, rfq.id, second.id),
+    ).rejects.toMatchObject({ code: "AWARD_PENDING", status: 409 });
+
+    // A committee decline releases the lock: nomination reopens.
+    const c = ctx(userActor(managerUserId));
+    await decisionsService.resolveDecision(c, schemeId, decisionId, "decline", ["chair"]);
+    const { rfq: declinedRead } = await tradeRfqService.getRfq(ctx(), schemeId, rfq.id);
+    expect(declinedRead.decisionStatus).toBe("declined");
+    const renominated = await tradeRfqService.requestAward(ctx(), schemeId, rfq.id, second.id);
+    expect(renominated.decisionId).not.toBe(decisionId);
   });
 
   it("committee approval executes the award: work order on the existing rails, address revealed only now", async () => {

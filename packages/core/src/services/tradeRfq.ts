@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
   contractors,
+  decisions,
   lots,
   maintenanceRequests,
   memberships,
@@ -805,6 +806,22 @@ export async function requestAward(
   if (rfq.status !== "published" && rfq.status !== "quoting") {
     throw new DomainError("BAD_STATUS", `Cannot award a ${rfq.status} RFQ`, 409);
   }
+  // One nomination at a time: while an earlier award decision is still with
+  // the committee, a second one would put two live ballots on the register.
+  // A declined decision releases the lock so another quote can be nominated.
+  if (rfq.decisionId) {
+    const existing = await ctx.db.query.decisions.findFirst({
+      where: eq(decisions.id, rfq.decisionId),
+      columns: { status: true },
+    });
+    if (existing?.status === "pending") {
+      throw new DomainError(
+        "AWARD_PENDING",
+        "An award decision for this job is already with the committee",
+        409,
+      );
+    }
+  }
   const quote = await ctx.db.query.quotes.findFirst({
     where: and(eq(quotes.id, quoteId), eq(quotes.rfqId, rfqId), eq(quotes.schemeId, schemeId)),
   });
@@ -966,8 +983,11 @@ export async function listRfqs(ctx: ServiceContext, schemeId: string) {
   });
   if (rows.length === 0) return [];
 
-  // Denormalise what the list actually shows — one query each, no N+1.
-  const [quoteRows, requestRows] = await Promise.all([
+  // Denormalise what the list actually shows — one query each, no N+1. The
+  // linked decision's status rides along so clients can tell "award is with
+  // the committee" apart from "still open for nomination".
+  const decisionIds = rows.map((r) => r.decisionId).filter((id): id is string => id !== null);
+  const [quoteRows, requestRows, decisionRows] = await Promise.all([
     ctx.db.query.quotes.findMany({
       where: eq(quotes.schemeId, schemeId),
       columns: { id: true, rfqId: true },
@@ -976,17 +996,25 @@ export async function listRfqs(ctx: ServiceContext, schemeId: string) {
       where: eq(maintenanceRequests.schemeId, schemeId),
       columns: { id: true, title: true },
     }),
+    decisionIds.length > 0
+      ? ctx.db.query.decisions.findMany({
+          where: inArray(decisions.id, decisionIds),
+          columns: { id: true, status: true },
+        })
+      : Promise.resolve([]),
   ]);
   const quoteCounts = new Map<string, number>();
   for (const q of quoteRows) {
     if (q.rfqId) quoteCounts.set(q.rfqId, (quoteCounts.get(q.rfqId) ?? 0) + 1);
   }
   const requestTitles = new Map(requestRows.map((r) => [r.id, r.title]));
+  const decisionStatuses = new Map(decisionRows.map((d) => [d.id, d.status]));
 
   return rows.map((r) => ({
     ...r,
     quoteCount: quoteCounts.get(r.id) ?? 0,
     requestTitle: requestTitles.get(r.requestId) ?? null,
+    decisionStatus: r.decisionId ? (decisionStatuses.get(r.decisionId) ?? null) : null,
   }));
 }
 
@@ -998,7 +1026,17 @@ export async function getRfq(ctx: ServiceContext, schemeId: string, rfqId: strin
   });
   // Quotes come from the comparison so the fee columns are ALWAYS selected.
   const comparison = await compareQuotes(ctx, schemeId, rfqId);
-  return { rfq, channels, quotes: comparison.quotes };
+  const decision = rfq.decisionId
+    ? await ctx.db.query.decisions.findFirst({
+        where: eq(decisions.id, rfq.decisionId),
+        columns: { status: true },
+      })
+    : null;
+  return {
+    rfq: { ...rfq, decisionStatus: decision?.status ?? null },
+    channels,
+    quotes: comparison.quotes,
+  };
 }
 
 // ---------------------------------------------------------------------------

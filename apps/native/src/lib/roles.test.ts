@@ -113,9 +113,11 @@ describe("useIsOwnerView", () => {
     expect(useIsOwnerView("s1")).toBe(true);
   });
 
-  it("is true for a committee_member — they get the focused owner view", () => {
+  it("is false for a committee_member — sitting on the committee gets the full hub", () => {
     seedRoles(["committee_member"]);
-    expect(useIsOwnerView("s1")).toBe(true);
+    expect(useIsOwnerView("s1")).toBe(false);
+    seedRoles(["owner", "committee_member"]);
+    expect(useIsOwnerView("s1")).toBe(false);
   });
 
   it("is false for an officer", () => {

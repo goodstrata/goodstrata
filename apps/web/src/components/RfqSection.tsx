@@ -61,6 +61,8 @@ interface Rfq {
   status: string;
   awardedQuoteId: string | null;
   decisionId: string | null;
+  /** Status of the linked award decision ("pending" = with the committee). */
+  decisionStatus: string | null;
   createdAt: string;
   quoteCount: number;
   requestTitle: string | null;
@@ -619,6 +621,9 @@ function RfqDetail({
   const sentChannels = channels.filter((c) => c.status !== "failed");
   const quotesWithFees = quotes.filter((q) => q.platformFeeCents + q.referralFeeCents > 0);
   const quotable = rfq.status === "published" || rfq.status === "quoting";
+  // While an award decision is with the committee, nominating again is not on
+  // offer — the server would 409 it, and the committee already has a ballot.
+  const awardPending = rfq.decisionStatus === "pending";
 
   return (
     <div className="mt-4 space-y-4 border-t pt-4">
@@ -649,6 +654,17 @@ function RfqDetail({
             </Badge>
           ))}
         </div>
+      )}
+
+      {awardPending && (
+        <Alert tone="info" data-testid="rfq-award-pending">
+          <Gavel aria-hidden="true" />
+          <AlertTitle>Award with the committee</AlertTitle>
+          <AlertDescription>
+            A nomination has been sent — the quote is awarded once a majority approves it under
+            Decisions.
+          </AlertDescription>
+        </Alert>
       )}
 
       {quotesWithFees.length > 0 && (
@@ -719,7 +735,7 @@ function RfqDetail({
                 </TableCell>
                 {isOfficer && (
                   <TableCell className="text-right">
-                    {quotable && quote.status === "received" && (
+                    {quotable && quote.status === "received" && !awardPending && (
                       <RequestAwardDialog
                         schemeId={schemeId}
                         rfqId={rfqId}
