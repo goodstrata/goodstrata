@@ -105,8 +105,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     /* worked example shown before the visitor commits a document */
     /* The slider is the fallback path for the majority who arrive without their
        AGM papers, so this line has to read as an invitation, not a footnote. */
-    .sample-lead { margin-top: 40px; font-family: var(--font-display); font-weight: 500; font-size: clamp(21px, 3vw, 27px); line-height: 1.25; color: var(--ink); display: flex; align-items: center; gap: 12px; }
-    .sample-lead::before { content: ""; flex: 0 0 28px; height: 2px; background: var(--primary); }
+    /* No rule/dash before this line: it is a plain invitation, not a labelled
+       section. The extra top margin separates it from the dropzone above so the
+       two paths (drop a document / drag the slider) read as distinct choices. */
+    .sample-lead { margin-top: 72px; font-family: var(--font-display); font-weight: 500; font-size: clamp(21px, 3vw, 27px); line-height: 1.25; color: var(--ink); }
     .sample { margin-top: 16px; border: 1px solid var(--line); border-radius: 14px; padding: 26px 26px 24px; background: var(--card); }
     .sample-badge { display: inline-block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 500; padding: 4px 11px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); margin-bottom: 18px; }
     .sample .headline-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; font-size: clamp(38px, 7vw, 60px); letter-spacing: -0.02em; color: var(--primary); line-height: 1; }
