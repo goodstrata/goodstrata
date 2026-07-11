@@ -171,6 +171,26 @@ export async function createRfqFromRequest(
   if (request.status !== "triaged") {
     throw new DomainError("NOT_TRIAGED", "Request must be triaged before requesting quotes", 409);
   }
+  // Creating an RFQ does not move the request off "triaged" (only dispatch
+  // does), so "Get quotes" stayed live and could stack up duplicate drafts for
+  // the same job. One open RFQ per request: cancel it, or award it, before
+  // tendering again. Cancelled and awarded RFQs leave the way clear for a
+  // re-tender.
+  const open = await ctx.db.query.rfqs.findFirst({
+    where: and(
+      eq(rfqs.schemeId, schemeId),
+      eq(rfqs.requestId, request.id),
+      inArray(rfqs.status, ["draft", "published", "quoting"]),
+    ),
+    columns: { id: true, status: true },
+  });
+  if (open) {
+    throw new DomainError(
+      "RFQ_OPEN",
+      `This request already has a ${open.status} request for quotes`,
+      409,
+    );
+  }
   const category = input.category ?? request.category;
   if (!category) {
     throw new DomainError("MISSING_CATEGORY", "A trade category is required for an RFQ", 422);
@@ -787,6 +807,59 @@ export async function compareQuotes(ctx: ServiceContext, schemeId: string, rfqId
   ].join("\n");
 
   return { rfqId: rfq.id, quotes: rows, summaryMd };
+}
+
+/**
+ * Cancel an open RFQ — the way OUT of the one-open-RFQ-per-request rule in
+ * createRfqFromRequest. Without this an officer who drafted the wrong RFQ could
+ * never tender the job again.
+ *
+ * An awarded RFQ is history and cannot be cancelled. An RFQ whose award is
+ * still with the committee cannot be cancelled either: the ballot is live, so
+ * the committee declines it first (which releases the nomination lock) and the
+ * RFQ can then be cancelled or re-nominated.
+ */
+export async function cancelRfq(
+  ctx: ServiceContext,
+  schemeId: string,
+  rfqId: string,
+  reason?: string,
+) {
+  const rfq = await ctx.db.query.rfqs.findFirst({
+    where: and(eq(rfqs.id, rfqId), eq(rfqs.schemeId, schemeId)),
+  });
+  if (!rfq) throw notFound("RFQ");
+  if (rfq.status === "cancelled") {
+    throw new DomainError("ALREADY_CANCELLED", "This RFQ is already cancelled", 409);
+  }
+  if (rfq.status === "awarded") {
+    throw new DomainError("ALREADY_AWARDED", "An awarded RFQ cannot be cancelled", 409);
+  }
+  if (rfq.decisionId) {
+    const decision = await ctx.db.query.decisions.findFirst({
+      where: eq(decisions.id, rfq.decisionId),
+      columns: { status: true },
+    });
+    if (decision?.status === "pending") {
+      throw new DomainError(
+        "AWARD_PENDING",
+        "The award decision is with the committee — decline it before cancelling",
+        409,
+      );
+    }
+  }
+
+  return await ctx.db.transaction(async (tx) => {
+    await tx.update(rfqs).set({ status: "cancelled" }).where(eq(rfqs.id, rfqId));
+    await publishEvent(tx, {
+      schemeId,
+      stream: `rfq:${rfqId}`,
+      type: "rfq.cancelled",
+      payload: { rfqId, requestId: rfq.requestId, reason: reason ?? null },
+      actor: ctx.actor,
+    });
+    return { rfqId, status: "cancelled" as const };
+  });
 }
 
 // ---------------------------------------------------------------------------

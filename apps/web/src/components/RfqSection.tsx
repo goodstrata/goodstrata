@@ -151,6 +151,54 @@ function useContractors(schemeId: string, enabled: boolean) {
 // scope immediately) and opens the review-and-send dialog on it.
 // ---------------------------------------------------------------------------
 
+/**
+ * RFQ states that still hold the request: a request may carry only one of
+ * these at a time, so cancelling one is what frees the job to be tendered
+ * again. Awarded and cancelled RFQs are history and hold nothing.
+ */
+const OPEN_RFQ_STATUSES = new Set(["draft", "published", "quoting"]);
+
+/**
+ * Abandon a mis-drafted tender. This is the way OUT of the one-open-RFQ rule —
+ * without it an officer who tendered the wrong trade could never re-tender the
+ * job. Withdrawn while the award sits with the committee: the ballot is live,
+ * so the committee declines it first (the server refuses either way).
+ */
+function CancelRfqButton({
+  schemeId,
+  rfqId,
+  awardPending,
+  onChange,
+}: {
+  schemeId: string;
+  rfqId: string;
+  awardPending: boolean;
+  onChange: () => void;
+}) {
+  const cancel = useMutation({
+    mutationFn: async () => rfqRequest(`${schemeId}/rfqs/${rfqId}/cancel`, {}),
+    onSuccess: () => {
+      toast.success("Request for quotes cancelled — you can tender this job again");
+      onChange();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (awardPending) return null;
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      data-testid="rfq-cancel"
+      onClick={() => cancel.mutate()}
+      pending={cancel.isPending}
+    >
+      Cancel
+    </Button>
+  );
+}
+
 export function RequestQuotesButton({
   schemeId,
   requestId,
@@ -161,6 +209,13 @@ export function RequestQuotesButton({
   onChange: () => void;
 }) {
   const [rfqId, setRfqId] = useState<string | null>(null);
+  // A request may carry only one open RFQ (the server 409s a second). Don't
+  // offer a tender this job already has — read the RFQ list, which the
+  // maintenance screen has already loaded, and stay quiet until it answers.
+  const rfqs = useQuery({
+    queryKey: ["rfqs", schemeId],
+    queryFn: async () => rfqRequest<{ rfqs: Rfq[] }>(`${schemeId}/rfqs`),
+  });
   const create = useMutation({
     mutationFn: async () =>
       rfqRequest<{ rfq: { id: string } }>(`${schemeId}/requests/${requestId}/rfq`, {}),
@@ -171,6 +226,13 @@ export function RequestQuotesButton({
     },
     onError: (e) => toast.error(e.message),
   });
+
+  // Unknown state is not an invitation to act: only offer the tender once the
+  // list has confirmed this request has none open.
+  const hasOpenRfq = rfqs.data?.rfqs.some(
+    (r) => r.requestId === requestId && OPEN_RFQ_STATUSES.has(r.status),
+  );
+  if (hasOpenRfq !== false) return null;
 
   return (
     <>
@@ -577,6 +639,14 @@ function RfqCard({
             <Chevron aria-hidden="true" className="size-4" />
             {rfq.quoteCount === 1 ? "1 quote" : `${rfq.quoteCount} quotes`}
           </Button>
+          {isOfficer && OPEN_RFQ_STATUSES.has(rfq.status) && (
+            <CancelRfqButton
+              schemeId={schemeId}
+              rfqId={rfq.id}
+              awardPending={rfq.decisionStatus === "pending"}
+              onChange={onChange}
+            />
+          )}
         </div>
         {expanded && (
           <RfqDetail schemeId={schemeId} rfqId={rfq.id} isOfficer={isOfficer} onChange={onChange} />

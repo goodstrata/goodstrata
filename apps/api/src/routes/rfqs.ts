@@ -28,9 +28,7 @@ export function rfqsRoutes(deps: AppDeps) {
       // so every fee disclosure reaches the client unconditionally.
       .get("/:schemeId/rfqs/:rfqId", requireSchemeMember(deps), async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
-        return c.json(
-          await tradeRfqService.getRfq(ctx, c.get("schemeId"), c.req.param("rfqId")),
-        );
+        return c.json(await tradeRfqService.getRfq(ctx, c.get("schemeId"), c.req.param("rfqId")));
       })
       // Officer opens an RFQ on a triaged request. The service drafts an
       // anonymized default spec; the agent refines it before dispatch.
@@ -46,6 +44,24 @@ export function rfqsRoutes(deps: AppDeps) {
             requestId: c.req.param("requestId"),
           });
           return c.json({ rfq }, 201);
+        },
+      )
+      // Cancel an open RFQ. A request may carry only one open RFQ, so this is
+      // how an officer abandons a mis-drafted tender and starts again.
+      .post(
+        "/:schemeId/rfqs/:rfqId/cancel",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", z.object({ reason: z.string().max(500).optional() })),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const result = await tradeRfqService.cancelRfq(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("rfqId"),
+            c.req.valid("json").reason,
+          );
+          return c.json(result);
         },
       )
       // Officer edits to the drafted spec before dispatch. The service re-runs

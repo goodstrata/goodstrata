@@ -231,6 +231,50 @@ describe("anonymization is enforced in code", () => {
   });
 });
 
+describe("one open RFQ per request (and the way out of it)", () => {
+  it("refuses a second RFQ while one is open, and cancelling frees the request to re-tender", async () => {
+    const request = await newTriagedRequest("Cracked tile in the common stairwell.");
+    const first = await tradeRfqService.createRfqFromRequest(ctx(), schemeId, {
+      requestId: request.id,
+    });
+
+    // Creating an RFQ leaves the request "triaged", so "Get quotes" stayed live
+    // and used to stack up duplicate drafts for the same job.
+    await expect(
+      tradeRfqService.createRfqFromRequest(ctx(), schemeId, { requestId: request.id }),
+    ).rejects.toMatchObject({ code: "RFQ_OPEN", status: 409 });
+
+    // Cancelling the mis-drafted tender is the escape hatch — without it the
+    // officer could never tender this job again.
+    const cancelled = await tradeRfqService.cancelRfq(ctx(), schemeId, first.id, "wrong trade");
+    expect(cancelled.status).toBe("cancelled");
+
+    const second = await tradeRfqService.createRfqFromRequest(ctx(), schemeId, {
+      requestId: request.id,
+    });
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it("will not cancel an RFQ whose award is still with the committee", async () => {
+    const rfq = await newQuotingRfq();
+    const quote = await tradeRfqService.recordQuote(ctx(), schemeId, rfq.id, {
+      contractorId,
+      amountCents: 55_000,
+      licenceConfirmed: true,
+      insuranceConfirmed: true,
+      platformFeeCents: 0,
+      referralFeeCents: 0,
+    });
+    await tradeRfqService.requestAward(ctx(), schemeId, rfq.id, quote.id);
+
+    // The ballot is live: the committee declines it before the RFQ can go.
+    await expect(tradeRfqService.cancelRfq(ctx(), schemeId, rfq.id)).rejects.toMatchObject({
+      code: "AWARD_PENDING",
+      status: 409,
+    });
+  });
+});
+
 describe("quotes-due date coercion (the DATE column never sees junk)", () => {
   it("coerces non-date quotesDueOn to null instead of failing the query", async () => {
     // Repro of the prod loop: the scope-drafter agent emitted "", "Not set" and

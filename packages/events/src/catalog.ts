@@ -27,6 +27,41 @@ export const eventDefs = {
   "owner.invited": z.object({ personId: z.string(), email: z.string() }),
   "owner.joined": z.object({ personId: z.string(), userId: z.string() }),
   "committee.assigned": z.object({ userId: z.string(), role: z.string() }),
+  // ownership register (transfers end-date the old row and start a new one)
+  "ownership.started": z.object({
+    ownershipId: z.string(),
+    lotId: z.string(),
+    personId: z.string(),
+    kind: z.string(),
+    shareNumerator: z.number().int(),
+    shareDenominator: z.number().int(),
+    isLevyRecipient: z.boolean(),
+    startedOn: z.string(),
+  }),
+  "ownership.ended": z.object({
+    ownershipId: z.string(),
+    lotId: z.string(),
+    personId: z.string(),
+    endedOn: z.string(),
+    /** Remaining owner promoted to levy recipient when the ended row held it. */
+    promotedLevyRecipientOwnershipId: z.string().nullable(),
+  }),
+  /** Correction of a current ownership's kind or share (period unchanged). */
+  "ownership.updated": z.object({
+    ownershipId: z.string(),
+    lotId: z.string(),
+    personId: z.string(),
+    kind: z.string(),
+    shareNumerator: z.number().int(),
+    shareDenominator: z.number().int(),
+  }),
+  /** The lot's levy-notice recipient moved to a different current owner. */
+  "lot.levy_recipient.changed": z.object({
+    lotId: z.string(),
+    ownershipId: z.string(),
+    personId: z.string(),
+    previousOwnershipId: z.string().nullable(),
+  }),
 
   // finance
   /** A scheme's own segregated trust/collection account was provisioned (s 122). */
@@ -193,6 +228,12 @@ export const eventDefs = {
     category: z.string(),
   }),
   "rfq.spec_drafted": z.object({ rfqId: z.string(), title: z.string(), category: z.string() }),
+  /** An open RFQ abandoned — releases the request to be tendered again. */
+  "rfq.cancelled": z.object({
+    rfqId: z.string(),
+    requestId: z.string(),
+    reason: z.string().nullable(),
+  }),
   "rfq.dispatched": z.object({
     rfqId: z.string(),
     providers: z.array(z.string()),
