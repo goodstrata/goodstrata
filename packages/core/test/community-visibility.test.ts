@@ -177,6 +177,31 @@ describe("committee posts are invisible & inaccessible to non-officers", () => {
     expect(new TextDecoder().decode(bytes)).toBe("fake-png-secret");
   });
 
+  it("channel=committee lists only committee posts for an officer, nothing for a plain owner", async () => {
+    const officerChannel = await community.listFeed(
+      ctx(),
+      schemeId,
+      CHAIR,
+      undefined,
+      OFFICER,
+      "committee",
+    );
+    expect(officerChannel.posts.length).toBeGreaterThan(0);
+    expect(officerChannel.posts.every((p) => p.visibility === "committee")).toBe(true);
+
+    // For a non-officer the channel filter composes with their scheme-only
+    // scope into a contradiction: an empty page, not a leak.
+    const ownerProbe = await community.listFeed(
+      ctx(userActor(OWNER)),
+      schemeId,
+      OWNER,
+      undefined,
+      PLAIN,
+      "committee",
+    );
+    expect(ownerProbe.posts).toHaveLength(0);
+  });
+
   it("a committee post id cannot anchor a non-officer feed cursor", async () => {
     // For a non-officer the anchor lookup excludes committee posts, so the
     // cursor behaves exactly like a nonexistent id (empty page, no probe).

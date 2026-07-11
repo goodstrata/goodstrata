@@ -4,6 +4,7 @@ import {
   createRequestInput,
   entityCommentsService,
   maintenanceService,
+  type RequestImageUpload,
   THREAD_OFFICER_ROLES,
 } from "@goodstrata/core";
 import { people } from "@goodstrata/db";
@@ -11,6 +12,7 @@ import type { MembershipRole } from "@goodstrata/shared";
 import { userActor } from "@goodstrata/shared";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import type { z } from "zod";
 import type { AppDeps } from "../deps.js";
 import { type AppEnv, requireRole, requireSchemeMember } from "../middleware.js";
 import { zv } from "../validate.js";
@@ -30,6 +32,28 @@ const isThreadOfficer = (roles: MembershipRole[]) =>
 // member must not be able to file a report as somebody else.
 const reportInput = createRequestInput.omit({ reportedByPersonId: true });
 
+/**
+ * Image MIME types we accept for report photos — the same allowlist as
+ * community uploads, for the same reason: the client-supplied Content-Type is
+ * NOT trusted for serving. Without an allowlist a member could upload
+ * `text/html` with a `<script>` body and the content endpoint would later
+ * serve it inline same-origin (stored XSS). We both reject non-images here
+ * and force a safe content-type on serve.
+ */
+const ALLOWED_IMAGE_TYPES: ReadonlySet<string> = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
+/**
+ * Per-image size cap. Uploads are fully buffered in memory before hitting
+ * object storage, so an unbounded file would let one member exhaust the API
+ * process; 10 MB comfortably covers phone photos.
+ */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
 export function maintenanceRoutes(deps: AppDeps) {
   return (
     new Hono<AppEnv>()
@@ -37,21 +61,128 @@ export function maintenanceRoutes(deps: AppDeps) {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({ requests: await maintenanceService.listRequests(ctx, c.get("schemeId")) });
       })
-      .post(
-        "/:schemeId/maintenance",
+      // Report an issue. multipart/form-data (fields + zero-or-more `images`
+      // files) or application/json when there are no photos.
+      .post("/:schemeId/maintenance", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const contentType = c.req.header("content-type") ?? "";
+
+        let input: z.infer<typeof reportInput>;
+        const files: RequestImageUpload[] = [];
+
+        if (contentType.includes("multipart/form-data")) {
+          const form = await c.req.parseBody({ all: true });
+          const parsed = reportInput.safeParse({
+            title: typeof form.title === "string" ? form.title : "",
+            description: typeof form.description === "string" ? form.description : "",
+            lotId: typeof form.lotId === "string" && form.lotId ? form.lotId : undefined,
+            reportedEmergency:
+              typeof form.reportedEmergency === "string"
+                ? form.reportedEmergency === "true"
+                : undefined,
+          });
+          if (!parsed.success) {
+            return c.json(
+              {
+                error: {
+                  code: "VALIDATION",
+                  message: "Invalid request",
+                  details: parsed.error.issues,
+                },
+              },
+              422,
+            );
+          }
+          input = parsed.data;
+
+          const field = form.images;
+          const candidates = Array.isArray(field) ? field : field ? [field] : [];
+          for (const f of candidates) {
+            if (f instanceof File) {
+              // Normalize away any charset parameter, then allowlist. Reject
+              // anything that isn't a known image type so we never store (and
+              // later serve) attacker-chosen content types like text/html.
+              const declared = (f.type || "").split(";")[0]!.trim().toLowerCase();
+              if (!ALLOWED_IMAGE_TYPES.has(declared)) {
+                return c.json(
+                  {
+                    error: {
+                      code: "UNSUPPORTED_IMAGE",
+                      message: "Photos must be PNG, JPEG, WebP or GIF.",
+                    },
+                  },
+                  422,
+                );
+              }
+              if (f.size > MAX_IMAGE_BYTES) {
+                return c.json(
+                  {
+                    error: {
+                      code: "IMAGE_TOO_LARGE",
+                      message: "Each photo must be 10 MB or smaller.",
+                    },
+                  },
+                  422,
+                );
+              }
+              files.push({
+                filename: f.name,
+                contentType: declared,
+                content: new Uint8Array(await f.arrayBuffer()),
+              });
+            }
+          }
+        } else {
+          const parsed = reportInput.safeParse(await c.req.json().catch(() => null));
+          if (!parsed.success) {
+            return c.json(
+              {
+                error: {
+                  code: "VALIDATION",
+                  message: "Invalid request",
+                  details: parsed.error.issues,
+                },
+              },
+              422,
+            );
+          }
+          input = parsed.data;
+        }
+
+        const person = await deps.db.query.people.findFirst({
+          where: and(eq(people.schemeId, c.get("schemeId")), eq(people.userId, c.get("user").id)),
+        });
+        const request = await maintenanceService.createMaintenanceRequest(
+          ctx,
+          c.get("schemeId"),
+          { ...input, reportedByPersonId: person?.id },
+          files,
+        );
+        return c.json({ request }, 201);
+      })
+      .get(
+        "/:schemeId/maintenance/images/:imageId/content",
         requireSchemeMember(deps),
-        zv("json", reportInput),
         async (c) => {
           const ctx = deps.serviceContext(userActor(c.get("user").id));
-          const person = await deps.db.query.people.findFirst({
-            where: and(eq(people.schemeId, c.get("schemeId")), eq(people.userId, c.get("user").id)),
-          });
-          const request = await maintenanceService.createMaintenanceRequest(
+          const { row, bytes } = await maintenanceService.getRequestImage(
             ctx,
             c.get("schemeId"),
-            { ...c.req.valid("json"), reportedByPersonId: person?.id },
+            c.req.param("imageId"),
           );
-          return c.json({ request }, 201);
+          // Defense in depth: only ever emit a known-safe image content-type.
+          // Unexpected stored mimes are served as a non-renderable download so
+          // a mislabelled row can't execute as HTML/script in the app origin.
+          // `nosniff` stops the browser from content-sniffing past it.
+          const safeMime = ALLOWED_IMAGE_TYPES.has(row.mime)
+            ? row.mime
+            : "application/octet-stream";
+          const disposition = safeMime === "application/octet-stream" ? "attachment" : "inline";
+          return c.body(bytes.buffer as ArrayBuffer, 200, {
+            "content-type": safeMime,
+            "content-disposition": `${disposition}; filename="${row.id}"`,
+            "x-content-type-options": "nosniff",
+          });
         },
       )
       // Comment thread on a request — the requester and the officer tier only

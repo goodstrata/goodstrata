@@ -201,6 +201,31 @@ describe("AGM lifecycle", () => {
     ).rejects.toThrow(/already/i);
   });
 
+  it("meetingDetail carries each motion's recorded votes so clients can gate the controls", async () => {
+    const ctx = ctxAt(NOW);
+    const detail = await meetingsService.meetingDetail(ctx, schemeId, meetingId);
+    const voted = detail.motions.find((m) => m.id === motionId)!;
+    expect(voted.votes).toHaveLength(3);
+    expect(voted.votes).toEqual(
+      expect.arrayContaining([
+        { lotId: lotByNumber.get("1")!, choice: "for" },
+        { lotId: lotByNumber.get("2")!, choice: "for" },
+        { lotId: lotByNumber.get("3")!, choice: "against" },
+      ]),
+    );
+
+    // A motion nobody has voted on reads as an empty list, never undefined —
+    // clients treat a missing list as "state unknown" and withdraw the controls.
+    const untouched = await meetingsService.addMotion(ctx, schemeId, {
+      meetingId,
+      title: "Note the fire-safety statement",
+      text: "That the OC notes the annual essential-safety-measures report.",
+      resolutionType: "ordinary",
+    });
+    const after = await meetingsService.meetingDetail(ctx, schemeId, meetingId);
+    expect(after.motions.find((m) => m.id === untouched.id)!.votes).toEqual([]);
+  });
+
   it("s 89B: a lot in arrears cannot vote on ordinary resolutions", async () => {
     // Put Pat's lot 4 into arrears: adopt a budget, issue levies due long ago.
     const mgr = userActor("mgr-agm");

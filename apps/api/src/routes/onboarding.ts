@@ -1,11 +1,15 @@
 import {
+  addOwnerInput,
   committeeService,
   createPersonInput,
   documentsService,
+  endOwnershipInput,
   invitesService,
   lotsService,
   onboardingService,
+  ownershipsService,
   peopleService,
+  updateOwnershipInput,
   updatePersonInput,
 } from "@goodstrata/core";
 import {
@@ -77,6 +81,71 @@ export function lotsRoutes(deps: AppDeps) {
           c.req.valid("json").csv,
         );
         return c.json(result, 201);
+      },
+    )
+    .post(
+      "/:schemeId/lots/:lotId/owners",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      zv("json", addOwnerInput),
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const ownership = await ownershipsService.addOwner(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("lotId"),
+          c.req.valid("json"),
+        );
+        return c.json({ ownership }, 201);
+      },
+    )
+    .post(
+      "/:schemeId/lots/:lotId/owners/:ownershipId/end",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      zv("json", endOwnershipInput),
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const ownership = await ownershipsService.endOwnership(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("lotId"),
+          c.req.param("ownershipId"),
+          c.req.valid("json"),
+        );
+        return c.json({ ownership });
+      },
+    )
+    .post(
+      "/:schemeId/lots/:lotId/owners/:ownershipId/levy-recipient",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const ownership = await ownershipsService.setLevyRecipient(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("lotId"),
+          c.req.param("ownershipId"),
+        );
+        return c.json({ ownership });
+      },
+    )
+    .patch(
+      "/:schemeId/lots/:lotId/owners/:ownershipId",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      zv("json", updateOwnershipInput),
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const ownership = await ownershipsService.updateOwnership(
+          ctx,
+          c.get("schemeId"),
+          c.req.param("lotId"),
+          c.req.param("ownershipId"),
+          c.req.valid("json"),
+        );
+        return c.json({ ownership });
       },
     );
 }

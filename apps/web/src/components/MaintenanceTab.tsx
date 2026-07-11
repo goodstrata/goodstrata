@@ -3,17 +3,17 @@ import { Bot, ClipboardCheck, FileSearch, HardHat, Plus, Wrench } from "lucide-r
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { Markdown } from "@/components/Markdown";
 import {
   ownerStatusLabel,
   ownerStatusTone,
   ReportIssueDialog,
 } from "@/components/maintenance/ReportIssueDialog";
-import { Markdown } from "@/components/Markdown";
 import { RequestQuotesButton, RfqSection } from "@/components/RfqSection";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +43,10 @@ import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { useIsOfficer, useIsOwnerView } from "@/lib/roles";
 
+interface RequestImage {
+  id: string;
+  mime: string;
+}
 interface Request {
   id: string;
   title: string;
@@ -51,6 +55,8 @@ interface Request {
   urgency: string | null;
   isCommonProperty: boolean | null;
   aiTriage: { reasoning?: string; declineExplanation?: string } | null;
+  images: RequestImage[];
+  photoCount: number;
   status: string;
   createdAt: string;
 }
@@ -194,17 +200,21 @@ function RequestList({
     refetchInterval: 3000,
   });
 
+  // The owner view is untabbed, so it keeps its heading. For the committee this
+  // renders inside the "Requests" tab, which already names it — a heading there
+  // just repeats the tab label back at the reader.
   return (
     <section>
-      <h2 className="text-base font-semibold">
-        {isOwnerView ? "Requests in your building" : "Requests"}
-      </h2>
-      <p className="text-sm text-muted-foreground">
-        {isOwnerView
-          ? "Track what's been reported. Report anything new and the maintenance agent takes it from there."
-          : "Maintenance reports from residents and owners."}
-      </p>
-      <div className="mt-4 space-y-2.5">
+      {isOwnerView && (
+        <>
+          <h2 className="text-base font-semibold">Requests in your building</h2>
+          <p className="text-sm text-muted-foreground">
+            Track what's been reported. Report anything new and the maintenance agent takes it from
+            there.
+          </p>
+        </>
+      )}
+      <div className={isOwnerView ? "mt-4 space-y-2.5" : "space-y-2.5"}>
         {isLoading && <Skeleton className="h-24" />}
         {isError && (
           <ErrorState
@@ -247,6 +257,7 @@ function RequestList({
                 </div>
               </div>
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>
+              <RequestPhotos schemeId={schemeId} request={r} />
               {r.category && (
                 <p className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1 text-agent">
@@ -279,6 +290,61 @@ function RequestList({
         ))}
       </div>
     </section>
+  );
+}
+
+const requestImageSrc = (schemeId: string, imageId: string) =>
+  `/api/schemes/${schemeId}/maintenance/images/${imageId}/content`;
+
+/**
+ * Thumbnail strip + lightbox for a request's attached photos (same pattern as
+ * the community feed's gallery). Photos help the triage agent and any
+ * contractor quoting, so every member who can read the register can see them.
+ */
+function RequestPhotos({ schemeId, request }: { schemeId: string; request: Request }) {
+  const imgs = request.images ?? [];
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  if (imgs.length === 0) return null;
+  const alt = `Photo attached to “${request.title}”`;
+  const openImage = openIndex !== null ? imgs[openIndex] : undefined;
+
+  return (
+    <>
+      <ul className="mt-2.5 flex flex-wrap gap-1.5">
+        {imgs.map((img, i) => (
+          <li key={img.id}>
+            <button
+              type="button"
+              onClick={() => setOpenIndex(i)}
+              aria-label={`View photo ${i + 1} of ${imgs.length} full size`}
+              className="block cursor-zoom-in rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <img
+                src={requestImageSrc(schemeId, img.id)}
+                alt={alt}
+                loading="lazy"
+                className="size-16 rounded-md border object-cover sm:size-20"
+              />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <Dialog open={openImage !== undefined} onOpenChange={(open) => !open && setOpenIndex(null)}>
+        <DialogContent className="p-2 sm:max-w-3xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{alt}</DialogTitle>
+            <DialogDescription>Full-size view. Press Escape to close.</DialogDescription>
+          </DialogHeader>
+          {openImage && (
+            <img
+              src={requestImageSrc(schemeId, openImage.id)}
+              alt={alt}
+              className="max-h-[80vh] w-full rounded-md object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -509,12 +575,10 @@ function WorkOrderList({
     },
   });
 
+  // No heading: this only renders inside the "Work orders" tab, which names it.
   return (
     <section>
-      <h2 className="flex items-center gap-2 text-base font-semibold">
-        <Wrench aria-hidden="true" className="size-4 text-muted-foreground" /> Work orders
-      </h2>
-      <div className="mt-3 space-y-2.5">
+      <div className="space-y-2.5">
         {isLoading && <Skeleton className="h-16" />}
         {isError && (
           <ErrorState message="Couldn't load work orders." onRetry={() => void refetch()} />
@@ -628,14 +692,12 @@ function ContractorSection({ schemeId, onChange }: { schemeId: string; onChange:
     onSubmit: (values) => create.mutateAsync(values),
   });
 
+  // No heading: this only renders inside the "Contractors" tab, which names it.
+  // The header row keeps just the add action.
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1.5">
-            <CardTitle>Contractor pool</CardTitle>
-            <CardDescription>The dispatch agent quotes jobs against these trades.</CardDescription>
-          </div>
+        <div className="flex justify-end">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline" className="shrink-0">

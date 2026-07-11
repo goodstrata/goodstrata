@@ -28,7 +28,7 @@ import {
   useListEntering,
   useTheme,
 } from "../../../src/components";
-import { api, apiPost } from "../../../src/lib/api";
+import { ApiError, api, apiPost } from "../../../src/lib/api";
 import { authClient } from "../../../src/lib/auth";
 import { API_ORIGIN } from "../../../src/lib/config";
 import { schemeQueryOptions, useIsOfficer } from "../../../src/lib/roles";
@@ -90,6 +90,12 @@ interface MotionResult {
   pollDemanded?: boolean;
 }
 
+/** A vote already on the register for this motion. */
+interface MotionVote {
+  lotId: string;
+  choice: "for" | "against" | "abstain";
+}
+
 interface Motion {
   id: string;
   title: string;
@@ -98,6 +104,8 @@ interface Motion {
   status: "draft" | "open" | "carried" | "lost" | "withdrawn";
   pollDemanded: boolean;
   result: MotionResult | null;
+  /** Absent means the vote state is unknown — never offer the controls then. */
+  votes?: MotionVote[];
 }
 
 interface Quorum {
@@ -1941,12 +1949,27 @@ function MotionCard({
       apiPost(`/api/schemes/${schemeId}/votes`, { motionId: motion.id, lotId, choice }),
     onMutate: begin,
     onSuccess: (_result, choice) => changed(`${humanise(choice)} vote recorded.`),
-    onError: (value) => fail(value, "The vote could not be recorded."),
+    onError: (value) => {
+      // 409 = this lot's vote is already on the register (cast from another
+      // device or session) — refetch so the card shows the recorded choice
+      // instead of dead-ending on a retry that can never succeed.
+      if (value instanceof ApiError && value.status === 409) {
+        onChange();
+        return;
+      }
+      fail(value, "The vote could not be recorded.");
+    },
   });
 
   const result = motion.result;
   const headcount = result?.basis === "headcount";
   const hasTally = result && (result.forWeight !== undefined || result.forCount !== undefined);
+
+  // The register decides what is offered: a lot with a vote on record never
+  // gets the buttons again (the API would 409 it anyway).
+  const votedByLot = new Map((motion.votes ?? []).map((v) => [v.lotId, v.choice]));
+  const selectedLotVote = lotId ? votedByLot.get(lotId) : undefined;
+  const allLotsVoted = lots.length > 0 && lots.every((lot) => votedByLot.has(lot.id));
 
   return (
     <Card>
@@ -1997,37 +2020,62 @@ function MotionCard({
 
       {motion.status === "open" ? (
         <View style={{ marginTop: space(4), gap: space(2) }}>
-          <Text style={{ ...t.label, color: theme.muted }}>Vote for a lot</Text>
-          {lotsPending ? (
-            <Skeleton width="65%" height={44} />
-          ) : lots.length === 0 ? (
+          {!motion.votes ? (
+            // Vote state unknown — never offer buttons a lot may already have
+            // used; the detail screen refetches until the register loads.
             <Text style={{ ...t.bodySmall, color: theme.muted }}>
-              No lots are available to vote.
+              Couldn't check which lots have voted — voting is paused until the register loads.
+            </Text>
+          ) : allLotsVoted ? (
+            <Text style={{ ...t.bodySmall, color: theme.muted }}>
+              Every lot has voted on this motion.
             </Text>
           ) : (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
-              {lots.map((lot) => (
-                <ChoiceOption
-                  key={lot.id}
-                  label={`Lot ${lot.lotNumber}`}
-                  selected={lotId === lot.id}
-                  onPress={() => setLotId(lot.id)}
-                  disabled={vote.isPending}
-                />
-              ))}
-            </View>
+            <>
+              <Text style={{ ...t.label, color: theme.muted }}>Vote for a lot</Text>
+              {lotsPending ? (
+                <Skeleton width="65%" height={44} />
+              ) : lots.length === 0 ? (
+                <Text style={{ ...t.bodySmall, color: theme.muted }}>
+                  No lots are available to vote.
+                </Text>
+              ) : (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
+                  {lots.map((lot) => {
+                    const voted = votedByLot.get(lot.id);
+                    return (
+                      <ChoiceOption
+                        key={lot.id}
+                        label={
+                          voted ? `Lot ${lot.lotNumber} · voted ${voted}` : `Lot ${lot.lotNumber}`
+                        }
+                        selected={lotId === lot.id}
+                        onPress={() => setLotId(lot.id)}
+                        disabled={vote.isPending || !!voted}
+                      />
+                    );
+                  })}
+                </View>
+              )}
+              {selectedLotVote ? (
+                <Text style={{ ...t.bodySmall, color: theme.muted }}>
+                  This lot's {selectedLotVote} vote is on the record.
+                </Text>
+              ) : (
+                (["for", "against", "abstain"] as const).map((choice) => (
+                  <Button
+                    key={choice}
+                    full
+                    variant="secondary"
+                    label={humanise(choice)}
+                    onPress={() => vote.mutate(choice)}
+                    pending={vote.isPending && vote.variables === choice}
+                    disabled={!lotId || vote.isPending}
+                  />
+                ))
+              )}
+            </>
           )}
-          {(["for", "against", "abstain"] as const).map((choice) => (
-            <Button
-              key={choice}
-              full
-              variant="secondary"
-              label={humanise(choice)}
-              onPress={() => vote.mutate(choice)}
-              pending={vote.isPending && vote.variables === choice}
-              disabled={!lotId || vote.isPending}
-            />
-          ))}
 
           {motion.resolutionType === "ordinary" ? (
             motion.pollDemanded ? (

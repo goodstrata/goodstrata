@@ -1,8 +1,21 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
 import { type ReactNode, useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Linking,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Button,
   Card,
@@ -27,7 +40,14 @@ import {
   useTheme,
 } from "../../../src/components";
 import { api, apiPost } from "../../../src/lib/api";
+import { authClient } from "../../../src/lib/auth";
+import { API_ORIGIN } from "../../../src/lib/config";
 import { schemeQueryOptions, useIsOfficer } from "../../../src/lib/roles";
+
+interface RequestImage {
+  id: string;
+  mime: string;
+}
 
 interface Request {
   id: string;
@@ -37,6 +57,8 @@ interface Request {
   urgency: string | null;
   isCommonProperty: boolean | null;
   aiTriage: { reasoning?: string; declineExplanation?: string } | null;
+  images: RequestImage[];
+  photoCount: number;
   status: string;
   createdAt: string;
 }
@@ -128,6 +150,94 @@ const PROVIDER_LABELS: Record<string, string> = {
   scheme_book: "Contractor book",
   email_rfq: "Email invite",
 };
+
+const MAX_IMAGES = 8;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+function cookieHeaders(): Record<string, string> {
+  try {
+    const cookie = authClient.getCookie();
+    return cookie ? { Cookie: cookie } : {};
+  } catch {
+    return {};
+  }
+}
+
+function imageMime(asset: ImagePicker.ImagePickerAsset): string {
+  const declared = asset.mimeType?.split(";")[0]?.trim().toLowerCase();
+  if (declared === "image/jpg") return "image/jpeg";
+  if (declared) return declared;
+  const filename = (asset.fileName ?? asset.uri).toLowerCase();
+  if (/\.png(?:$|\?)/.test(filename)) return "image/png";
+  if (/\.jpe?g(?:$|\?)/.test(filename)) return "image/jpeg";
+  if (/\.webp(?:$|\?)/.test(filename)) return "image/webp";
+  if (/\.gif(?:$|\?)/.test(filename)) return "image/gif";
+  return "";
+}
+
+function imageFilename(asset: ImagePicker.ImagePickerAsset, index: number): string {
+  if (asset.fileName) return asset.fileName;
+  const extension: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+  };
+  return `report-photo-${index + 1}.${extension[imageMime(asset)] ?? "jpg"}`;
+}
+
+async function reportWithImages(
+  schemeId: string,
+  fields: { title: string; description: string },
+  images: ImagePicker.ImagePickerAsset[],
+): Promise<{ request: Request }> {
+  const form = new FormData();
+  form.append("title", fields.title);
+  form.append("description", fields.description);
+  images.forEach((asset, index) => {
+    form.append("images", {
+      uri: asset.uri,
+      name: imageFilename(asset, index),
+      type: imageMime(asset),
+    } as unknown as Blob);
+  });
+
+  const path = `/api/schemes/${schemeId}/maintenance`;
+  const response = await fetch(`${API_ORIGIN}${path}`, {
+    method: "POST",
+    headers: { ...cookieHeaders(), Accept: "application/json" },
+    body: form,
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new Error(payload?.error?.message ?? `Couldn't send that report (${response.status}).`);
+  }
+  return response.json() as Promise<{ request: Request }>;
+}
+
+/** Validate picked assets against the server's allowlist and size cap. */
+function usableAssets(
+  assets: ImagePicker.ImagePickerAsset[],
+  room: number,
+): { accepted: ImagePicker.ImagePickerAsset[]; problems: string[] } {
+  const accepted: ImagePicker.ImagePickerAsset[] = [];
+  const problems: string[] = [];
+  for (const asset of assets.slice(0, room)) {
+    const mime = imageMime(asset);
+    const name = asset.fileName ?? "That photo";
+    if (!ACCEPTED_IMAGE_TYPES.has(mime)) {
+      problems.push(`${name} isn't PNG, JPEG, WebP or GIF.`);
+    } else if (asset.fileSize && asset.fileSize > MAX_IMAGE_BYTES) {
+      problems.push(`${name} is larger than 10 MB.`);
+    } else {
+      accepted.push(asset);
+    }
+  }
+  return { accepted, problems };
+}
 
 function ownerLabel(status: string): string {
   switch (status) {
@@ -226,19 +336,93 @@ export default function MaintenanceScreen() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [photos, setPhotos] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const report = useMutation({
-    mutationFn: () =>
-      apiPost(`/api/schemes/${schemeId}/maintenance`, {
-        title: title.trim(),
-        description: description.trim(),
-      }),
+    mutationFn: () => {
+      const fields = { title: title.trim(), description: description.trim() };
+      return photos.length > 0
+        ? reportWithImages(schemeId, fields, photos)
+        : apiPost(`/api/schemes/${schemeId}/maintenance`, fields);
+    },
     onSuccess: async () => {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTitle("");
       setDescription("");
+      setPhotos([]);
+      setPhotoError(null);
       await invalidate();
     },
   });
+
+  const addPhotos = (assets: ImagePicker.ImagePickerAsset[]) => {
+    const room = MAX_IMAGES - photos.length;
+    if (room <= 0) return;
+    const { accepted, problems } = usableAssets(assets, room);
+    if (accepted.length > 0) {
+      setPhotos((current) => {
+        const next = [...current];
+        const seen = new Set(current.map((asset) => asset.assetId ?? asset.uri));
+        for (const asset of accepted) {
+          const key = asset.assetId ?? asset.uri;
+          if (!seen.has(key)) {
+            seen.add(key);
+            next.push(asset);
+          }
+        }
+        return next.slice(0, MAX_IMAGES);
+      });
+    }
+    setPhotoError(problems.length > 0 ? problems.join(" ") : null);
+  };
+
+  const pickFromLibrary = async () => {
+    setPhotoError(null);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        orderedSelection: true,
+        selectionLimit: MAX_IMAGES - photos.length,
+        quality: 0.9,
+      });
+      if (!result.canceled) addPhotos(result.assets);
+    } catch (error) {
+      setPhotoError(messageFrom(error, "Couldn't open your photo library."));
+    }
+  };
+
+  const takePhoto = async () => {
+    setPhotoError(null);
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        // Graceful denial: the report still submits without a photo, and the
+        // library picker stays available. Point at Settings only when iOS/
+        // Android won't re-prompt.
+        if (permission.canAskAgain) {
+          setPhotoError("Camera access was declined — you can still choose from your library.");
+        } else {
+          Alert.alert(
+            "Camera access is off",
+            "Enable camera access for GoodStrata in Settings, or choose a photo from your library instead.",
+            [
+              { text: "Not now", style: "cancel" },
+              { text: "Open Settings", onPress: () => void Linking.openSettings() },
+            ],
+          );
+        }
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.9,
+      });
+      if (!result.canceled) addPhotos(result.assets);
+    } catch (error) {
+      setPhotoError(messageFrom(error, "Couldn't open the camera."));
+    }
+  };
 
   const requests = requestsQuery.data?.requests ?? [];
   const workOrders = workOrdersQuery.data?.workOrders ?? [];
@@ -294,6 +478,13 @@ export default function MaintenanceScreen() {
               description={description}
               onTitle={setTitle}
               onDescription={setDescription}
+              photos={photos}
+              photoError={photoError}
+              onTakePhoto={() => void takePhoto()}
+              onPickFromLibrary={() => void pickFromLibrary()}
+              onRemovePhoto={(index) =>
+                setPhotos((current) => current.filter((_, itemIndex) => itemIndex !== index))
+              }
               onSubmit={() => report.mutate()}
               canSubmit={canReport}
               pending={report.isPending}
@@ -410,6 +601,11 @@ function ReportForm({
   description,
   onTitle,
   onDescription,
+  photos,
+  photoError,
+  onTakePhoto,
+  onPickFromLibrary,
+  onRemovePhoto,
   onSubmit,
   canSubmit,
   pending,
@@ -419,11 +615,17 @@ function ReportForm({
   description: string;
   onTitle: (value: string) => void;
   onDescription: (value: string) => void;
+  photos: ImagePicker.ImagePickerAsset[];
+  photoError: string | null;
+  onTakePhoto: () => void;
+  onPickFromLibrary: () => void;
+  onRemovePhoto: (index: number) => void;
   onSubmit: () => void;
   canSubmit: boolean;
   pending: boolean;
   error: string | null;
 }) {
+  const theme = useTheme();
   return (
     <View style={{ gap: space(3) }}>
       <FormField
@@ -442,11 +644,163 @@ function ReportForm({
         multiline
         maxLength={5000}
       />
+      {photos.length > 0 ? <SelectedPhotos photos={photos} onRemove={onRemovePhoto} /> : null}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
+        <Button
+          variant="secondary"
+          label="Take photo"
+          icon={<Ionicons name="camera-outline" size={18} color={theme.accent} />}
+          onPress={onTakePhoto}
+          disabled={photos.length >= MAX_IMAGES || pending}
+        />
+        <Button
+          variant="secondary"
+          label={photos.length > 0 ? "Add more photos" : "Choose photos"}
+          icon={<Ionicons name="images-outline" size={18} color={theme.accent} />}
+          onPress={onPickFromLibrary}
+          disabled={photos.length >= MAX_IMAGES || pending}
+        />
+      </View>
+      {photos.length > 0 ? (
+        <Text style={{ ...t.caption, color: theme.muted }}>
+          {photos.length} of {MAX_IMAGES} photos attached
+        </Text>
+      ) : null}
+      {photoError ? <InlineFeedback message={photoError} /> : null}
       {error ? <InlineFeedback message={error} /> : null}
       <View style={{ alignItems: "flex-start", marginTop: space(1) }}>
         <Button label="Report issue" onPress={onSubmit} disabled={!canSubmit} pending={pending} />
       </View>
     </View>
+  );
+}
+
+function SelectedPhotos({
+  photos,
+  onRemove,
+}: {
+  photos: ImagePicker.ImagePickerAsset[];
+  onRemove: (index: number) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View
+      accessibilityLabel={`${photos.length} selected photo${photos.length === 1 ? "" : "s"}`}
+      style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}
+    >
+      {photos.map((asset, index) => (
+        <View key={asset.assetId ?? asset.uri} style={{ width: "31%", aspectRatio: 1 }}>
+          <Image
+            source={{ uri: asset.uri }}
+            resizeMode="cover"
+            accessibilityIgnoresInvertColors
+            style={{
+              width: "100%",
+              height: "100%",
+              borderRadius: radius.control,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: theme.line,
+            }}
+          />
+          <PressableScale
+            accessibilityRole="button"
+            accessibilityLabel={`Remove photo ${index + 1}`}
+            onPress={() => onRemove(index)}
+            style={{
+              position: "absolute",
+              top: space(1),
+              right: space(1),
+              width: 32,
+              height: 32,
+              borderRadius: radius.pill,
+              backgroundColor: theme.bg,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: theme.line,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Ionicons name="close" size={18} color={theme.text} />
+          </PressableScale>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Thumbnail strip + full-screen viewer for a request's attached photos. */
+function RequestPhotos({ schemeId, request }: { schemeId: string; request: Request }) {
+  const theme = useTheme();
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const images = request.images ?? [];
+  if (images.length === 0) return null;
+  const openImage = openIndex === null ? undefined : images[openIndex];
+  const source = (imageId: string) => ({
+    uri: `${API_ORIGIN}/api/schemes/${schemeId}/maintenance/images/${imageId}/content`,
+    headers: cookieHeaders(),
+  });
+
+  return (
+    <>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2), marginTop: space(2) }}>
+        {images.map((image, index) => (
+          <PressableScale
+            key={image.id}
+            accessibilityRole="button"
+            accessibilityLabel={`View photo ${index + 1} of ${images.length} for ${request.title}`}
+            onPress={() => setOpenIndex(index)}
+          >
+            <Image
+              source={source(image.id)}
+              resizeMode="cover"
+              accessibilityIgnoresInvertColors
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: radius.control,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: theme.line,
+                backgroundColor: theme.accentSoft,
+              }}
+            />
+          </PressableScale>
+        ))}
+      </View>
+      <Modal
+        visible={!!openImage}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        onRequestClose={() => setOpenIndex(null)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#000000" }}>
+          <View style={{ alignItems: "flex-end", paddingHorizontal: space(3) }}>
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel="Close full-screen photo"
+              onPress={() => setOpenIndex(null)}
+              style={{
+                width: 48,
+                height: 48,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="close" size={28} color="#ffffff" />
+            </PressableScale>
+          </View>
+          {openImage ? (
+            <Image
+              source={source(openImage.id)}
+              resizeMode="contain"
+              accessibilityLabel={`Photo attached to ${request.title}`}
+              accessibilityIgnoresInvertColors
+              style={{ flex: 1, width: "100%" }}
+            />
+          ) : null}
+        </SafeAreaView>
+      </Modal>
+    </>
   );
 }
 
@@ -503,6 +857,7 @@ function RequestRow({
           {request.description}
         </Text>
       ) : null}
+      <RequestPhotos schemeId={schemeId} request={request} />
       <Text style={{ ...t.caption, color: theme.muted, marginTop: space(1) }}>
         {meta.join(" · ")}
       </Text>

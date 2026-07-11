@@ -1,8 +1,16 @@
 import { randomBytes } from "node:crypto";
-import { contractors, lots, maintenanceRequests, schemes, workOrders } from "@goodstrata/db";
+import {
+  contractors,
+  lots,
+  maintenanceRequestImages,
+  maintenanceRequests,
+  schemes,
+  workOrders,
+} from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
+import { storageKey } from "@goodstrata/integrations";
 import { addDays, formatCents } from "@goodstrata/shared";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import {
@@ -36,17 +44,59 @@ export const createRequestInput = z.object({
 });
 export type CreateRequestInput = z.infer<typeof createRequestInput>;
 
+/** A photo the route has read off multipart form-data, ready for storage. */
+export interface RequestImageUpload {
+  filename: string;
+  contentType: string;
+  content: Uint8Array;
+}
+
+export interface RequestImageView {
+  id: string;
+  mime: string;
+}
+
+export const MAX_IMAGES_PER_REQUEST = 8;
+
+/**
+ * Create a request with zero-or-more photos. Photos are written to object
+ * storage first (S3 puts aren't transactional), then the request row, its
+ * image rows, and the maintenance.request.created event are committed in one
+ * transaction — same shape as community.createPost.
+ */
 export async function createMaintenanceRequest(
   ctx: ServiceContext,
   schemeId: string,
   input: CreateRequestInput,
+  files: RequestImageUpload[] = [],
 ) {
+  if (files.length > MAX_IMAGES_PER_REQUEST) {
+    throw new DomainError(
+      "TOO_MANY_IMAGES",
+      `At most ${MAX_IMAGES_PER_REQUEST} photos per report`,
+      422,
+    );
+  }
   if (input.lotId) {
     const lot = await ctx.db.query.lots.findFirst({
       where: and(eq(lots.id, input.lotId), eq(lots.schemeId, schemeId)),
     });
     if (!lot) throw notFound("Lot");
   }
+
+  const stored = await Promise.all(
+    files.map(async (file, index) => {
+      const key = storageKey(schemeId, file.filename);
+      await ctx.integrations.storage.put(key, file.content, file.contentType);
+      return {
+        storageKey: key,
+        mime: file.contentType || "application/octet-stream",
+        sizeBytes: file.content.byteLength,
+        position: index,
+      };
+    }),
+  );
+
   return await ctx.db.transaction(async (tx) => {
     const rows = await tx
       .insert(maintenanceRequests)
@@ -62,6 +112,14 @@ export async function createMaintenanceRequest(
       .returning();
     const request = rows[0]!;
 
+    const imageRows =
+      stored.length > 0
+        ? await tx
+            .insert(maintenanceRequestImages)
+            .values(stored.map((s) => ({ schemeId, requestId: request.id, ...s })))
+            .returning({ id: maintenanceRequestImages.id, mime: maintenanceRequestImages.mime })
+        : [];
+
     await publishEvent(tx, {
       schemeId,
       stream: `maintenance_request:${request.id}`,
@@ -72,20 +130,89 @@ export async function createMaintenanceRequest(
         description: request.description,
         lotId: request.lotId,
         reportedEmergency: request.reportedEmergency,
+        photoCount: imageRows.length,
       },
       actor: ctx.actor,
       ...causationFields(ctx),
     });
 
-    return request;
+    return { ...request, images: imageRows as RequestImageView[], photoCount: imageRows.length };
   });
 }
 
 export async function listRequests(ctx: ServiceContext, schemeId: string) {
-  return await ctx.db.query.maintenanceRequests.findMany({
+  const requests = await ctx.db.query.maintenanceRequests.findMany({
     where: eq(maintenanceRequests.schemeId, schemeId),
     orderBy: (t, { desc }) => desc(t.createdAt),
   });
+  if (requests.length === 0) return [];
+
+  const images = await imagesForRequests(
+    ctx,
+    requests.map((r) => r.id),
+  );
+  return requests.map((r) => {
+    const own = images.get(r.id) ?? [];
+    return { ...r, images: own, photoCount: own.length };
+  });
+}
+
+/** Attached photos per request, in one query (no N+1), ordered by position. */
+export async function imagesForRequests(
+  ctx: ServiceContext,
+  requestIds: string[],
+): Promise<Map<string, RequestImageView[]>> {
+  const map = new Map<string, RequestImageView[]>();
+  if (requestIds.length === 0) return map;
+  const rows = await ctx.db
+    .select({
+      id: maintenanceRequestImages.id,
+      requestId: maintenanceRequestImages.requestId,
+      mime: maintenanceRequestImages.mime,
+    })
+    .from(maintenanceRequestImages)
+    .where(inArray(maintenanceRequestImages.requestId, requestIds))
+    .orderBy(maintenanceRequestImages.position);
+  for (const r of rows) {
+    const list = map.get(r.requestId) ?? [];
+    list.push({ id: r.id, mime: r.mime });
+    map.set(r.requestId, list);
+  }
+  return map;
+}
+
+/**
+ * Photo count for one request — the figure the triage agent's context quotes
+ * ("Photos on file: N"). Includes any legacy document attachments so the count
+ * never understates what's actually on file.
+ */
+export async function countRequestPhotos(
+  ctx: ServiceContext,
+  schemeId: string,
+  requestId: string,
+): Promise<number> {
+  const request = await ctx.db.query.maintenanceRequests.findFirst({
+    where: and(eq(maintenanceRequests.id, requestId), eq(maintenanceRequests.schemeId, schemeId)),
+  });
+  if (!request) throw notFound("Maintenance request");
+  const rows = await ctx.db
+    .select({ id: maintenanceRequestImages.id })
+    .from(maintenanceRequestImages)
+    .where(eq(maintenanceRequestImages.requestId, requestId));
+  return rows.length + request.photoDocumentIds.length;
+}
+
+/** Load an image row (scheme-scoped) plus its bytes, for the content endpoint. */
+export async function getRequestImage(ctx: ServiceContext, schemeId: string, imageId: string) {
+  const row = await ctx.db.query.maintenanceRequestImages.findFirst({
+    where: and(
+      eq(maintenanceRequestImages.id, imageId),
+      eq(maintenanceRequestImages.schemeId, schemeId),
+    ),
+  });
+  if (!row) throw notFound("Image");
+  const bytes = await ctx.integrations.storage.get(row.storageKey);
+  return { row, bytes };
 }
 
 export const triageInput = z.object({

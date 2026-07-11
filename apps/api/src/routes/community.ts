@@ -32,6 +32,14 @@ function viewerFrom(roles: MembershipRole[]) {
 const cursorQuery = z.object({ cursor: z.string().optional() });
 
 /**
+ * Feed listing accepts an optional channel filter: `channel=committee` narrows
+ * to the committee-visibility discussion. The service composes it with the
+ * viewer's visibility scope, so for a non-officer it only ever yields an empty
+ * page (never a leak).
+ */
+const feedQuery = cursorQuery.extend({ channel: z.enum(["committee"]).optional() });
+
+/**
  * Image MIME types we accept for community uploads. The client-supplied
  * Content-Type is NOT trusted for serving: without an allowlist, a member could
  * upload `text/html` with a `<script>` body and the content endpoint would later
@@ -58,7 +66,7 @@ export function communityRoutes(deps: AppDeps) {
       .get(
         "/:schemeId/community/posts",
         requireSchemeMember(deps),
-        zv("query", cursorQuery),
+        zv("query", feedQuery),
         async (c) => {
           const ctx = deps.serviceContext(userActor(c.get("user").id));
           const feed = await communityService.listFeed(
@@ -67,6 +75,7 @@ export function communityRoutes(deps: AppDeps) {
             c.get("user").id,
             c.req.valid("query").cursor,
             viewerFrom(c.get("roles")),
+            c.req.valid("query").channel,
           );
           return c.json(feed);
         },

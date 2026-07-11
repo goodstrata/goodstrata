@@ -1712,12 +1712,31 @@ export async function meetingDetail(ctx: ServiceContext, schemeId: string, meeti
     where: and(eq(motions.schemeId, schemeId), eq(motions.meetingId, meetingId)),
     orderBy: (t, { asc }) => asc(t.createdAt),
   });
+  // Each motion carries its recorded votes (one batch query — no N+1) so a
+  // client can withdraw the vote controls for a lot whose vote is already on
+  // the register and show the recorded choice instead of re-offering the vote.
+  const voteRows =
+    motionRows.length > 0
+      ? await ctx.db.query.votes.findMany({
+          where: inArray(
+            votes.motionId,
+            motionRows.map((m) => m.id),
+          ),
+          columns: { motionId: true, lotId: true, choice: true },
+        })
+      : [];
+  const votesByMotion = new Map<string, { lotId: string; choice: VoteChoice }[]>();
+  for (const v of voteRows) {
+    const recorded = votesByMotion.get(v.motionId) ?? [];
+    recorded.push({ lotId: v.lotId, choice: v.choice as VoteChoice });
+    votesByMotion.set(v.motionId, recorded);
+  }
   const quorum = await quorumStatus(ctx, schemeId, meetingId);
   return {
     meeting,
     agenda,
     submissions,
-    motions: motionRows,
+    motions: motionRows.map((m) => ({ ...m, votes: votesByMotion.get(m.id) ?? [] })),
     quorum,
     chairLog: meeting.chairLog,
     transcriptionStarted: meeting.transcriptionStarted,

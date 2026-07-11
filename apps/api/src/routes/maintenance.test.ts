@@ -209,6 +209,110 @@ describe("reporting a maintenance issue (any member)", () => {
   });
 });
 
+describe("report photos (multipart)", () => {
+  /** Real 1x1 transparent PNG so the round-trip bytes are a genuine image. */
+  const PNG_BYTES = Uint8Array.from(
+    atob(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    ),
+    (ch) => ch.charCodeAt(0),
+  );
+
+  function multipartReq(userId: string, form: FormData) {
+    return app.request(`/schemes/${schemeId}/maintenance`, {
+      method: "POST",
+      headers: { "x-test-user": userId },
+      body: form,
+    });
+  }
+
+  it("uploads photos with the report and serves the bytes back (membership-gated)", async () => {
+    const form = new FormData();
+    form.set("title", "Water stain on lot 9 ceiling");
+    form.set("description", "Spreading since the storm");
+    form.append("images", new File([PNG_BYTES], "stain.png", { type: "image/png" }));
+    form.append("images", new File([PNG_BYTES], "stain-2.png", { type: "image/png" }));
+
+    const res = await multipartReq(OWNER, form);
+    expect(res.status).toBe(201);
+    const { request } = await json<{
+      request: { id: string; images: { id: string; mime: string }[]; photoCount: number };
+    }>(res);
+    expect(request.photoCount).toBe(2);
+    expect(request.images).toHaveLength(2);
+
+    const content = await req(OWNER, `/maintenance/images/${request.images[0]!.id}/content`);
+    expect(content.status).toBe(200);
+    expect(content.headers.get("content-type")).toBe("image/png");
+    expect(content.headers.get("x-content-type-options")).toBe("nosniff");
+    const served = new Uint8Array(await content.arrayBuffer());
+    expect(served).toEqual(PNG_BYTES);
+
+    // Non-members get 404 (scheme existence never leaked), same as every read.
+    const outsider = await req(OUTSIDER, `/maintenance/images/${request.images[0]!.id}/content`);
+    expect(outsider.status).toBe(404);
+
+    // The photo count lands on the list read shape every client (and the
+    // triage agent context) consumes.
+    const list = await req(OWNER, "/maintenance");
+    const { requests } = await json<{ requests: { id: string; photoCount: number }[] }>(list);
+    expect(requests.find((r) => r.id === request.id)!.photoCount).toBe(2);
+  });
+
+  it("rejects a non-image content type (422 UNSUPPORTED_IMAGE), storing nothing", async () => {
+    for (const file of [
+      new File([PNG_BYTES], "report.pdf", { type: "application/pdf" }),
+      // A .txt renamed to .png still declares text/plain — the allowlist is on
+      // the declared type, never the filename.
+      new File(["<script>alert(1)</script>"], "notes.png", { type: "text/plain" }),
+      new File(["<script>alert(1)</script>"], "page.png", { type: "text/html" }),
+    ]) {
+      const form = new FormData();
+      form.set("title", "Bad attachment");
+      form.set("description", "should never store this");
+      form.append("images", file);
+      const res = await multipartReq(OWNER, form);
+      expect(res.status).toBe(422);
+      const body = await json<ErrorEnvelope>(res);
+      expect(body.error.code).toBe("UNSUPPORTED_IMAGE");
+    }
+  });
+
+  it("rejects an oversized photo (422 IMAGE_TOO_LARGE)", async () => {
+    const form = new FormData();
+    form.set("title", "Huge photo");
+    form.set("description", "over the 10 MB cap");
+    form.append(
+      "images",
+      new File([new Uint8Array(10 * 1024 * 1024 + 1)], "huge.png", { type: "image/png" }),
+    );
+    const res = await multipartReq(OWNER, form);
+    expect(res.status).toBe(422);
+    const body = await json<ErrorEnvelope>(res);
+    expect(body.error.code).toBe("IMAGE_TOO_LARGE");
+  });
+
+  it("multipart validation failures keep the 422 envelope the web form maps", async () => {
+    const form = new FormData();
+    form.set("title", "ab"); // too short
+    form.set("description", "valid description");
+    const res = await multipartReq(OWNER, form);
+    expect(res.status).toBe(422);
+    const body = await json<ErrorEnvelope>(res);
+    expect(body.error.code).toBe("VALIDATION");
+    expect(body.error.details!.some((i) => i.path[0] === "title")).toBe(true);
+  });
+
+  it("a JSON report without photos still works and reads photoCount 0", async () => {
+    const res = await req(OWNER, "/maintenance", {
+      json: { title: "No photos here", description: "Plain JSON report" },
+    });
+    expect(res.status).toBe(201);
+    const { request } = await json<{ request: { photoCount: number } }>(res);
+    expect(request.photoCount).toBe(0);
+  });
+});
+
 describe("work orders (officer only)", () => {
   it("owner and committee_member are refused (403 FORBIDDEN)", async () => {
     const request = await triagedRequest();

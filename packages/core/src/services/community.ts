@@ -226,6 +226,11 @@ function feedCursorFilter(schemeId: string, cursor: string | undefined, viewer: 
 /**
  * Newest-first scheme feed, keyset-paginated on (createdAt, id). Committee
  * posts are filtered out at the query for non-officers.
+ *
+ * `channel: "committee"` narrows the feed to committee-visibility posts only
+ * (the committee's private discussion view). For a non-officer it composes
+ * with their `visibility = 'scheme'` scope into a contradiction, so it can
+ * only ever return an empty page — never a leak.
  */
 export async function listFeed(
   ctx: ServiceContext,
@@ -233,6 +238,7 @@ export async function listFeed(
   currentUserId: string,
   cursor?: string,
   viewer: CommunityViewer = PUBLIC_VIEWER,
+  channel?: "committee",
 ): Promise<{ posts: PostSummary[]; nextCursor?: string }> {
   const rows = await ctx.db
     .select({
@@ -252,6 +258,7 @@ export async function listFeed(
         eq(communityPosts.schemeId, schemeId),
         eq(communityPosts.status, "visible"),
         viewer.isOfficer ? undefined : eq(communityPosts.visibility, "scheme"),
+        channel === "committee" ? eq(communityPosts.visibility, "committee") : undefined,
         feedCursorFilter(schemeId, cursor, viewer),
       ),
     )

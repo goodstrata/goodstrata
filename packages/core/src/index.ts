@@ -44,6 +44,7 @@ export { executePayoutInput, recordInvoiceInput } from "./services/invoices.js";
 export * as leviesService from "./services/levies.js";
 export { createLevyScheduleInput, writeOffNoticeInput } from "./services/levies.js";
 export * as lotsService from "./services/lots.js";
+export type { RequestImageUpload, RequestImageView } from "./services/maintenance.js";
 export * as maintenanceService from "./services/maintenance.js";
 export {
   createContractorInput,
@@ -76,6 +77,12 @@ export * as notificationPreferencesService from "./services/notificationPreferen
 export * as notificationsService from "./services/notifications.js";
 export * as notifierService from "./services/notifier.js";
 export * as onboardingService from "./services/onboarding.js";
+export * as ownershipsService from "./services/ownerships.js";
+export {
+  addOwnerInput,
+  endOwnershipInput,
+  updateOwnershipInput,
+} from "./services/ownerships.js";
 export * as paymentsService from "./services/payments.js";
 export { recordManualPaymentInput, refundPaymentInput } from "./services/payments.js";
 export * as peopleService from "./services/people.js";

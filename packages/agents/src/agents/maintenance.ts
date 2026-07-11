@@ -98,6 +98,11 @@ export const maintenanceAgent: AgentDefinition = {
         ),
       });
       if (!request) return null;
+      const photoCount = await maintenanceService.countRequestPhotos(
+        services,
+        event.schemeId,
+        request.id,
+      );
 
       return [
         "TASK B — draft the scope of works for this RFQ.",
@@ -106,7 +111,7 @@ export const maintenanceAgent: AgentDefinition = {
         `Trade category: ${rfq.category}`,
         `Location for the spec: ${rfq.suburb} (suburb only — nothing more precise)`,
         `Quotes due: ${rfq.quotesDueOn ?? "not set"}`,
-        `Photos on file: ${request.photoDocumentIds.length}`,
+        `Photos on file: ${photoCount}`,
         "",
         "Underlying maintenance request (INTERNAL — never copy identifying details into the spec):",
         `Title: ${request.title}`,
@@ -124,6 +129,11 @@ export const maintenanceAgent: AgentDefinition = {
     });
     if (!scheme) return null;
     const pool = await maintenanceService.listContractors(services, event.schemeId);
+    const photoCount = await maintenanceService.countRequestPhotos(
+      services,
+      event.schemeId,
+      payload.requestId,
+    );
 
     return [
       "TASK A — triage this new maintenance request.",
@@ -131,6 +141,7 @@ export const maintenanceAgent: AgentDefinition = {
       `Scheme: ${scheme.name}`,
       `Request title: ${payload.title}`,
       `Description: ${payload.description}`,
+      `Photos on file: ${photoCount}`,
       `Reported for: ${payload.lotId ? "a specific lot" : "common property (unspecified)"}`,
       `Reporter flagged as emergency: ${payload.reportedEmergency ? "YES — a proposed work order dispatches immediately with post-hoc committee review" : "no — any work order you propose needs committee approval before dispatch"}`,
       "",

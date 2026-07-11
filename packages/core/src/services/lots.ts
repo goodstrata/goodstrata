@@ -156,6 +156,12 @@ export async function listLots(ctx: ServiceContext, schemeId: string) {
   const owners = await ctx.db
     .select({
       lotId: ownerships.lotId,
+      ownershipId: ownerships.id,
+      kind: ownerships.kind,
+      shareNumerator: ownerships.shareNumerator,
+      shareDenominator: ownerships.shareDenominator,
+      isLevyRecipient: ownerships.isLevyRecipient,
+      startedOn: ownerships.startedOn,
       personId: people.id,
       givenName: people.givenName,
       familyName: people.familyName,

@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { api, unwrap } from "@/lib/api";
+import { ApiError, api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { formatDateTime, formatTime } from "@/lib/format";
 import { useIsOfficer } from "@/lib/roles";
@@ -71,6 +71,11 @@ interface MotionResult {
   basis?: "headcount" | "entitlement";
   pollDemanded?: boolean;
 }
+/** A vote already on the register for this motion. */
+interface MotionVote {
+  lotId: string;
+  choice: "for" | "against" | "abstain";
+}
 interface Motion {
   id: string;
   title: string;
@@ -79,6 +84,8 @@ interface Motion {
   status: string;
   pollDemanded: boolean;
   result: MotionResult | null;
+  /** Absent means the vote state is unknown — never offer the controls then. */
+  votes?: MotionVote[];
 }
 /** AI Chair timeline entry — the backend adds these as the feature lands. */
 interface ChairLogEntry {
@@ -1252,8 +1259,25 @@ function MotionCard({
       toast.success("Vote recorded");
       onChange();
     },
-    onError: (e) => setError(e.message),
+    onError: (e) => {
+      // 409 = this lot's vote is already on the register (cast from another
+      // device or session) — refetch so the card shows the recorded choice
+      // instead of dead-ending on a retry that can never succeed.
+      if (e instanceof ApiError && e.status === 409) {
+        onChange();
+        return;
+      }
+      setError(e.message);
+    },
   });
+
+  // The register decides what is offered: a lot with a vote on record never
+  // gets the buttons again (the API would 409 it anyway).
+  const votedByLot = new Map((motion.votes ?? []).map((v) => [v.lotId, v.choice]));
+  const selectedLotVote = lotId ? votedByLot.get(lotId) : undefined;
+  const selectedLotNumber = lotsData?.lots.find((l) => l.id === lotId)?.lotNumber;
+  const allLotsVoted =
+    !!lotsData && lotsData.lots.length > 0 && lotsData.lots.every((l) => votedByLot.has(l.id));
 
   return (
     <Card data-testid={`motion-${motion.title}`}>
@@ -1279,50 +1303,74 @@ function MotionCard({
 
         {motion.status === "open" && (
           <div className="space-y-2">
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-              <Select value={lotId} onValueChange={setLotId}>
-                <SelectTrigger
-                  data-testid="vote-lot"
-                  aria-label="Choose your lot"
-                  className="min-h-11 w-full sm:w-40"
-                >
-                  <SelectValue placeholder="My lot…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {lotsData?.lots.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>
-                      Lot {l.lotNumber}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="flex gap-2">
-                {(["for", "against", "abstain"] as const).map((choice) => (
+            {!motion.votes ? (
+              // Vote state unknown — never offer buttons a lot may already
+              // have used; surface the failure and retry instead.
+              <ErrorState message="We couldn't check which lots have voted." onRetry={onChange} />
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                {allLotsVoted ? (
+                  <p className="text-sm text-muted-foreground">
+                    Every lot has voted on this motion.
+                  </p>
+                ) : (
+                  <>
+                    <Select value={lotId} onValueChange={setLotId}>
+                      <SelectTrigger
+                        data-testid="vote-lot"
+                        aria-label="Choose your lot"
+                        className="min-h-11 w-full sm:w-40"
+                      >
+                        <SelectValue placeholder="My lot…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {lotsData?.lots.map((l) => {
+                          const voted = votedByLot.get(l.id);
+                          return (
+                            <SelectItem key={l.id} value={l.id} disabled={!!voted}>
+                              Lot {l.lotNumber}
+                              {voted ? ` — voted ${voted}` : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    {selectedLotVote ? (
+                      <p className="text-sm text-muted-foreground">
+                        Lot {selectedLotNumber}'s {selectedLotVote} vote is on the record.
+                      </p>
+                    ) : (
+                      <div className="flex gap-2">
+                        {(["for", "against", "abstain"] as const).map((choice) => (
+                          <Button
+                            key={choice}
+                            variant="outline"
+                            className="min-h-11 flex-1 sm:flex-none"
+                            disabled={!lotId || vote.isPending}
+                            pending={vote.isPending && vote.variables === choice}
+                            onClick={() => vote.mutate(choice)}
+                          >
+                            {choice}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {isOfficer && (
                   <Button
-                    key={choice}
                     variant="outline"
-                    className="min-h-11 flex-1 sm:flex-none"
-                    disabled={!lotId || vote.isPending}
-                    pending={vote.isPending && vote.variables === choice}
-                    onClick={() => vote.mutate(choice)}
+                    size="sm"
+                    className="w-full sm:ml-auto sm:w-auto"
+                    onClick={() => close.mutate()}
+                    pending={close.isPending}
                   >
-                    {choice}
+                    Close &amp; tally
                   </Button>
-                ))}
+                )}
               </div>
-              {isOfficer && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full sm:ml-auto sm:w-auto"
-                  onClick={() => close.mutate()}
-                  pending={close.isPending}
-                >
-                  Close &amp; tally
-                </Button>
-              )}
-            </div>
-            {!lotId && (
+            )}
+            {motion.votes && !allLotsVoted && !lotId && (
               <p className="text-xs text-muted-foreground">Choose your lot to record a vote.</p>
             )}
             {motion.resolutionType === "ordinary" && (

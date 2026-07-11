@@ -24,7 +24,8 @@ export type NotificationSection =
   | "grievances"
   | "compliance"
   | "documents"
-  | "community";
+  | "community"
+  | "messages";
 
 /** The subset of a notification row the resolver needs. */
 export interface RoutableNotification {
@@ -61,7 +62,9 @@ const TYPE_SECTIONS: Record<string, NotificationSection> = {
   document: "documents",
   community_post: "community",
   announcement: "community",
-  conversation: "community",
+  // Private messages have their own section on web; native still routes these
+  // to community until it grows a messages screen.
+  conversation: "messages",
   compliance_obligation: "compliance",
   complaint: "grievances",
   breach_notice: "grievances",

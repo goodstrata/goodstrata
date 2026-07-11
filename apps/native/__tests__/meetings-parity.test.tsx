@@ -1,14 +1,27 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import MeetingsScreen from "../app/scheme/[id]/meetings";
 
+const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 jest.mock("@tanstack/react-query", () => ({
   useMutation: jest.fn(),
   useQueries: () => [],
   useQuery: jest.fn(),
-  useQueryClient: () => ({ invalidateQueries: jest.fn(() => Promise.resolve()) }),
+  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
 }));
 
-jest.mock("../src/lib/api", () => ({ api: jest.fn(), apiPost: jest.fn() }));
+jest.mock("../src/lib/api", () => ({
+  api: jest.fn(),
+  apiPost: jest.fn(),
+  ApiError: class MockApiError extends Error {
+    code: string;
+    status: number;
+    constructor(message: string, options?: { code?: string; status?: number }) {
+      super(message);
+      this.code = options?.code ?? "ERROR";
+      this.status = options?.status ?? 500;
+    }
+  },
+}));
 
 let mockOfficer = false;
 jest.mock("../src/lib/roles", () => ({
@@ -42,7 +55,7 @@ jest.mock("react-native-safe-area-context", () => {
 });
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, apiPost } from "../src/lib/api";
+import { ApiError, api, apiPost } from "../src/lib/api";
 
 const mockUseMutation = useMutation as unknown as jest.Mock;
 const mockUseQuery = useQuery as unknown as jest.Mock;
@@ -69,6 +82,20 @@ const rejectedSubmission = {
   title: "Paint private balcony",
   status: "rejected" as const,
   rejectedReason: "The balcony coating is private lot property.",
+};
+
+/** Per-test motions — the shared detail stays motion-free by default. */
+let mockMotions: Record<string, unknown>[] = [];
+
+const openMotion = {
+  id: "motion-1",
+  title: "Repaint the stairwell",
+  text: "That the OC engages a painter for the common stairwell.",
+  resolutionType: "ordinary" as const,
+  status: "open" as const,
+  pollDemanded: false,
+  result: null,
+  votes: [] as { lotId: string; choice: "for" | "against" | "abstain" }[],
 };
 
 const detail = {
@@ -116,7 +143,9 @@ function queryResult(data: unknown) {
 
 beforeEach(() => {
   mockOfficer = false;
+  mockMotions = [];
   queryOptions.length = 0;
+  mockInvalidateQueries.mockClear();
   mockApi.mockReset().mockResolvedValue({});
   mockApiPost.mockReset().mockResolvedValue({});
   mockUseQuery.mockReset().mockImplementation((options) => {
@@ -128,7 +157,7 @@ beforeEach(() => {
         roles: mockOfficer ? ["chair"] : ["owner"],
       });
     }
-    if (key[2] === "meeting") return queryResult(detail);
+    if (key[2] === "meeting") return queryResult({ ...detail, motions: mockMotions });
     if (key[2] === "lots" && key[3] === "mine") {
       return queryResult({ lots: [{ id: "lot-owned", lotNumber: "2" }] });
     }
@@ -161,9 +190,12 @@ beforeEach(() => {
     isPending: false,
     mutate: (variables?: unknown) => {
       options.onMutate?.(variables);
-      void Promise.resolve(options.mutationFn(variables)).then((result) =>
-        options.onSuccess?.(result, variables),
-      );
+      void Promise.resolve()
+        .then(() => options.mutationFn(variables))
+        .then(
+          (result) => options.onSuccess?.(result, variables),
+          (err) => options.onError?.(err, variables),
+        );
     },
   }));
 });
@@ -259,5 +291,91 @@ describe("Meetings parity", () => {
         { reason: "The proposal needs a funding estimate first." },
       ),
     );
+  });
+});
+
+describe("Motion vote gating", () => {
+  it("offers the vote buttons for a lot the register shows has not voted", async () => {
+    mockMotions = [openMotion];
+    await render(<MeetingsScreen />);
+
+    await fireEvent.press(screen.getByText("Lot 7"));
+    await fireEvent.press(screen.getByLabelText("For"));
+
+    await waitFor(() =>
+      expect(mockApiPost).toHaveBeenCalledWith("/api/schemes/scheme-1/votes", {
+        motionId: "motion-1",
+        lotId: "lot-other",
+        choice: "for",
+      }),
+    );
+  });
+
+  it("shows an already-voted lot's recorded choice and never re-offers it the vote", async () => {
+    mockMotions = [{ ...openMotion, votes: [{ lotId: "lot-owned", choice: "for" }] }];
+    await render(<MeetingsScreen />);
+
+    // The voted lot is labelled with its recorded choice and cannot be selected.
+    await fireEvent.press(screen.getByText("Lot 2 · voted for"));
+    await fireEvent.press(screen.getByLabelText("For"));
+    expect(mockApiPost).not.toHaveBeenCalled();
+
+    // The caller's other lot can still vote.
+    await fireEvent.press(screen.getByText("Lot 7"));
+    await fireEvent.press(screen.getByLabelText("Against"));
+    await waitFor(() =>
+      expect(mockApiPost).toHaveBeenCalledWith("/api/schemes/scheme-1/votes", {
+        motionId: "motion-1",
+        lotId: "lot-other",
+        choice: "against",
+      }),
+    );
+  });
+
+  it("withdraws the controls entirely once every lot has voted", async () => {
+    mockMotions = [
+      {
+        ...openMotion,
+        votes: [
+          { lotId: "lot-owned", choice: "for" },
+          { lotId: "lot-other", choice: "against" },
+        ],
+      },
+    ];
+    await render(<MeetingsScreen />);
+
+    expect(screen.getByText("Every lot has voted on this motion.")).toBeOnTheScreen();
+    expect(screen.queryByLabelText("For")).toBeNull();
+    expect(screen.queryByText("Lot 7")).toBeNull();
+  });
+
+  it("never offers the vote buttons when the register's vote state is missing", async () => {
+    mockMotions = [{ ...openMotion, votes: undefined }];
+    await render(<MeetingsScreen />);
+
+    expect(screen.getByText(/Couldn't check which lots have voted/)).toBeOnTheScreen();
+    expect(screen.queryByLabelText("For")).toBeNull();
+    expect(screen.queryByText("Lot 7")).toBeNull();
+  });
+
+  it("a 409 on cast refetches the recorded state instead of dead-ending", async () => {
+    mockMotions = [openMotion];
+    mockApiPost.mockRejectedValueOnce(
+      new ApiError("A vote has already been cast for this lot", {
+        code: "ALREADY_VOTED",
+        status: 409,
+      }),
+    );
+    await render(<MeetingsScreen />);
+
+    await fireEvent.press(screen.getByText("Lot 7"));
+    await fireEvent.press(screen.getByLabelText("For"));
+
+    await waitFor(() =>
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({
+        queryKey: ["scheme", "scheme-1", "meeting", "meeting-1"],
+      }),
+    );
+    expect(screen.queryByText("The vote could not be recorded.")).toBeNull();
   });
 });

@@ -45,8 +45,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow GoodStrata to choose photos for your profile and building community.",
-          "cameraPermission": false,
+          "photosPermission": "Allow GoodStrata to choose photos for your profile, building community and maintenance reports.",
+          "cameraPermission": "Allow GoodStrata to take photos for maintenance reports.",
           "microphonePermission": false
         }
       ],

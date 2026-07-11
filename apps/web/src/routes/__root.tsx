@@ -3,6 +3,7 @@ import { createRootRouteWithContext, Link, Outlet, useParams } from "@tanstack/r
 import { ChevronLeft, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
+import { MessagesBell } from "@/components/MessagesBell";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -90,7 +91,12 @@ function RootLayout() {
           </div>
           {session?.user ? (
             <div className="flex items-center gap-1">
-              {params.schemeId ? <NotificationsBell schemeId={params.schemeId} /> : null}
+              {params.schemeId ? (
+                <>
+                  <MessagesBell schemeId={params.schemeId} />
+                  <NotificationsBell schemeId={params.schemeId} />
+                </>
+              ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

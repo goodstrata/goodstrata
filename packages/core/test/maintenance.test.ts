@@ -74,6 +74,87 @@ afterAll(async () => {
   await tdb.cleanup();
 });
 
+const png = (label: string) => ({
+  filename: `${label}.png`,
+  contentType: "image/png",
+  content: new TextEncoder().encode(`fake-png-${label}`),
+});
+
+describe("report photos", () => {
+  it("creates a request with photos, serves the bytes back, and counts them on the read shape", async () => {
+    const request = await maintenanceService.createMaintenanceRequest(
+      ctx(),
+      schemeId,
+      { title: "Water stain on lot 9 ceiling", description: "Spreading since the storm" },
+      [png("stain-1"), png("stain-2")],
+    );
+
+    expect(request.images).toHaveLength(2);
+    expect(request.photoCount).toBe(2);
+
+    const { row, bytes } = await maintenanceService.getRequestImage(
+      ctx(),
+      schemeId,
+      request.images[0]!.id,
+    );
+    expect(row.mime).toBe("image/png");
+    expect(new TextDecoder().decode(bytes)).toBe("fake-png-stain-1");
+
+    const listed = await maintenanceService.listRequests(ctx(), schemeId);
+    const mine = listed.find((r) => r.id === request.id)!;
+    expect(mine.images).toHaveLength(2);
+    expect(mine.photoCount).toBe(2);
+
+    // The count the triage agent's context quotes ("Photos on file: N").
+    expect(await maintenanceService.countRequestPhotos(ctx(), schemeId, request.id)).toBe(2);
+  });
+
+  it("a request without photos reads photoCount 0", async () => {
+    const request = await maintenanceService.createMaintenanceRequest(ctx(), schemeId, {
+      title: "No-photo report",
+      description: "Nothing attached",
+    });
+    expect(request.photoCount).toBe(0);
+    expect(await maintenanceService.countRequestPhotos(ctx(), schemeId, request.id)).toBe(0);
+  });
+
+  it("rejects more than 8 photos", async () => {
+    const files = Array.from({ length: 9 }, (_, i) => png(`n${i}`));
+    await expect(
+      maintenanceService.createMaintenanceRequest(
+        ctx(),
+        schemeId,
+        { title: "Too many", description: "photos" },
+        files,
+      ),
+    ).rejects.toMatchObject({ code: "TOO_MANY_IMAGES" });
+  });
+
+  it("scopes image bytes to the scheme", async () => {
+    const otherRows = await tdb.db
+      .insert(schemes)
+      .values({
+        name: "Other OC",
+        planOfSubdivision: `PS${Math.floor(Math.random() * 900000) + 100000}X`,
+        addressLine1: "2 Away St",
+        suburb: "Carlton",
+        postcode: "3053",
+        tier: 2,
+        status: "active",
+      })
+      .returning();
+    const request = await maintenanceService.createMaintenanceRequest(
+      ctx(),
+      schemeId,
+      { title: "Scoped", description: "photo lives here" },
+      [png("scoped")],
+    );
+    await expect(
+      maintenanceService.getRequestImage(ctx(), otherRows[0]!.id, request.images[0]!.id),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
 describe("work order threshold routing (code, not LLM)", () => {
   it("auto-dispatches a HUMAN officer's under-threshold estimate and emails the contractor", async () => {
     const request = await newTriagedRequest("routine");

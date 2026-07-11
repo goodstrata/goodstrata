@@ -91,7 +91,9 @@ const TYPE_SECTIONS: Record<string, Section> = {
   // Community.
   community_post: "community", // emitted (community.comment.created)
   announcement: "community",
-  conversation: "community", // emitted (conversation.message.sent)
+  // emitted (conversation.message.sent). Web routes this to its dedicated
+  // Messages section; native keeps it on community, which hosts its inbox.
+  conversation: "community",
   // Compliance and grievances.
   compliance_obligation: "compliance", // emitted (compliance.obligation.due)
   complaint: "grievances",

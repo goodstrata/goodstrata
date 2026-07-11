@@ -12,6 +12,7 @@ import {
   check,
   date,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -66,6 +67,26 @@ export const maintenanceRequests = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("maintenance_requests_scheme_status_idx").on(t.schemeId, t.status)],
+);
+
+/** One photo attached to a request at intake (mirrors communityPostImages; stored via StorageProvider). */
+export const maintenanceRequestImages = pgTable(
+  "maintenance_request_images",
+  {
+    id: pk(),
+    schemeId: uuid()
+      .notNull()
+      .references(() => schemes.id),
+    requestId: uuid()
+      .notNull()
+      .references(() => maintenanceRequests.id),
+    storageKey: text().notNull(),
+    mime: text().notNull(),
+    sizeBytes: bigint({ mode: "number" }).notNull(),
+    position: integer().notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("maintenance_request_images_request_idx").on(t.requestId)],
 );
 
 /**

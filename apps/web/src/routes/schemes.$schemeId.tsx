@@ -11,6 +11,7 @@ import {
   Landmark,
   Layers,
   LayoutDashboard,
+  Mail,
   MessagesSquare,
   Scale,
   ShieldCheck,
@@ -33,6 +34,7 @@ import { CommitteeSection } from "@/components/sections/CommitteeSection";
 import { CommunitySection } from "@/components/sections/CommunitySection";
 import { DocumentsSection } from "@/components/sections/DocumentsSection";
 import { LotsSection } from "@/components/sections/LotsSection";
+import { MessagesSection } from "@/components/sections/MessagesSection";
 import { OverviewSection } from "@/components/sections/OverviewSection";
 import { PeopleSection } from "@/components/sections/PeopleSection";
 import { RegistryPlate } from "@/components/ui/registry-plate";
@@ -57,6 +59,7 @@ const SECTIONS = [
   "documents",
   "activity",
   "community",
+  "messages",
 ] as const;
 type Section = (typeof SECTIONS)[number];
 
@@ -114,7 +117,10 @@ const NAV_GROUPS: { heading: string | null; items: SectionItem[] }[] = [
   },
   {
     heading: "Community",
-    items: [{ key: "community", label: "Community", icon: MessagesSquare }],
+    items: [
+      { key: "community", label: "Community", icon: MessagesSquare },
+      { key: "messages", label: "Messages", icon: Mail },
+    ],
   },
   {
     heading: "Automation",
@@ -142,6 +148,7 @@ const OWNER_SECTIONS: readonly Section[] = [
   "finance",
   "meetings",
   "community",
+  "messages",
   "documents",
 ];
 
@@ -282,6 +289,8 @@ function SectionBody({
       return <ActivitySection schemeId={schemeId} />;
     case "community":
       return <CommunitySection schemeId={schemeId} />;
+    case "messages":
+      return <MessagesSection schemeId={schemeId} />;
   }
 }
 

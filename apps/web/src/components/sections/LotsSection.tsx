@@ -3,6 +3,7 @@ import { CircleAlert, Layers } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LotStatementDialog } from "@/components/LotStatementDialog";
+import { type LotOwner, ManageOwnersDialog } from "@/components/ManageOwnersDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -29,12 +30,7 @@ interface LotRow {
   lotType: string;
   entitlement: number;
   liability: number;
-  owners: {
-    personId: string;
-    givenName: string | null;
-    familyName: string | null;
-    email: string | null;
-  }[];
+  owners: LotOwner[];
 }
 
 const SAMPLE_CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
@@ -144,12 +140,22 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
                     </p>
                     <p className="text-sm text-muted-foreground capitalize">{lot.lotType}</p>
                   </div>
-                  <LotStatementDialog
-                    schemeId={schemeId}
-                    lotId={lot.id}
-                    lotNumber={lot.lotNumber}
-                    triggerVariant="outline"
-                  />
+                  <div className="flex shrink-0 gap-1.5">
+                    {isOfficer && (
+                      <ManageOwnersDialog
+                        schemeId={schemeId}
+                        lotId={lot.id}
+                        lotNumber={lot.lotNumber}
+                        owners={lot.owners}
+                      />
+                    )}
+                    <LotStatementDialog
+                      schemeId={schemeId}
+                      lotId={lot.id}
+                      lotNumber={lot.lotNumber}
+                      triggerVariant="outline"
+                    />
+                  </div>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <div>
@@ -204,13 +210,23 @@ export function LotsSection({ schemeId }: { schemeId: string }) {
                   </TableCell>
                   <TableCell className="text-muted-foreground">{ownerNames(lot)}</TableCell>
                   <TableCell className="text-right">
-                    <LotStatementDialog
-                      schemeId={schemeId}
-                      lotId={lot.id}
-                      lotNumber={lot.lotNumber}
-                      triggerVariant="ghost"
-                      triggerClassName="text-muted-foreground"
-                    />
+                    <div className="flex justify-end gap-1.5">
+                      {isOfficer && (
+                        <ManageOwnersDialog
+                          schemeId={schemeId}
+                          lotId={lot.id}
+                          lotNumber={lot.lotNumber}
+                          owners={lot.owners}
+                        />
+                      )}
+                      <LotStatementDialog
+                        schemeId={schemeId}
+                        lotId={lot.id}
+                        lotNumber={lot.lotNumber}
+                        triggerVariant="ghost"
+                        triggerClassName="text-muted-foreground"
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

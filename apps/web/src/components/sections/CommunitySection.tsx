@@ -31,12 +31,13 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { useIsOfficer, useIsOwnerView } from "@/lib/roles";
+import { useIsCommittee, useIsOwnerView } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -56,6 +57,7 @@ interface PostSummary {
   id: string;
   body: string;
   status: "visible" | "hidden" | "removed";
+  visibility: "scheme" | "committee";
   author: PostAuthor;
   images: PostImageView[];
   likeCount: number;
@@ -79,7 +81,17 @@ interface FeedPage {
   nextCursor?: string;
 }
 
-const FEED_KEY = (schemeId: string) => ["community", schemeId] as const;
+/**
+ * The two channels of the board: the open scheme feed, and the committee's
+ * private discussion (visibility "committee" — officer tier only; the server
+ * scopes every read and write, this is presentation).
+ */
+type Channel = "scheme" | "committee";
+
+/** Prefix for invalidations (matches both channels' feeds). */
+const FEED_SCOPE = (schemeId: string) => ["community", schemeId] as const;
+const FEED_KEY = (schemeId: string, channel: Channel) =>
+  [...FEED_SCOPE(schemeId), channel] as const;
 const THREAD_KEY = (schemeId: string, postId: string) =>
   ["community-thread", schemeId, postId] as const;
 
@@ -149,19 +161,55 @@ function charactersLeftHint(value: string): string | undefined {
 // ---------------------------------------------------------------------------
 
 export function CommunitySection({ schemeId }: { schemeId: string }) {
+  const isCommittee = useIsCommittee(schemeId);
+  const [channel, setChannel] = useState<Channel>("scheme");
+
+  // Plain members see the open board only; anyone on the committee (or the
+  // manager) also gets the private committee channel. The tabs are
+  // presentation — the server hides committee posts from everyone else.
+  if (!isCommittee) {
+    return (
+      <div className="max-w-2xl space-y-6">
+        <ChannelFeed schemeId={schemeId} channel="scheme" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <Tabs value={channel} onValueChange={(v) => setChannel(v as Channel)}>
+        <TabsList variant="line">
+          <TabsTrigger value="scheme">Everyone</TabsTrigger>
+          <TabsTrigger value="committee">Committee</TabsTrigger>
+        </TabsList>
+        <TabsContent value="scheme" className="pt-2">
+          <ChannelFeed schemeId={schemeId} channel="scheme" />
+        </TabsContent>
+        <TabsContent value="committee" className="pt-2">
+          <ChannelFeed schemeId={schemeId} channel="committee" />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function ChannelFeed({ schemeId, channel }: { schemeId: string; channel: Channel }) {
   const queryClient = useQueryClient();
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
-  const isOfficer = useIsOfficer(schemeId);
+  const isCommittee = useIsCommittee(schemeId);
   const isOwnerView = useIsOwnerView(schemeId);
 
   const feed = useInfiniteQuery({
-    queryKey: FEED_KEY(schemeId),
+    queryKey: FEED_KEY(schemeId, channel),
     queryFn: async ({ pageParam }) =>
       unwrap<FeedPage>(
         await api.schemes[":schemeId"].community.posts.$get({
           param: { schemeId },
-          query: { cursor: pageParam },
+          query: {
+            cursor: pageParam,
+            channel: channel === "committee" ? ("committee" as const) : undefined,
+          },
         }),
       ),
     initialPageParam: undefined as string | undefined,
@@ -171,7 +219,7 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
   /** Surgically update one post across all loaded feed pages (no refetch). */
   const patchPost = useCallback(
     (postId: string, patch: (post: PostSummary) => PostSummary) => {
-      queryClient.setQueryData<InfiniteData<FeedPage>>(FEED_KEY(schemeId), (old) =>
+      queryClient.setQueryData<InfiniteData<FeedPage>>(FEED_KEY(schemeId, channel), (old) =>
         old
           ? {
               ...old,
@@ -183,12 +231,12 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
           : old,
       );
     },
-    [queryClient, schemeId],
+    [queryClient, schemeId, channel],
   );
 
   const removePost = useCallback(
     (postId: string) => {
-      queryClient.setQueryData<InfiniteData<FeedPage>>(FEED_KEY(schemeId), (old) =>
+      queryClient.setQueryData<InfiniteData<FeedPage>>(FEED_KEY(schemeId, channel), (old) =>
         old
           ? {
               ...old,
@@ -200,14 +248,18 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
           : old,
       );
     },
-    [queryClient, schemeId],
+    [queryClient, schemeId, channel],
   );
 
-  const posts = feed.data?.pages.flatMap((page) => page.posts) ?? [];
+  // A committee viewer's unfiltered feed interleaves committee posts; keep the
+  // open board clean so each channel shows only its own conversation.
+  const posts = (feed.data?.pages.flatMap((page) => page.posts) ?? []).filter((p) =>
+    channel === "scheme" ? p.visibility === "scheme" : true,
+  );
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <PostComposer schemeId={schemeId} isOwnerView={isOwnerView} />
+    <div className="space-y-6">
+      <PostComposer schemeId={schemeId} channel={channel} isOwnerView={isOwnerView} />
 
       {feed.isError ? (
         <ErrorState
@@ -224,11 +276,19 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
       ) : posts.length === 0 ? (
         <EmptyState
           icon={MessagesSquare}
-          title={isOwnerView ? "Nothing here yet" : "No posts yet"}
+          title={
+            channel === "committee"
+              ? "No committee discussion yet"
+              : isOwnerView
+                ? "Nothing here yet"
+                : "No posts yet"
+          }
           description={
-            isOwnerView
-              ? "Be the first to post — share a notice or a question with your building."
-              : "Start the conversation — share the first update with your neighbours."
+            channel === "committee"
+              ? "Start the first thread — only the committee and manager will see it."
+              : isOwnerView
+                ? "Be the first to post — share a notice or a question with your building."
+                : "Start the conversation — share the first update with your neighbours."
           }
         />
       ) : (
@@ -239,7 +299,7 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
               schemeId={schemeId}
               post={post}
               currentUserId={currentUserId}
-              isOfficer={isOfficer}
+              isModerator={isCommittee}
               patchPost={patchPost}
               removePost={removePost}
             />
@@ -273,7 +333,15 @@ const composerSchema = z.object({
 });
 type ComposerValues = z.infer<typeof composerSchema>;
 
-function PostComposer({ schemeId, isOwnerView }: { schemeId: string; isOwnerView: boolean }) {
+function PostComposer({
+  schemeId,
+  channel,
+  isOwnerView,
+}: {
+  schemeId: string;
+  channel: Channel;
+  isOwnerView: boolean;
+}) {
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [images, setImages] = useState<{ file: File; url: string }[]>([]);
@@ -342,6 +410,9 @@ function PostComposer({ schemeId, isOwnerView }: { schemeId: string; isOwnerView
     onSubmit: async ({ body }) => {
       const payload = new FormData();
       payload.set("body", body);
+      // Posting in the committee tab writes to the private channel; the server
+      // rejects this for anyone outside the officer tier.
+      if (channel === "committee") payload.set("visibility", "committee");
       for (const img of images) payload.append("images", img.file);
       const res = await fetch(`/api/schemes/${schemeId}/community/posts`, {
         method: "POST",
@@ -352,7 +423,7 @@ function PostComposer({ schemeId, isOwnerView }: { schemeId: string; isOwnerView
       toast.success("Post shared");
       clearImages();
       formRef.current?.reset();
-      await queryClient.invalidateQueries({ queryKey: FEED_KEY(schemeId) });
+      await queryClient.invalidateQueries({ queryKey: FEED_SCOPE(schemeId) });
     },
   });
   formRef.current = form;
@@ -360,11 +431,19 @@ function PostComposer({ schemeId, isOwnerView }: { schemeId: string; isOwnerView
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{isOwnerView ? "Post to your building" : "Share with your community"}</CardTitle>
+        <CardTitle>
+          {channel === "committee"
+            ? "Committee discussion"
+            : isOwnerView
+              ? "Post to your building"
+              : "Share with your community"}
+        </CardTitle>
         <CardDescription>
-          {isOwnerView
-            ? "Share a notice, a question, or a photo with the owners and residents in your building."
-            : "Post an update, a question, or a photo for owners and residents of this scheme."}
+          {channel === "committee"
+            ? "Start a private thread — visible only to committee members and the manager."
+            : isOwnerView
+              ? "Share a notice, a question, or a photo with the owners and residents in your building."
+              : "Post an update, a question, or a photo for owners and residents of this scheme."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -458,20 +537,21 @@ function PostCard({
   schemeId,
   post,
   currentUserId,
-  isOfficer,
+  isModerator,
   patchPost,
   removePost,
 }: {
   schemeId: string;
   post: PostSummary;
   currentUserId: string | undefined;
-  isOfficer: boolean;
+  /** Committee tier — the same set the server lets moderate the board. */
+  isModerator: boolean;
   patchPost: (postId: string, patch: (post: PostSummary) => PostSummary) => void;
   removePost: (postId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
-  const canModerate = currentUserId === post.author.userId || isOfficer;
+  const canModerate = currentUserId === post.author.userId || isModerator;
 
   const likeMutation = useMutation({
     mutationFn: async () =>
@@ -493,7 +573,7 @@ function PostCard({
     onError: () => {
       // Resync from the server if the optimistic toggle didn't take.
       toast.error("Couldn't update your reaction. Please try again.");
-      void queryClient.invalidateQueries({ queryKey: FEED_KEY(schemeId) });
+      void queryClient.invalidateQueries({ queryKey: FEED_SCOPE(schemeId) });
     },
   });
 
@@ -569,7 +649,7 @@ function PostCard({
           schemeId={schemeId}
           postId={post.id}
           currentUserId={currentUserId}
-          isOfficer={isOfficer}
+          isModerator={isModerator}
           onCommentCountChange={(delta) =>
             patchPost(post.id, (p) => ({
               ...p,
@@ -686,13 +766,13 @@ function CommentThread({
   schemeId,
   postId,
   currentUserId,
-  isOfficer,
+  isModerator,
   onCommentCountChange,
 }: {
   schemeId: string;
   postId: string;
   currentUserId: string | undefined;
-  isOfficer: boolean;
+  isModerator: boolean;
   onCommentCountChange: (delta: number) => void;
 }) {
   const thread = useQuery({
@@ -731,7 +811,7 @@ function CommentThread({
                   postId={postId}
                   comment={comment}
                   currentUserId={currentUserId}
-                  isOfficer={isOfficer}
+                  isModerator={isModerator}
                   onDeleted={() => onCommentCountChange(-1)}
                 />
               ))}
@@ -753,18 +833,18 @@ function CommentItem({
   postId,
   comment,
   currentUserId,
-  isOfficer,
+  isModerator,
   onDeleted,
 }: {
   schemeId: string;
   postId: string;
   comment: CommentView;
   currentUserId: string | undefined;
-  isOfficer: boolean;
+  isModerator: boolean;
   onDeleted: () => void;
 }) {
   const queryClient = useQueryClient();
-  const canModerate = currentUserId === comment.author.userId || isOfficer;
+  const canModerate = currentUserId === comment.author.userId || isModerator;
 
   const patchComment = useCallback(
     (patch: (c: CommentView) => CommentView) => {
