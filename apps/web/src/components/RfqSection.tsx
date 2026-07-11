@@ -536,16 +536,11 @@ export function RfqSection({
     refetchInterval: 3000,
   });
 
+  // No heading here: this only ever renders inside the maintenance "Quotes"
+  // tab, which already names it. The empty state carries the explanation.
   return (
     <section>
-      <h2 className="flex items-center gap-2 text-base font-semibold">
-        <FileSearch aria-hidden="true" className="size-4 text-muted-foreground" /> Requests for
-        quotes
-      </h2>
-      <p className="text-sm text-muted-foreground">
-        The agent drafts an anonymized scope; contractors quote; the committee awards.
-      </p>
-      <div className="mt-4 space-y-2.5">
+      <div className="space-y-2.5">
         {isLoading && <Skeleton className="h-24" />}
         {isError && (
           <ErrorState message="Couldn't load requests for quotes." onRetry={() => void refetch()} />
