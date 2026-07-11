@@ -38,7 +38,7 @@ import { PeopleSection } from "@/components/sections/PeopleSection";
 import { RegistryPlate } from "@/components/ui/registry-plate";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { schemeQueryOptions, useIsOwnerView } from "@/lib/roles";
+import { schemeQueryOptions, useIsCommitteeMember, useIsOwnerView } from "@/lib/roles";
 import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -145,6 +145,23 @@ const OWNER_SECTIONS: readonly Section[] = [
   "documents",
 ];
 
+/**
+ * A committee member (no officer role) keeps the focused owner nav but gets
+ * Decisions back: voting is their statutory role, they are notified to do it,
+ * and the API already lets them read and vote (requireSchemeMember +
+ * rolesAllowedToDecide). It sits second, right under Home, because it is the
+ * one thing that waits on them. The officer-only registers stay hidden.
+ */
+const COMMITTEE_MEMBER_SECTIONS: readonly Section[] = [
+  "overview",
+  "decisions",
+  "maintenance",
+  "finance",
+  "meetings",
+  "community",
+  "documents",
+];
+
 /** Owner-voiced labels; internal org vocabulary is reframed for the resident. */
 const OWNER_LABELS: Partial<Record<Section, string>> = {
   overview: "Home",
@@ -156,19 +173,30 @@ const OWNER_LABELS: Partial<Record<Section, string>> = {
 /** Owner mobile bottom-bar primaries; community + documents live behind "More". */
 const OWNER_MOBILE_PRIMARY: readonly Section[] = ["overview", "maintenance", "finance", "meetings"];
 
+/** Committee members pin Decisions instead of Meetings; the bar holds four. */
+const COMMITTEE_MEMBER_MOBILE_PRIMARY: readonly Section[] = [
+  "overview",
+  "decisions",
+  "maintenance",
+  "finance",
+];
+
 /**
- * Derive the owner nav from the single-source committee groups: keep only
- * owner sections, apply owner labels, and drop groups that empty out. Order
- * follows OWNER_SECTIONS so "Report an issue" sits second under Home.
+ * Derive a focused nav from the single-source committee groups: keep only the
+ * given sections, apply owner labels, and flatten to one unheaded group (which
+ * reads best for a short index). Order follows `sections`, so "Report an issue"
+ * sits second under Home for an owner, and "Decisions" does for a committee
+ * member.
  */
-function ownerNavGroups(): { heading: string | null; items: SectionItem[] }[] {
+function focusedNavGroups(
+  sections: readonly Section[],
+): { heading: string | null; items: SectionItem[] }[] {
   const byKey = new Map(ALL_ITEMS.map((item) => [item.key, item]));
-  const items = OWNER_SECTIONS.flatMap((key) => {
+  const items = sections.flatMap((key) => {
     const base = byKey.get(key);
     if (!base) return [];
     return [{ ...base, label: OWNER_LABELS[key] ?? base.label }];
   });
-  // A single flat, unheaded group reads best for the short owner index.
   return [{ heading: null, items }];
 }
 
@@ -178,20 +206,42 @@ interface NavConfig {
 }
 
 const COMMITTEE_NAV: NavConfig = { groups: NAV_GROUPS, mobilePrimary: MOBILE_PRIMARY };
-const OWNER_NAV: NavConfig = { groups: ownerNavGroups(), mobilePrimary: OWNER_MOBILE_PRIMARY };
+const OWNER_NAV: NavConfig = {
+  groups: focusedNavGroups(OWNER_SECTIONS),
+  mobilePrimary: OWNER_MOBILE_PRIMARY,
+};
+const COMMITTEE_MEMBER_NAV: NavConfig = {
+  groups: focusedNavGroups(COMMITTEE_MEMBER_SECTIONS),
+  mobilePrimary: COMMITTEE_MEMBER_MOBILE_PRIMARY,
+};
 
 function SchemePage() {
   const { schemeId } = Route.useParams();
   const { section } = Route.useSearch();
   const { data } = useQuery(schemeQueryOptions(schemeId));
   const isOwnerView = useIsOwnerView(schemeId);
+  const isCommitteeMember = useIsCommitteeMember(schemeId);
   // Show the register-index sidebar from md (768px) so tablets/small laptops
   // get it instead of the phone bottom bar; the shared hook stays at 1024.
   const isMobile = useIsMobile(768);
 
+  // The sections this viewer's nav offers, or null for an officer (everything).
+  // A committee member is also an owner viewer, so test the narrower role first.
+  const visible: readonly Section[] | null = isCommitteeMember
+    ? COMMITTEE_MEMBER_SECTIONS
+    : isOwnerView
+      ? OWNER_SECTIONS
+      : null;
+
   // Pick the nav set only once roles have loaded (data present) so an owner
   // never sees the committee index flash before their own resolves.
-  const nav: NavConfig | null = data ? (isOwnerView ? OWNER_NAV : COMMITTEE_NAV) : null;
+  const nav: NavConfig | null = data
+    ? isCommitteeMember
+      ? COMMITTEE_MEMBER_NAV
+      : isOwnerView
+        ? OWNER_NAV
+        : COMMITTEE_NAV
+    : null;
 
   return (
     <>
@@ -216,7 +266,7 @@ function SchemePage() {
               <Skeleton className="h-px w-full" />
             </div>
           )}
-          <SectionBody schemeId={schemeId} section={section} isOwnerView={isOwnerView} />
+          <SectionBody schemeId={schemeId} section={section} visible={visible} />
         </div>
       </div>
       {isMobile && nav && <BottomNav schemeId={schemeId} active={section} nav={nav} />}
@@ -228,17 +278,18 @@ function SchemePage() {
 function SectionBody({
   schemeId,
   section,
-  isOwnerView,
+  visible,
 }: {
   schemeId: string;
   section: Section;
-  isOwnerView: boolean;
+  /** Sections this viewer's nav offers; null for an officer (all of them). */
+  visible: readonly Section[] | null;
 }) {
-  // Owners can still type ?section=decisions; send them home. Cosmetic tidiness
-  // on top of the server's own rejection — never presented as security. The
-  // guard only fires once we know the viewer is an owner (isOwnerView is false
-  // while roles load), so committee viewers are never redirected.
-  if (isOwnerView && !OWNER_SECTIONS.includes(section)) {
+  // An owner can still type ?section=grievances; send them home. Cosmetic
+  // tidiness on top of the server's own rejection — never presented as
+  // security. `visible` is null while roles load and for officers, so neither
+  // is ever redirected.
+  if (visible && !visible.includes(section)) {
     return (
       <Navigate
         to="/schemes/$schemeId"

@@ -33,15 +33,29 @@ export function useIsOfficer(schemeId: string): boolean {
 }
 
 /**
- * True for a plain member — someone who holds a membership on this scheme but
- * no officer/committee role. Drives the focused owner presentation (nav set +
- * landing). Returns false while roles are still loading (roles === []), so the
- * committee layout is never flashed before the owner layout resolves. This is
- * presentation only; the API still enforces access via requireScope.
+ * True for a non-officer member — someone who holds a membership on this scheme
+ * but no officer role. Drives the focused owner presentation (nav set +
+ * landing). A committee member gets this focused view too, plus Decisions (see
+ * useIsCommitteeMember). Returns false while roles are still loading
+ * (roles === []), so the committee layout is never flashed before the owner
+ * layout resolves. This is presentation only; the API still enforces access via
+ * requireScope.
  */
 export function useIsOwnerView(schemeId: string): boolean {
   const roles = useSchemeRoles(schemeId);
   return roles.length > 0 && !roles.some((r) => OFFICER_ROLES.includes(r));
+}
+
+/**
+ * True for a committee member who holds no officer role. They keep the focused
+ * owner presentation, but deciding is their statutory job — they are notified
+ * to vote, and the API lets them read and vote on committee-tier decisions
+ * (requireSchemeMember + rolesAllowedToDecide). So the Decisions section is
+ * added back to their nav. Mirrors the native hub's committee row.
+ */
+export function useIsCommitteeMember(schemeId: string): boolean {
+  const roles = useSchemeRoles(schemeId);
+  return roles.includes("committee_member") && !roles.some((r) => OFFICER_ROLES.includes(r));
 }
 
 /** Mirrors core's rolesAllowedToDecide for a decision's decider tier. */
