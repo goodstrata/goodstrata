@@ -141,7 +141,7 @@ export function SignUpForm() {
               <Field
                 label="Building name"
                 htmlFor="signup-building"
-                hint="Optional — we'll use it to set up your first scheme."
+                hint="Optional. We'll use it to set up your first scheme."
               >
                 <Input
                   placeholder="e.g. 48 Rose St, Fitzroy"
