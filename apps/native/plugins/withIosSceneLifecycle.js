@@ -1,6 +1,6 @@
 const { withInfoPlist, withDangerousMod } = require("expo/config-plugins");
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
 
 // iOS 27 traps at launch (NoSceneLifecycleAdoption) unless the app adopts the
 // UIScene lifecycle. Expo SDK 57.0.2's template still uses the legacy lifecycle

@@ -60,10 +60,7 @@ const Block: React.FC<{ state: "off" | "lit" | "green" }> = ({ state }) => {
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        boxShadow:
-          state === "off"
-            ? "none"
-            : "0 24px 44px -30px rgba(15,20,28,0.5)",
+        boxShadow: state === "off" ? "none" : "0 24px 44px -30px rgba(15,20,28,0.5)",
       }}
     >
       {Array.from({ length: 3 }).map((_, r) => (
@@ -158,24 +155,27 @@ const OnePager: React.FC = () => (
     >
       Run your own building
     </div>
-    {["Levies, apportioned to the cent", "Arrears chased automatically", "Minutes drafted for you", "Free · open source"].map(
-      (t) => (
-        <div
-          key={t}
-          style={{
-            display: "flex",
-            gap: 12,
-            fontFamily: fonts.sans,
-            fontSize: 22,
-            color: theme.mutedInk,
-            marginTop: 16,
-          }}
-        >
-          <span style={{ color: theme.primary }}>✓</span>
-          {t}
-        </div>
-      ),
-    )}
+    {[
+      "Levies, apportioned to the cent",
+      "Arrears chased automatically",
+      "Minutes drafted for you",
+      "Free · open source",
+    ].map((t) => (
+      <div
+        key={t}
+        style={{
+          display: "flex",
+          gap: 12,
+          fontFamily: fonts.sans,
+          fontSize: 22,
+          color: theme.mutedInk,
+          marginTop: 16,
+        }}
+      >
+        <span style={{ color: theme.primary }}>✓</span>
+        {t}
+      </div>
+    ))}
   </div>
 );
 

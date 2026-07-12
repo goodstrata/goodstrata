@@ -93,7 +93,11 @@ function RootLayout() {
                 </>
               ) : (
                 <>
-                  <img src="/logo-on-light.svg" alt="GoodStrata" className="h-7 w-auto dark:hidden" />
+                  <img
+                    src="/logo-on-light.svg"
+                    alt="GoodStrata"
+                    className="h-7 w-auto dark:hidden"
+                  />
                   <img
                     src="/logo-on-dark.svg"
                     alt="GoodStrata"

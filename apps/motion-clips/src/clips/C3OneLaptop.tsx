@@ -8,8 +8,8 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { countUp, EASE_IN_OUT, EASE_OUT, fade, riseIn } from "../lib/anim";
 import { AuditLog } from "../lib/AuditLog";
+import { countUp, EASE_IN_OUT, EASE_OUT, fade, riseIn } from "../lib/anim";
 import { Caption } from "../lib/Caption";
 import { CodeBlock } from "../lib/CodeBlock";
 import { KenBurns } from "../lib/KenBurns";
@@ -165,7 +165,8 @@ const Scene1: React.FC = () => {
                 >
                   110 events
                   <br />1 decision
-                  <br />$0.00 unallocated
+                  <br />
+                  $0.00 unallocated
                 </div>
               </div>
             </div>
@@ -258,10 +259,7 @@ const Scene3: React.FC = () => {
           {steps.map((s, i) => {
             const active = prog >= i - 0.15;
             return (
-              <div
-                key={s}
-                style={{ display: "flex", alignItems: "center", flex: i < 2 ? 1 : 0 }}
-              >
+              <div key={s} style={{ display: "flex", alignItems: "center", flex: i < 2 ? 1 : 0 }}>
                 <div style={{ textAlign: "center" }}>
                   <div
                     style={{

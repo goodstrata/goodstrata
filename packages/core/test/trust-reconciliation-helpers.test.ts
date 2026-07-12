@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  csvCell,
-  csvRow,
-  onOrBefore,
-  withinBounds,
-} from "../src/services/trustReconciliation.js";
+import { csvCell, csvRow, onOrBefore, withinBounds } from "../src/services/trustReconciliation.js";
 
 /**
  * Direct, DB-free boundary tests for the pure helpers behind the auditor-facing

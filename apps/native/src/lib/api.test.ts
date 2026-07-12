@@ -41,7 +41,13 @@ describe("api (GET)", () => {
   it("throws an ApiError carrying code/status/details from the error envelope", async () => {
     fetchMock.mockResolvedValueOnce(
       response(
-        { error: { code: "FORBIDDEN", message: "Not a member of this scheme", details: { schemeId: "s1" } } },
+        {
+          error: {
+            code: "FORBIDDEN",
+            message: "Not a member of this scheme",
+            details: { schemeId: "s1" },
+          },
+        },
         { ok: false, status: 403 },
       ),
     );
@@ -95,7 +101,13 @@ describe("write verbs", () => {
   it("apiPatch issues a PATCH and parses the error envelope on failure", async () => {
     fetchMock.mockResolvedValueOnce(
       response(
-        { error: { code: "VALIDATION", message: "Amount must be positive", details: [{ path: ["amount"] }] } },
+        {
+          error: {
+            code: "VALIDATION",
+            message: "Amount must be positive",
+            details: [{ path: ["amount"] }],
+          },
+        },
         { ok: false, status: 422 },
       ),
     );

@@ -133,7 +133,7 @@ export function drawParty(
     .text(label, x, y, { width });
   let cy = doc.y + 3;
   doc.font(fonts.face(font.sans)).fontSize(10).fillColor(color.ink);
-  const clean = lines.filter((l): l is string => Boolean(l && l.trim()));
+  const clean = lines.filter((l): l is string => Boolean(l?.trim()));
   for (const [i, line] of clean.entries()) {
     doc
       .font(fonts.face(i === 0 ? font.sansSemibold : font.sans))

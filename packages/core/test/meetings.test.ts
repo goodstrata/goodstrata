@@ -608,7 +608,13 @@ describe("polls (s 92(3)–(5)) and proxy validity", () => {
     const ctx = ctxAt(NOW);
     // Kim (10) attends; Pat's proxy to Kim lapsed before today, so lot 4 is
     // NOT represented and quorum stays at 10/50.
-    await meetingsService.recordAttendance(ctx, schemeId, sgmId, personByName.get("Kim")!, "online");
+    await meetingsService.recordAttendance(
+      ctx,
+      schemeId,
+      sgmId,
+      personByName.get("Kim")!,
+      "online",
+    );
     await meetingsService.submitProxy(ctx, schemeId, personByName.get("Pat")!, {
       lotId: lotByNumber.get("4")!,
       proxyPersonId: personByName.get("Kim")!,

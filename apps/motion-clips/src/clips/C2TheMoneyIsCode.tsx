@@ -8,8 +8,8 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { EASE_IN_OUT, EASE_OUT, fade, riseIn } from "../lib/anim";
 import { AuditLog } from "../lib/AuditLog";
+import { EASE_IN_OUT, EASE_OUT, fade, riseIn } from "../lib/anim";
 import { Caption } from "../lib/Caption";
 import { CodeBlock } from "../lib/CodeBlock";
 import { Ledger } from "../lib/Ledger";
@@ -315,10 +315,7 @@ const Scene5: React.FC = () => {
   const { fps } = useVideoConfig();
   const enter = riseIn(frame, fps, 4);
   // AI node glitches (deterministic flicker) then dissolves away.
-  const flicker =
-    frame < 96
-      ? 0.55 + 0.45 * Math.abs(Math.sin(frame * 0.8))
-      : 0;
+  const flicker = frame < 96 ? 0.55 + 0.45 * Math.abs(Math.sin(frame * 0.8)) : 0;
   const aiFade = interpolate(frame, [96, 140], [1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",

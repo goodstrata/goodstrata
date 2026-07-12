@@ -56,9 +56,7 @@ export function LotsStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="page-title">
-          Add your lots
-        </h1>
+        <h1 className="page-title">Add your lots</h1>
         <p className="text-sm text-muted-foreground">
           A lot is each separately owned part of the building — a unit, townhouse or shop. Every lot
           carries a <span className="font-medium text-foreground">lot entitlement</span>: its share

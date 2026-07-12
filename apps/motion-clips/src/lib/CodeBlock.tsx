@@ -39,7 +39,7 @@ function tokenLine(line: string, theme: Theme, band: boolean): Tok[] {
   }
   const out: Tok[] = [];
   // split keeping delimiters (quotes, word boundaries)
-  const parts = code.split(/(\s+|[(){}\[\],:=+\-*/.])/);
+  const parts = code.split(/(\s+|[(){}[\],:=+\-*/.])/);
   for (const p of parts) {
     if (p === "") continue;
     if (/^-?\d[\d_,.]*$/.test(p)) out.push({ text: p, color: num });
@@ -59,22 +59,12 @@ export const CodeBlock: React.FC<{
   fontSize?: number;
   title?: string;
   width?: number;
-}> = ({
-  theme,
-  lines,
-  band = false,
-  reveal = 1,
-  fontSize = 34,
-  title,
-  width = 1160,
-}) => {
+}> = ({ theme, lines, band = false, reveal = 1, fontSize = 34, title, width = 1160 }) => {
   const total = lines.reduce((n, l) => n + l.length + 1, 0);
   const shown = Math.floor(reveal * total);
   let used = 0;
 
-  const surface = band
-    ? `color-mix(in oklch, ${theme.bandBg} 62%, ${theme.card})`
-    : theme.card;
+  const surface = band ? `color-mix(in oklch, ${theme.bandBg} 62%, ${theme.card})` : theme.card;
   const border = band ? theme.bandLine : theme.line;
   const chrome = band ? theme.bandMuted : theme.faintInk;
 

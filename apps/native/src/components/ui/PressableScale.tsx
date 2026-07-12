@@ -1,6 +1,12 @@
 import * as Haptics from "expo-haptics";
-import { ReactNode, useCallback } from "react";
-import { GestureResponderEvent, Pressable, PressableProps, StyleProp, ViewStyle } from "react-native";
+import { type ReactNode, useCallback } from "react";
+import {
+  type GestureResponderEvent,
+  Pressable,
+  type PressableProps,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,

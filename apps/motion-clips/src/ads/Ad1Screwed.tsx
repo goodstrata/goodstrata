@@ -53,8 +53,7 @@ const Scene1: React.FC = () => (
     }}
   >
     <HookText theme={theme} at={2}>
-      You know you&apos;re getting{" "}
-      <span style={{ color: dark.critical }}>screwed</span>
+      You know you&apos;re getting <span style={{ color: dark.critical }}>screwed</span>
     </HookText>
     <HookText theme={theme} at={74}>
       by your strata.
@@ -80,13 +79,7 @@ const Scene2: React.FC = () => (
         dropAt={17}
         width={900}
       />
-      <FeeCard
-        theme={theme}
-        label="+ Arrears notices"
-        amount="$540"
-        dropAt={62}
-        width={900}
-      />
+      <FeeCard theme={theme} label="+ Arrears notices" amount="$540" dropAt={62} width={900} />
       <FeeCard
         theme={theme}
         label="+ 'Admin time'"
@@ -95,9 +88,7 @@ const Scene2: React.FC = () => (
         width={900}
       />
     </div>
-    <AdCaption theme={theme}>
-      Meeting fees. Arrears notices. &lsquo;Admin time.&rsquo;
-    </AdCaption>
+    <AdCaption theme={theme}>Meeting fees. Arrears notices. &lsquo;Admin time.&rsquo;</AdCaption>
   </AbsoluteFill>
 );
 

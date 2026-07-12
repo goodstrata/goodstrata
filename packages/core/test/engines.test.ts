@@ -115,7 +115,9 @@ describe("calculateLevyRun", () => {
     const run = calculateLevyRun(funds, lots, 4);
 
     // Every maintenance line is exactly 0.
-    const maintenanceLines = run.flatMap((r) => r.lines).filter((l) => l.fundKind === "maintenance");
+    const maintenanceLines = run
+      .flatMap((r) => r.lines)
+      .filter((l) => l.fundKind === "maintenance");
     expect(maintenanceLines.length).toBeGreaterThan(0);
     for (const l of maintenanceLines) expect(l.amountCents).toBe(0);
 

@@ -13,16 +13,7 @@ export const MonoLine: React.FC<{
   onBand?: boolean;
   labelColor?: string;
   amountColor?: string;
-}> = ({
-  label,
-  amount,
-  theme,
-  strong,
-  width = 1120,
-  onBand = false,
-  labelColor,
-  amountColor,
-}) => (
+}> = ({ label, amount, theme, strong, width = 1120, onBand = false, labelColor, amountColor }) => (
   <div
     style={{
       display: "flex",
@@ -31,9 +22,7 @@ export const MonoLine: React.FC<{
       gap: 44,
       width,
       padding: "34px 50px",
-      background: onBand
-        ? `color-mix(in oklch, ${theme.bandBg} 55%, ${theme.card})`
-        : theme.card,
+      background: onBand ? `color-mix(in oklch, ${theme.bandBg} 55%, ${theme.card})` : theme.card,
       border: `1.5px solid ${onBand ? theme.bandLine : theme.line}`,
       borderRadius: 22,
       boxShadow: onBand

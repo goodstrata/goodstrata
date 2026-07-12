@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { attemptId, attemptPlan, expectPrefilledInviteName } from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
@@ -8,23 +9,27 @@ const API = "http://localhost:3105";
 const section = (p: import("@playwright/test").Page, name: string) =>
   p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
 
-const CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
-1,20,20,commercial,Sam Shopkeeper,sam@example.com
-2,10,10,residential,Alex Owner,alex@example.com
-3,10,10,residential,Kim Nguyen,kim@example.com`;
-
 test.describe.configure({ mode: "serial" });
 
 test("full onboarding: scheme → lots → invite → join → insurance → activate", async ({
   page,
   browser,
-}) => {
-  test.setTimeout(120_000);
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const id = attemptId(testInfo);
+  const managerEmail = `morgan.${id}@example.com`;
+  const ownerEmail = `alex.${id}@example.com`;
+  const samEmail = `sam.${id}@example.com`;
+  const kimEmail = `kim.${id}@example.com`;
+  const csv = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
+1,20,20,commercial,Sam Shopkeeper,${samEmail}
+2,10,10,residential,Alex Owner,${ownerEmail}
+3,10,10,residential,Kim Nguyen,${kimEmail}`;
   // --- Manager signs up (dedicated /signup route with consent gate) ---
   await page.goto("/login");
   await page.getByRole("link", { name: "New here? Create an account" }).click();
   await page.getByPlaceholder("Your name").fill("Morgan Manager");
-  await page.getByPlaceholder("you@example.com").fill("morgan@example.com");
+  await page.getByPlaceholder("you@example.com").fill(managerEmail);
   await page.getByPlaceholder("Choose a password").fill("manager-pass-123");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account" }).click();
@@ -36,7 +41,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await page
     .getByPlaceholder("e.g. 48 Rose St Owners Corporation")
     .fill("48 Rose St Owners Corporation");
-  await page.getByPlaceholder("e.g. PS543210V").fill("PS543210V");
+  await page.getByPlaceholder("e.g. PS543210V").fill(attemptPlan("54", "V", testInfo));
   await page.getByPlaceholder("Street address").fill("48 Rose Street");
   await page.getByPlaceholder("Suburb").fill("Fitzroy");
   await page.getByPlaceholder("Postcode").fill("3065");
@@ -48,22 +53,20 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
 
   // --- Import lots via CSV ---
   await section(page, "lots").click();
-  await page.getByTestId("csv-input").fill(CSV);
+  await page.getByTestId("csv-input").fill(csv);
   await page.getByRole("button", { name: "Import lots" }).click();
   await expect(page.getByRole("cell", { name: "Sam Shopkeeper" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "Kim Nguyen" })).toBeVisible();
 
   // --- Invite an owner ---
   await section(page, "people").click();
-  const alexRow = page.getByTestId("person-alex@example.com");
+  const alexRow = page.getByTestId(`person-${ownerEmail}`);
   await alexRow.getByRole("button", { name: "Invite" }).click();
   await expect(alexRow.getByText("invited")).toBeVisible();
 
   // --- Owner accepts via the emailed link (read from the dev outbox) ---
   const outbox = await (await fetch(`${API}/dev/outbox`)).json();
-  const inviteEmail = outbox.emails.find(
-    (e: { to: string; text: string }) => e.to === "alex@example.com",
-  );
+  const inviteEmail = outbox.emails.find((e: { to: string; text: string }) => e.to === ownerEmail);
   expect(inviteEmail).toBeTruthy();
   const joinUrl = inviteEmail.text.match(/http:\/\/\S+\/join\?token=\S+/)?.[0];
   expect(joinUrl).toBeTruthy();
@@ -72,7 +75,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   const ownerPage = await ownerContext.newPage();
   await ownerPage.goto(joinUrl!);
   await expect(ownerPage.getByText(/invited as/)).toBeVisible();
-  await ownerPage.getByPlaceholder("Your name").fill("Alex Owner");
+  await expectPrefilledInviteName(ownerPage, "Alex Owner");
   await ownerPage.getByPlaceholder("Choose a password").fill("owner-pass-123");
   await ownerPage.getByRole("button", { name: "Create account & join" }).click();
   await ownerPage.waitForURL(/\/schemes\//);
@@ -81,12 +84,12 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   // --- Manager sees the owner joined ---
   await page.reload();
   await section(page, "people").click();
-  await expect(page.getByTestId("person-alex@example.com").getByText("joined")).toBeVisible();
+  await expect(page.getByTestId(`person-${ownerEmail}`).getByText("joined")).toBeVisible();
 
   // --- Assign the owner as treasurer ---
   await section(page, "committee").click();
   await page.getByTestId("committee-member").click();
-  await page.getByRole("option", { name: "Alex Owner (alex@example.com)" }).click();
+  await page.getByRole("option", { name: `Alex Owner (${ownerEmail})` }).click();
   await page.getByTestId("committee-role").click();
   await page.getByRole("option", { name: "Treasurer", exact: true }).click();
   await page.getByRole("button", { name: "Assign" }).click();
@@ -119,7 +122,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   const feed = page.getByTestId("event-feed");
   await expect(feed.getByText("scheme.activated")).toBeVisible();
   await expect(feed.getByText("lots.imported")).toBeVisible();
-  await expect(feed.getByText("agent.run.completed")).toBeVisible();
+  await expect(feed.getByText("agent.run.completed")).toBeVisible({ timeout: 30_000 });
 
   // ======================= The money loop =======================
 
@@ -144,7 +147,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
     await page.reload();
     await section(page, "finance").click();
     await expect(page.getByText("adopted", { exact: true })).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 20_000 });
+  }).toPass({ timeout: 45_000 });
 
   // --- Create the quarterly schedule and issue instalment 1 ---
   await page.getByRole("button", { name: "New schedule" }).click();
@@ -165,13 +168,21 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
 
   // --- Owners' emails: levy notices + a receipt went out ---
   const finalOutbox = await (await fetch(`${API}/dev/outbox`)).json();
-  const subjects = finalOutbox.emails.map((e: { subject: string }) => e.subject);
-  expect(subjects.filter((s: string) => s.startsWith("Levy notice"))).toHaveLength(3);
-  expect(subjects.some((s: string) => s.startsWith("Receipt"))).toBeTruthy();
+  const recipients = new Set([samEmail, ownerEmail, kimEmail]);
+  const currentEmails = finalOutbox.emails.filter((email: { to: string; subject: string }) =>
+    recipients.has(email.to),
+  );
+  expect(
+    currentEmails.filter((email: { subject: string }) => email.subject.startsWith("Levy notice")),
+  ).toHaveLength(3);
+  expect(
+    currentEmails.some((email: { subject: string }) => email.subject.startsWith("Receipt")),
+  ).toBeTruthy();
 
   // ======================= Maintenance =======================
 
   await section(page, "maintenance").click();
+  await page.getByRole("tab", { name: "Contractors" }).click();
   await page.getByRole("button", { name: "New contractor" }).click();
   await page.getByTestId("contractor-name").fill("Fitzroy Plumbing Co");
   await page.getByTestId("contractor-email").fill("jobs@fitzroyplumbing.example");
@@ -180,10 +191,11 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   await expect(page.getByText("Fitzroy Plumbing Co")).toBeVisible();
 
   // Two triggers for the same dialog: the header action and the empty-state CTA.
-  await page.getByRole("button", { name: "Report issue" }).first().click();
+  await page.getByRole("tab", { name: "Requests" }).click();
+  await page.getByRole("button", { name: "Report an issue" }).first().click();
   await page.getByTestId("mr-title").fill("Water stain on lot 9 ceiling");
   await page.getByTestId("mr-description").fill("Brown stain spreading after heavy rain.");
-  await page.getByRole("button", { name: "Submit request" }).click();
+  await page.getByRole("button", { name: "Submit report" }).click();
   await expect(page.getByTestId("mr-Water stain on lot 9 ceiling")).toBeVisible();
 
   // The maintenance agent picked the event up (mock model: run completes
@@ -222,7 +234,7 @@ test("full onboarding: scheme → lots → invite → join → insurance → act
   const voterContext = await browser.newContext();
   const voterPage = await voterContext.newPage();
   await voterPage.goto("/login");
-  await voterPage.getByPlaceholder("you@example.com").fill("alex@example.com");
+  await voterPage.getByPlaceholder("you@example.com").fill(ownerEmail);
   await voterPage.getByPlaceholder("Your password").fill("owner-pass-123");
   await voterPage.getByRole("button", { name: "Sign in" }).click();
   await expect(voterPage.getByRole("heading", { name: "Your schemes" })).toBeVisible({

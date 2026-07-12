@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { attemptId, attemptPlan, expectPrefilledInviteName } from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
@@ -6,37 +7,33 @@ const API = "http://localhost:3105";
 const section = (p: import("@playwright/test").Page, name: string) =>
   p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
 
-// Fresh identities per run so the spec is re-runnable and parallel-safe
-// alongside the other specs sharing gs_e2e.
-const runId = Date.now().toString(36);
-const MANAGER_EMAIL = `griev.mgr.${runId}@example.com`;
-const OWNER_EMAIL = `griev.owner.${runId}@example.com`;
-const SCHEME_NAME = `9 Gavel St Owners Corporation ${runId}`;
-
-const CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
-1,10,10,residential,Nina Neighbour,nina.${runId}@example.com
-2,10,10,residential,Ava Owner,${OWNER_EMAIL}`;
-
 test.describe.configure({ mode: "serial" });
 
 test("grievance loop: owner lodges → officer advances, breach notice, resolves; compliance calendar", async ({
   page,
   browser,
-}) => {
-  test.setTimeout(180_000);
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const id = attemptId(testInfo);
+  const managerEmail = `griev.mgr.${id}@example.com`;
+  const ownerEmail = `griev.owner.${id}@example.com`;
+  const schemeName = `9 Gavel St Owners Corporation ${id}`;
+  const csv = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
+1,10,10,residential,Nina Neighbour,nina.${id}@example.com
+2,10,10,residential,Ava Owner,${ownerEmail}`;
 
   // ---------- Setup: manager + scheme + people + joined owner ----------
   await page.goto("/login");
   await page.getByRole("link", { name: "New here? Create an account" }).click();
   await page.getByPlaceholder("Your name").fill("Greta Manager");
-  await page.getByPlaceholder("you@example.com").fill(MANAGER_EMAIL);
+  await page.getByPlaceholder("you@example.com").fill(managerEmail);
   await page.getByPlaceholder("Choose a password").fill("grievance-pass-123");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account" }).click();
 
   await expect(page.getByRole("heading", { name: /set up your building/i })).toBeVisible();
-  await page.getByPlaceholder("e.g. 48 Rose St Owners Corporation").fill(SCHEME_NAME);
-  await page.getByPlaceholder("e.g. PS543210V").fill("PS610009G");
+  await page.getByPlaceholder("e.g. 48 Rose St Owners Corporation").fill(schemeName);
+  await page.getByPlaceholder("e.g. PS543210V").fill(attemptPlan("62", "G", testInfo));
   await page.getByPlaceholder("Street address").fill("9 Gavel Street");
   await page.getByPlaceholder("Suburb").fill("Fitzroy");
   await page.getByPlaceholder("Postcode").fill("3065");
@@ -44,20 +41,20 @@ test("grievance loop: owner lodges → officer advances, breach notice, resolves
   await page.getByRole("button", { name: "I'll add these later" }).click();
   await page.getByRole("button", { name: "I'll do this later" }).click();
   await page.getByRole("button", { name: "Go to your building" }).click();
-  await expect(page.getByRole("heading", { name: SCHEME_NAME })).toBeVisible();
+  await expect(page.getByRole("heading", { name: schemeName })).toBeVisible();
 
   // Lots CSV creates the people register (complainants/respondents).
   await section(page, "lots").click();
-  await page.getByTestId("csv-input").fill(CSV);
+  await page.getByTestId("csv-input").fill(csv);
   await page.getByRole("button", { name: "Import lots" }).click();
   await expect(page.getByRole("cell", { name: "Nina Neighbour" })).toBeVisible();
 
   // Invite Ava and accept from her own browser context.
   await section(page, "people").click();
-  await page.getByTestId(`person-${OWNER_EMAIL}`).getByRole("button", { name: "Invite" }).click();
-  await expect(page.getByTestId(`person-${OWNER_EMAIL}`).getByText("invited")).toBeVisible();
+  await page.getByTestId(`person-${ownerEmail}`).getByRole("button", { name: "Invite" }).click();
+  await expect(page.getByTestId(`person-${ownerEmail}`).getByText("invited")).toBeVisible();
   const outbox = await (await fetch(`${API}/dev/outbox`)).json();
-  const inviteEmail = outbox.emails.find((e: { to: string }) => e.to === OWNER_EMAIL);
+  const inviteEmail = outbox.emails.find((e: { to: string }) => e.to === ownerEmail);
   expect(inviteEmail).toBeTruthy();
   const joinUrl = inviteEmail.text.match(/http:\/\/\S+\/join\?token=\S+/)?.[0];
   expect(joinUrl).toBeTruthy();
@@ -65,7 +62,7 @@ test("grievance loop: owner lodges → officer advances, breach notice, resolves
   const ownerContext = await browser.newContext();
   const ownerPage = await ownerContext.newPage();
   await ownerPage.goto(joinUrl!);
-  await ownerPage.getByPlaceholder("Your name").fill("Ava Owner");
+  await expectPrefilledInviteName(ownerPage, "Ava Owner");
   await ownerPage.getByPlaceholder("Choose a password").fill("owner-pass-456");
   await ownerPage.getByRole("button", { name: "Create account & join" }).click();
   await ownerPage.waitForURL(/\/schemes\//);

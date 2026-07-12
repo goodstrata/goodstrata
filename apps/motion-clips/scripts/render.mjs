@@ -11,12 +11,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundle } from "@remotion/bundler";
-import {
-  ensureBrowser,
-  renderMedia,
-  renderStill,
-  selectComposition,
-} from "@remotion/renderer";
+import { ensureBrowser, renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -79,9 +74,7 @@ async function main() {
   const only = process.argv[2];
   const targets = only ? CLIPS.filter((c) => c.id === only) : CLIPS;
   if (targets.length === 0) {
-    throw new Error(
-      `No clip matches "${only}". Known ids: ${CLIPS.map((c) => c.id).join(", ")}`,
-    );
+    throw new Error(`No clip matches "${only}". Known ids: ${CLIPS.map((c) => c.id).join(", ")}`);
   }
 
   for (const clip of targets) {

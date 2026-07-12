@@ -197,9 +197,15 @@ const OWNER_SECTIONS: readonly Section[] = [
   "maintenance",
   "finance",
   "meetings",
+  "decisions",
+  "grievances",
+  "compliance",
+  "committee",
+  "lots",
+  "people",
+  "documents",
   "community",
   "messages",
-  "documents",
 ];
 
 /** Owner-voiced labels; internal org vocabulary is reframed for the resident. */

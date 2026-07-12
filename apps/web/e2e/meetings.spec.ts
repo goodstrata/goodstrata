@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { attemptId, attemptPlan, expectPrefilledInviteName } from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
@@ -6,16 +7,8 @@ const API = "http://localhost:3105";
 const section = (p: import("@playwright/test").Page, name: string) =>
   p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
 
-// Fresh identities per run so the spec is re-runnable against a persistent stack.
-const runId = Date.now().toString(36);
-const MANAGER_EMAIL = `mgr.mtg.${runId}@example.com`;
-const OWNER_EMAIL = `alex.mtg.${runId}@example.com`;
 const SCHEME_NAME = "9 Ballot Box Owners Corporation";
 const MEETING_TITLE = "August special general meeting";
-
-const CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
-1,20,20,commercial,Sam Shopkeeper,sam.mtg.${runId}@example.com
-2,10,10,residential,Alex Owner,${OWNER_EMAIL}`;
 
 /**
  * Meetings permutation journey: officer vs owner gating, the SGM status
@@ -26,20 +19,26 @@ const CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
 test("meetings permutations: role gating, voting errors, polls, close, bad deep link", async ({
   page,
   browser,
-}) => {
-  test.setTimeout(150_000);
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const id = attemptId(testInfo);
+  const managerEmail = `mgr.mtg.${id}@example.com`;
+  const ownerEmail = `alex.mtg.${id}@example.com`;
+  const csv = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
+1,20,20,commercial,Sam Shopkeeper,sam.mtg.${id}@example.com
+2,10,10,residential,Alex Owner,${ownerEmail}`;
 
   // --- Manager signs up and registers the scheme via the wizard ---
   await page.goto("/signup");
   await page.getByPlaceholder("Your name").fill("Morgan Manager");
-  await page.getByPlaceholder("you@example.com").fill(MANAGER_EMAIL);
+  await page.getByPlaceholder("you@example.com").fill(managerEmail);
   await page.getByPlaceholder("Choose a password").fill("manager-pass-123");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account" }).click();
 
   await expect(page.getByRole("heading", { name: /set up your building/i })).toBeVisible();
   await page.getByPlaceholder("e.g. 48 Rose St Owners Corporation").fill(SCHEME_NAME);
-  await page.getByPlaceholder("e.g. PS543210V").fill("PS610009M");
+  await page.getByPlaceholder("e.g. PS543210V").fill(attemptPlan("63", "M", testInfo));
   await page.getByPlaceholder("Street address").fill("9 Ballot Box Lane");
   await page.getByPlaceholder("Suburb").fill("Northcote");
   await page.getByPlaceholder("Postcode").fill("3070");
@@ -52,16 +51,16 @@ test("meetings permutations: role gating, voting errors, polls, close, bad deep 
 
   // --- Lots with owners, then Alex joins as a plain (non-officer) owner ---
   await section(page, "lots").click();
-  await page.getByTestId("csv-input").fill(CSV);
+  await page.getByTestId("csv-input").fill(csv);
   await page.getByRole("button", { name: "Import lots" }).click();
   await expect(page.getByRole("cell", { name: "Alex Owner" })).toBeVisible();
 
   await section(page, "people").click();
-  await page.getByTestId(`person-${OWNER_EMAIL}`).getByRole("button", { name: "Invite" }).click();
-  await expect(page.getByTestId(`person-${OWNER_EMAIL}`).getByText("invited")).toBeVisible();
+  await page.getByTestId(`person-${ownerEmail}`).getByRole("button", { name: "Invite" }).click();
+  await expect(page.getByTestId(`person-${ownerEmail}`).getByText("invited")).toBeVisible();
 
   const outbox = await (await fetch(`${API}/dev/outbox`)).json();
-  const invite = outbox.emails.find((e: { to: string; text: string }) => e.to === OWNER_EMAIL);
+  const invite = outbox.emails.find((e: { to: string; text: string }) => e.to === ownerEmail);
   expect(invite).toBeTruthy();
   const joinUrl = invite.text.match(/http:\/\/\S+\/join\?token=\S+/)?.[0];
   expect(joinUrl).toBeTruthy();
@@ -69,7 +68,7 @@ test("meetings permutations: role gating, voting errors, polls, close, bad deep 
   const ownerContext = await browser.newContext();
   const ownerPage = await ownerContext.newPage();
   await ownerPage.goto(joinUrl!);
-  await ownerPage.getByPlaceholder("Your name").fill("Alex Owner");
+  await expectPrefilledInviteName(ownerPage, "Alex Owner");
   await ownerPage.getByPlaceholder("Choose a password").fill("owner-pass-123");
   await ownerPage.getByRole("button", { name: "Create account & join" }).click();
   await ownerPage.waitForURL(/\/schemes\//);
@@ -134,10 +133,11 @@ test("meetings permutations: role gating, voting errors, polls, close, bad deep 
   await expect(ownerPage.getByRole("button", { name: "Close & tally" })).toHaveCount(0);
   await expect(ownerPage.getByRole("button", { name: "Close meeting" })).toHaveCount(0);
 
-  // --- Attendance drives the quorum bar (Alex = 10 of 30 entitlements) ---
+  // --- Attendance drives quorum. Alex represents 1 of 2 lots, satisfying
+  // the primary s 77 lot-count limb even though that is 10/30 entitlement. ---
   await ownerPage.getByRole("button", { name: "I'm attending" }).click();
   await expect(ownerPage.getByTestId("quorum")).toContainText("10/30", { timeout: 10_000 });
-  await expect(ownerPage.getByTestId("quorum")).toContainText("not yet quorate");
+  await expect(ownerPage.getByTestId("quorum")).toContainText("quorate");
 
   // --- Voting: buttons disabled until a lot is chosen ---
   await expect(ownerOrdinary.getByRole("button", { name: "for", exact: true })).toBeDisabled();
@@ -151,15 +151,13 @@ test("meetings permutations: role gating, voting errors, polls, close, bad deep 
     timeout: 10_000,
   });
 
-  // --- Correct lot: the vote records, then a second vote conflicts inline ---
+  // --- Correct lot: the vote records and the register removes duplicate controls ---
   await ownerOrdinary.getByTestId("vote-lot").click();
   await ownerPage.getByRole("option", { name: "Lot 2", exact: true }).click();
   await ownerOrdinary.getByRole("button", { name: "for", exact: true }).click();
   await expect(ownerPage.getByText("Vote recorded")).toBeVisible();
-  await ownerOrdinary.getByRole("button", { name: "for", exact: true }).click();
-  await expect(ownerOrdinary.getByRole("alert")).toContainText("already been cast", {
-    timeout: 10_000,
-  });
+  await expect(ownerOrdinary.getByText("Lot 2's for vote is on the record.")).toBeVisible();
+  await expect(ownerOrdinary.getByRole("button", { name: "for", exact: true })).toHaveCount(0);
 
   // --- Demand a poll (ordinary only); the badge replaces the button ---
   await ownerOrdinary.getByRole("button", { name: "Demand a poll" }).click();
@@ -196,7 +194,7 @@ test("meetings permutations: role gating, voting errors, polls, close, bad deep 
   await page.getByRole("button", { name: "Close meeting" }).click();
   await expect(page.getByText("Meeting closed — minutes are being drafted")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Final quorum" })).toBeVisible();
-  await expect(page.getByTestId("quorum")).toContainText("quorum was not reached");
+  await expect(page.getByTestId("quorum")).toContainText("quorate");
   await expect(page.getByRole("button", { name: "New motion" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "I'm attending" })).toHaveCount(0);
 

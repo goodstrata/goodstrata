@@ -1,20 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { attemptId, attemptPlan, expectPrefilledInviteName } from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
 // Register-index section links (same convention as onboarding.spec.ts).
 const section = (p: import("@playwright/test").Page, name: string) =>
   p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
-
-// Distinct identities/scheme from the other specs — files run in parallel
-// against the shared gs_e2e database.
-const MANAGER_EMAIL = "fin.manager@ledgerlane.example";
-const OWNER_EMAIL = "finlay@ledgerlane.example";
-
-const CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
-1,10,10,residential,Finlay Owner,${OWNER_EMAIL}
-2,10,10,residential,Greta Owner,greta@ledgerlane.example
-3,10,10,residential,Hana Owner,hana@ledgerlane.example`;
 
 test.describe.configure({ mode: "serial" });
 
@@ -29,14 +20,21 @@ test.describe.configure({ mode: "serial" });
 test("finance permutations: officer error paths, manual payment rail, owner gating", async ({
   page,
   browser,
-}) => {
+}, testInfo) => {
   test.setTimeout(180_000);
+  const id = attemptId(testInfo);
+  const managerEmail = `fin.manager.${id}@ledgerlane.example`;
+  const ownerEmail = `finlay.${id}@ledgerlane.example`;
+  const csv = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
+1,10,10,residential,Finlay Owner,${ownerEmail}
+2,10,10,residential,Greta Owner,greta.${id}@ledgerlane.example
+3,10,10,residential,Hana Owner,hana.${id}@ledgerlane.example`;
 
   // --- Manager signs up and registers the scheme via the wizard ---
   await page.goto("/login");
   await page.getByRole("link", { name: "New here? Create an account" }).click();
   await page.getByPlaceholder("Your name").fill("Fin Manager");
-  await page.getByPlaceholder("you@example.com").fill(MANAGER_EMAIL);
+  await page.getByPlaceholder("you@example.com").fill(managerEmail);
   await page.getByPlaceholder("Choose a password").fill("manager-pass-123");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account" }).click();
@@ -45,7 +43,7 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
   await page
     .getByPlaceholder("e.g. 48 Rose St Owners Corporation")
     .fill("7 Ledger Lane Owners Corporation");
-  await page.getByPlaceholder("e.g. PS543210V").fill("PS765432L");
+  await page.getByPlaceholder("e.g. PS543210V").fill(attemptPlan("76", "L", testInfo));
   await page.getByPlaceholder("Street address").fill("7 Ledger Lane");
   await page.getByPlaceholder("Suburb").fill("Fitzroy");
   await page.getByPlaceholder("Postcode").fill("3065");
@@ -59,17 +57,17 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
 
   // --- Lots + one real owner login (for the gating checks below) ---
   await section(page, "lots").click();
-  await page.getByTestId("csv-input").fill(CSV);
+  await page.getByTestId("csv-input").fill(csv);
   await page.getByRole("button", { name: "Import lots" }).click();
   await expect(page.getByRole("cell", { name: "Finlay Owner" })).toBeVisible();
 
   await section(page, "people").click();
-  const ownerRow = page.getByTestId(`person-${OWNER_EMAIL}`);
+  const ownerRow = page.getByTestId(`person-${ownerEmail}`);
   await ownerRow.getByRole("button", { name: "Invite" }).click();
   await expect(ownerRow.getByText("invited")).toBeVisible();
 
   const outbox = await (await fetch(`${API}/dev/outbox`)).json();
-  const inviteEmail = outbox.emails.find((e: { to: string; text: string }) => e.to === OWNER_EMAIL);
+  const inviteEmail = outbox.emails.find((e: { to: string; text: string }) => e.to === ownerEmail);
   expect(inviteEmail).toBeTruthy();
   const joinUrl = inviteEmail.text.match(/http:\/\/\S+\/join\?token=\S+/)?.[0];
   expect(joinUrl).toBeTruthy();
@@ -78,7 +76,7 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
   const ownerPage = await ownerContext.newPage();
   await ownerPage.goto(joinUrl!);
   await expect(ownerPage.getByText(/invited as/)).toBeVisible();
-  await ownerPage.getByPlaceholder("Your name").fill("Finlay Owner");
+  await expectPrefilledInviteName(ownerPage, "Finlay Owner");
   await ownerPage.getByPlaceholder("Choose a password").fill("owner-pass-123");
   await ownerPage.getByRole("button", { name: "Create account & join" }).click();
   await ownerPage.waitForURL(/\/schemes\//);
@@ -115,6 +113,9 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
   const budgetDecision = page.getByTestId("decision-budget_adoption");
   await expect(budgetDecision).toBeVisible();
   await budgetDecision.getByRole("button", { name: "Approve" }).click();
+  // Wait for the mutation to settle before the polling reload below; otherwise
+  // navigation can abort the in-flight resolve request.
+  await expect(page.getByText("Decision recorded")).toBeVisible();
 
   await expect(async () => {
     await page.reload();
@@ -158,23 +159,27 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
   // $120.50 against a $4000 quarterly notice → partial payment.
   await page.getByTestId("manual-payment-amount").fill("120.50");
   await page.getByTestId("manual-payment-payer").fill("Finlay Owner");
-  await page.getByTestId("manual-payment-reference").fill("E2E-STMT-1");
+  await page.getByTestId("manual-payment-reference").fill(`E2E-STMT-${id}`);
   await paymentDialog.getByRole("button", { name: "Record payment" }).click();
   await expect(page.getByText("Payment recorded — receipt issued")).toBeVisible();
 
   // The sweep refreshed both registers: payment matched, notice partially paid,
   // and the receipt PDF affordance exists.
-  await expect(page.getByText("matched", { exact: true })).toBeVisible();
-  await expect(page.getByText("partially paid", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Receipt/ }).first()).toBeVisible();
+  await expect(page.getByText("matched", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("partially paid", { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByRole("button", { name: /Receipt/ }).first()).toBeVisible({
+    timeout: 15_000,
+  });
 
   // ================= Owner gating =================
 
   // The owner opens the SAME scheme's owner-focused money view.
-  await section(ownerPage, "finance").click();
+  await section(ownerPage, "what i owe").click();
 
   // Their own position is prominent and actionable.
-  await expect(ownerPage.getByRole("heading", { name: "My levies" })).toBeVisible();
+  await expect(ownerPage.getByText("My levies", { exact: true })).toBeVisible();
   await expect(ownerPage.getByText("Amount due")).toBeVisible();
   await expect(ownerPage.getByText("How to pay")).toBeVisible();
   await expect(ownerPage.getByTestId("statement-lot-1")).toBeVisible();

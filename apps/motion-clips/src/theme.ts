@@ -89,5 +89,4 @@ export const fees = {
 };
 
 // en-AU dollar formatting, matching the slider's money() helper exactly.
-export const money = (n: number): string =>
-  "$" + Math.round(n).toLocaleString("en-AU");
+export const money = (n: number): string => `$${Math.round(n).toLocaleString("en-AU")}`;

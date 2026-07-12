@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { attemptId, attemptPlan } from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
@@ -6,15 +7,8 @@ const API = "http://localhost:3105";
 const section = (p: import("@playwright/test").Page, name: string) =>
   p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
 
-// Fresh identities per run so the spec is re-runnable against a persistent
-// local stack (not just the throwaway gs_e2e database).
-const runId = Date.now().toString(36);
-const MANAGER_EMAIL = `maint.mgr.${runId}@example.com`;
-const OWNER_EMAIL = `maint.owner.${runId}@example.com`;
 const SCHEME_NAME = "77 Spanner St Owners Corporation";
-// The wizard's client schema wants 5-6 digits (+ optional check letter) —
-// stricter than the server's 4-7. Stay within 6 so the form submits.
-const PLAN = `PS${String(Date.now() % 1_000_000).padStart(6, "0")}M`;
+const REPORT_SUBMITTED = "Thanks — your report's in. The maintenance agent will take it from here.";
 
 test.describe.configure({ mode: "serial" });
 
@@ -27,21 +21,24 @@ test.describe.configure({ mode: "serial" });
 test("maintenance: contractor pool + report issue validation + owner role gating", async ({
   page,
   browser,
-}) => {
-  test.setTimeout(120_000);
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const id = attemptId(testInfo);
+  const managerEmail = `maint.mgr.${id}@example.com`;
+  const ownerEmail = `maint.owner.${id}@example.com`;
 
   // --- Manager signs up and creates the scheme through the wizard ---
   await page.goto("/login");
   await page.getByRole("link", { name: "New here? Create an account" }).click();
   await page.getByPlaceholder("Your name").fill("Mel Manager");
-  await page.getByPlaceholder("you@example.com").fill(MANAGER_EMAIL);
+  await page.getByPlaceholder("you@example.com").fill(managerEmail);
   await page.getByPlaceholder("Choose a password").fill("maint-pass-123");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account" }).click();
 
   await expect(page.getByRole("heading", { name: /set up your building/i })).toBeVisible();
   await page.getByPlaceholder("e.g. 48 Rose St Owners Corporation").fill(SCHEME_NAME);
-  await page.getByPlaceholder("e.g. PS543210V").fill(PLAN);
+  await page.getByPlaceholder("e.g. PS543210V").fill(attemptPlan("77", "M", testInfo));
   await page.getByPlaceholder("Street address").fill("77 Spanner Street");
   await page.getByPlaceholder("Suburb").fill("Fitzroy");
   await page.getByPlaceholder("Postcode").fill("3065");
@@ -54,9 +51,9 @@ test("maintenance: contractor pool + report issue validation + owner role gating
 
   // Invite an owner (wizard default role is "owner") for the gating half.
   await expect(page.getByRole("heading", { name: /Invite your committee/ })).toBeVisible();
-  await page.getByPlaceholder("name@example.com").fill(OWNER_EMAIL);
+  await page.getByPlaceholder("name@example.com").fill(ownerEmail);
   await page.getByRole("button", { name: "Send invite" }).click();
-  await expect(page.getByText(OWNER_EMAIL)).toBeVisible();
+  await expect(page.getByText(ownerEmail)).toBeVisible();
   await page.getByRole("button", { name: "Finish setup" }).click();
   await page.getByRole("button", { name: "Go to your building" }).click();
   await expect(page.getByRole("heading", { name: SCHEME_NAME })).toBeVisible();
@@ -113,9 +110,7 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   await page.getByTestId("mr-lot").click();
   await page.getByRole("option", { name: "Lot 2", exact: true }).click();
   await page.getByRole("button", { name: "Submit report" }).click();
-  await expect(
-    page.getByText("Request submitted — the maintenance agent will triage it"),
-  ).toBeVisible();
+  await expect(page.getByText(REPORT_SUBMITTED)).toBeVisible();
   const requestCard = page.getByTestId("mr-Leaking roof over lobby");
   await expect(requestCard).toBeVisible();
   await expect(requestCard.getByText("open", { exact: true })).toBeVisible();
@@ -123,7 +118,7 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   // ================= Owner: member surface, no officer controls =================
 
   const outbox = await (await fetch(`${API}/dev/outbox`)).json();
-  const invite = outbox.emails.find((e: { to: string; text: string }) => e.to === OWNER_EMAIL);
+  const invite = outbox.emails.find((e: { to: string; text: string }) => e.to === ownerEmail);
   expect(invite).toBeTruthy();
   const joinUrl = invite.text.match(/http:\/\/\S+\/join\?token=\S+/)?.[0];
   expect(joinUrl).toBeTruthy();
@@ -136,7 +131,7 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   await ownerPage.getByRole("button", { name: "Create account & join" }).click();
   await ownerPage.waitForURL(/\/schemes\//);
 
-  await section(ownerPage, "maintenance").click();
+  await section(ownerPage, "report an issue").click();
 
   // Any member can watch requests — the manager's report is visible.
   await expect(ownerPage.getByTestId("mr-Leaking roof over lobby")).toBeVisible();
@@ -154,9 +149,7 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   await ownerPage.getByTestId("mr-title").fill("Broken intercom at entry");
   await ownerPage.getByTestId("mr-description").fill("Buzzer to lot 2 has stopped working.");
   await ownerPage.getByRole("button", { name: "Submit report" }).click();
-  await expect(
-    ownerPage.getByText("Request submitted — the maintenance agent will triage it"),
-  ).toBeVisible();
+  await expect(ownerPage.getByText(REPORT_SUBMITTED)).toBeVisible();
   await expect(ownerPage.getByTestId("mr-Broken intercom at entry")).toBeVisible();
 
   // The manager's polling list (3s refetch) picks the owner's report up

@@ -45,12 +45,7 @@ const theme: Theme = light;
 // ---- s1: hook over the AGM papers ----------------------------------------------
 const Scene1: React.FC = () => (
   <AbsoluteFill style={{ background: theme.paper }}>
-    <KenBurns
-      durationInFrames={SCENES.s1.dur}
-      from={1.02}
-      to={1.1}
-      translate={[0, -14]}
-    >
+    <KenBurns durationInFrames={SCENES.s1.dur} from={1.02} to={1.1} translate={[0, -14]}>
       <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
         <div style={{ transform: "scale(0.86) translateY(180px)", opacity: 0.5 }}>
           <AgmCard theme={theme} />
@@ -65,8 +60,7 @@ const Scene1: React.FC = () => (
       }}
     >
       <HookText theme={theme} at={2} size={100} color={theme.ink}>
-        POV: you actually read your{" "}
-        <span style={{ color: theme.primary }}>AGM papers.</span>
+        POV: you actually read your <span style={{ color: theme.primary }}>AGM papers.</span>
       </HookText>
     </AbsoluteFill>
   </AbsoluteFill>
@@ -107,13 +101,7 @@ const Scene2: React.FC = () => {
           dropAt={90}
           width={900}
         />
-        <FeeCard
-          theme={theme}
-          label="Arrears notices"
-          amount="$540"
-          dropAt={122}
-          width={900}
-        />
+        <FeeCard theme={theme} label="Arrears notices" amount="$540" dropAt={122} width={900} />
         <FeeCard
           theme={theme}
           label="Photocopying?!"
@@ -145,8 +133,7 @@ const Scene3: React.FC = () => (
     }}
   >
     <HookText theme={theme} at={2} size={96}>
-      There&apos;s one number they{" "}
-      <span style={{ color: theme.bandFig }}>never total up.</span>
+      There&apos;s one number they <span style={{ color: theme.bandFig }}>never total up.</span>
     </HookText>
   </AbsoluteFill>
 );

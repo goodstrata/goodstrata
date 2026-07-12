@@ -48,9 +48,7 @@ export function WelcomeStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="page-title">
-          Welcome — let's set up your building
-        </h1>
+        <h1 className="page-title">Welcome — let's set up your building</h1>
         <p className="text-sm text-muted-foreground">
           Register your owners corporation from the plan of subdivision. It only takes a minute, and
           you can refine the details later.

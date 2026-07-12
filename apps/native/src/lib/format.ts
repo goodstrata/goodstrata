@@ -7,8 +7,18 @@
 export const MINUS = "−";
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ] as const;
 
 function group(whole: number): string {
@@ -66,9 +76,7 @@ export function plate(
 ): string | undefined {
   if (!scheme?.planOfSubdivision) return undefined;
   const tierDigits = scheme.tier == null ? "" : String(scheme.tier).replace(/\D/g, "");
-  return tierDigits
-    ? `${scheme.planOfSubdivision} · Tier ${tierDigits}`
-    : scheme.planOfSubdivision;
+  return tierDigits ? `${scheme.planOfSubdivision} · Tier ${tierDigits}` : scheme.planOfSubdivision;
 }
 
 /** "12 Mar 2026". Empty string for invalid input. */
@@ -82,7 +90,10 @@ export function formatDate(input: string | number | Date): string {
  * Short relative time for Notifications only: "now", "5 min", "2 h", "3 d";
  * beyond a week it falls back to formatDate.
  */
-export function formatRelativeTime(input: string | number | Date, now: number = Date.now()): string {
+export function formatRelativeTime(
+  input: string | number | Date,
+  now: number = Date.now(),
+): string {
   const d = input instanceof Date ? input : new Date(input);
   const t = d.getTime();
   if (Number.isNaN(t)) return "";

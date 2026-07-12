@@ -78,9 +78,7 @@ export function InviteStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="page-title">
-          Invite your committee & owners
-        </h1>
+        <h1 className="page-title">Invite your committee & owners</h1>
         <p className="text-sm text-muted-foreground">
           Send an invite and each person gets a secure link to join. You can always do this later
           from the People register — no need to add everyone now.

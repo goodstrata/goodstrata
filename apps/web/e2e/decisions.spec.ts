@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { attemptId, attemptPlan, expectPrefilledInviteName } from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
@@ -6,19 +7,16 @@ const API = "http://localhost:3105";
 const section = (p: Page, name: string) =>
   p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
 
-// Fresh identities per run so the spec is re-runnable against a persistent stack.
-const runId = Date.now().toString(36);
-const MANAGER_EMAIL = `mgr.decisions.${runId}@example.com`;
-const PRIYA_EMAIL = `priya.decisions.${runId}@example.com`;
-const OSCAR_EMAIL = `oscar.decisions.${runId}@example.com`;
+// Assigned by the serial setup test so a retry gets fresh global identities.
+let MANAGER_EMAIL = "";
+let PRIYA_EMAIL = "";
+let OSCAR_EMAIL = "";
 const MANAGER_PASS = "manager-pass-123";
 const PRIYA_PASS = "treasurer-pass-123";
 const OSCAR_PASS = "owner-pass-123";
 const SCHEME_NAME = "7 Ballot Walk Owners Corporation";
 
-const CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
-1,10,10,residential,Priya Owner,${PRIYA_EMAIL}
-2,10,10,residential,Oscar Owner,${OSCAR_EMAIL}`;
+let CSV = "";
 
 test.describe.configure({ mode: "serial" });
 
@@ -52,7 +50,7 @@ async function acceptInvite(
   const page = await context.newPage();
   await page.goto(joinUrl!);
   await expect(page.getByText(/invited as/)).toBeVisible();
-  await page.getByPlaceholder("Your name").fill(name);
+  await expectPrefilledInviteName(page, name);
   await page.getByPlaceholder("Choose a password").fill(password);
   await page.getByRole("button", { name: "Create account & join" }).click();
   await page.waitForURL(/\/schemes\//);
@@ -62,8 +60,15 @@ async function acceptInvite(
 test("treasurer decision: owner is read-only, treasurer resolves with a note, poll race surfaces inline", async ({
   page,
   browser,
-}) => {
+}, testInfo) => {
   test.setTimeout(180_000);
+  const id = attemptId(testInfo);
+  MANAGER_EMAIL = `mgr.decisions.${id}@example.com`;
+  PRIYA_EMAIL = `priya.decisions.${id}@example.com`;
+  OSCAR_EMAIL = `oscar.decisions.${id}@example.com`;
+  CSV = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
+1,10,10,residential,Priya Owner,${PRIYA_EMAIL}
+2,10,10,residential,Oscar Owner,${OSCAR_EMAIL}`;
 
   // --- Manager signs up and registers the scheme (wizard step 1 only) ---
   await page.goto("/login");
@@ -76,7 +81,7 @@ test("treasurer decision: owner is read-only, treasurer resolves with a note, po
 
   await expect(page.getByRole("heading", { name: /set up your building/i })).toBeVisible();
   await page.getByPlaceholder("e.g. 48 Rose St Owners Corporation").fill(SCHEME_NAME);
-  await page.getByPlaceholder("e.g. PS543210V").fill("PS700700B");
+  await page.getByPlaceholder("e.g. PS543210V").fill(attemptPlan("70", "B", testInfo));
   await page.getByPlaceholder("Street address").fill("7 Ballot Walk");
   await page.getByPlaceholder("Suburb").fill("Fitzroy");
   await page.getByPlaceholder("Postcode").fill("3065");
@@ -224,7 +229,7 @@ const isDecisionsList = (url: URL) => url.pathname.endsWith("/decisions");
 const isVotesGet = (url: URL) => url.pathname.endsWith("/votes");
 const isVotePost = (url: URL) => url.pathname.endsWith("/vote");
 
-test("committee vote panel: custom labels, tally maths, overdue emphasis, my-vote state, owner read-only", async ({
+test("committee vote panel: custom labels, tally maths, overdue emphasis, my-vote state", async ({
   page,
   browser,
 }) => {
@@ -360,9 +365,7 @@ test("committee vote panel: custom labels, tally maths, overdue emphasis, my-vot
   await oscarContext.close();
 });
 
-test("tally endpoint failure: panel falls back to resolve buttons and a 403 still lands inline", async ({
-  page,
-}) => {
+test("tally endpoint failure hides vote controls and offers a retry", async ({ page }) => {
   test.setTimeout(120_000);
 
   await loginToScheme(page, MANAGER_EMAIL, MANAGER_PASS);
@@ -382,31 +385,14 @@ test("tally endpoint failure: panel falls back to resolve buttons and a 403 stil
       body: JSON.stringify({ error: { code: "INTERNAL", message: "tally unavailable" } }),
     }),
   );
-  // Fallback resolve is still policed by the server: surface the 403 inline.
-  await page.route(
-    (url) => url.pathname.endsWith("/resolve"),
-    (route) =>
-      route.fulfill({
-        status: 403,
-        contentType: "application/json",
-        body: JSON.stringify({
-          error: { code: "FORBIDDEN", message: "This decision is for the committee" },
-        }),
-      }),
-  );
-
   await section(page, "decisions").click();
   const card = page.getByTestId("decision-emergency_review");
   await expect(card).toBeVisible();
 
-  // Fallback: classic resolve buttons with the custom labels, no tally shown.
-  const acknowledge = card.getByRole("button", { name: "Acknowledge" });
-  await expect(acknowledge).toBeVisible();
-  await expect(card.getByRole("button", { name: "Flag for discussion" })).toBeVisible();
+  // Vote state is unknown, so no possibly-duplicate action is offered.
+  await expect(card.getByRole("alert")).toContainText("Couldn't check your vote.");
+  await expect(card.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Acknowledge" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Flag for discussion" })).toHaveCount(0);
   await expect(card.getByText("eligible")).toHaveCount(0);
-
-  await acknowledge.click();
-  // ResolveButtons has no error toast — the refusal must render as the alert.
-  await expect(card.getByRole("alert")).toHaveText("This decision is for the committee");
-  await expect(page.getByText("Decision recorded")).toHaveCount(0);
 });

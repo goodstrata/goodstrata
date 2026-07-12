@@ -12,15 +12,7 @@ export const FeeCard: React.FC<{
   tone?: "ink" | "critical";
   greyed?: boolean;
   width?: number; // 1120 for the 16:9 cuts; ~900 fits the 9:16 ads
-}> = ({
-  theme,
-  label,
-  amount,
-  dropAt,
-  tone = "ink",
-  greyed = false,
-  width = 1120,
-}) => {
+}> = ({ theme, label, amount, dropAt, tone = "ink", greyed = false, width = 1120 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const { opacity, translateY } = dropIn(frame, fps, dropAt);
@@ -36,9 +28,7 @@ export const FeeCard: React.FC<{
         gap: 44,
         width,
         padding: "34px 50px",
-        background: greyed
-          ? `color-mix(in oklch, ${theme.card} 78%, ${theme.paper})`
-          : theme.card,
+        background: greyed ? `color-mix(in oklch, ${theme.card} 78%, ${theme.paper})` : theme.card,
         border: `1.5px solid ${tone === "critical" ? `color-mix(in oklch, ${theme.critical} 40%, ${theme.line})` : theme.line}`,
         borderRadius: 22,
         boxShadow: "0 34px 66px -40px rgba(15,20,28,0.55)",

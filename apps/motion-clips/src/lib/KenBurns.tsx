@@ -41,10 +41,7 @@ export const KenBurns: React.FC<{
             transform: `scale(${scale}) translate(${tx * 0.4}px, ${ty * 0.4}px)`,
           }}
         >
-          <Img
-            src={src}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
+          <Img src={src} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         </AbsoluteFill>
       ) : null}
       <AbsoluteFill

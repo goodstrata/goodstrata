@@ -447,7 +447,13 @@ describe("invitePerson / acceptInvite permutations", () => {
       email: "billie-invitee@example.com",
     });
 
-    const invited = await invitesService.invitePerson(ctx(), scheme.id, person.id, "owner", APP_URL);
+    const invited = await invitesService.invitePerson(
+      ctx(),
+      scheme.id,
+      person.id,
+      "owner",
+      APP_URL,
+    );
     if (invited.linked) throw new Error("expected an invite for a brand-new email");
     const { token, expiresAt } = invited;
     expect(expiresAt.toISOString()).toBe("2026-07-18T00:00:00.000Z"); // NOW + 14 days
@@ -469,7 +475,13 @@ describe("invitePerson / acceptInvite permutations", () => {
       givenName: "Casey",
       email: "casey-signup@example.com",
     });
-    const invited = await invitesService.invitePerson(ctx(), scheme.id, person.id, "owner", APP_URL);
+    const invited = await invitesService.invitePerson(
+      ctx(),
+      scheme.id,
+      person.id,
+      "owner",
+      APP_URL,
+    );
     if (invited.linked) throw new Error("expected an invite for a brand-new email");
     const { token } = invited;
 

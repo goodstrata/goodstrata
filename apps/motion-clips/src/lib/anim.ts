@@ -35,12 +35,7 @@ export const riseIn = (
 };
 
 // Ease-in-out count-up to `to` over `dur` frames, starting at `start`.
-export const countUp = (
-  frame: number,
-  to: number,
-  start: number,
-  dur = 40,
-): number =>
+export const countUp = (frame: number, to: number, start: number, dur = 40): number =>
   interpolate(frame, [start, start + dur], [0, to], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
@@ -94,13 +89,7 @@ export const slamIn = (
 };
 
 // Simple clamped fade between two frames (linear by default).
-export const fade = (
-  frame: number,
-  from: number,
-  to: number,
-  a = 0,
-  b = 1,
-): number =>
+export const fade = (frame: number, from: number, to: number, a = 0, b = 1): number =>
   interpolate(frame, [from, to], [a, b], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
@@ -121,15 +110,10 @@ export const sceneFade = (
     easing: EASE_OUT,
   });
   if (outFrames <= 0) return fin;
-  const fout = interpolate(
-    frame,
-    [durationInFrames - outFrames, durationInFrames],
-    [1, 0],
-    {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-      easing: EASE_IN_OUT,
-    },
-  );
+  const fout = interpolate(frame, [durationInFrames - outFrames, durationInFrames], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: EASE_IN_OUT,
+  });
   return fin * fout;
 };

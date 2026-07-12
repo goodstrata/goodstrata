@@ -66,9 +66,7 @@ const Scene1: React.FC = () => {
           <AgmCard theme={theme} />
         </AbsoluteFill>
       </KenBurns>
-      <Caption theme={theme}>
-        What does your strata manager actually cost you?
-      </Caption>
+      <Caption theme={theme}>What does your strata manager actually cost you?</Caption>
     </AbsoluteFill>
   );
 };
@@ -113,11 +111,7 @@ const Scene3: React.FC = () => {
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
-        <MonoLine
-          theme={theme}
-          label="Base management fee"
-          amount={money(fees.base)}
-        />
+        <MonoLine theme={theme} label="Base management fee" amount={money(fees.base)} />
         <FeeCard
           theme={theme}
           label="+ Meeting & AGM fees"
@@ -131,9 +125,7 @@ const Scene3: React.FC = () => {
           dropAt={95}
         />
       </div>
-      <Caption theme={theme}>
-        + meeting fees + arrears notices + &lsquo;admin time&rsquo;
-      </Caption>
+      <Caption theme={theme}>+ meeting fees + arrears notices + &lsquo;admin time&rsquo;</Caption>
     </AbsoluteFill>
   );
 };
@@ -208,9 +200,7 @@ const Scene4: React.FC = () => {
           </div>
         </div>
       </div>
-      <Caption theme={theme}>
-        + insurance commission you were never shown
-      </Caption>
+      <Caption theme={theme}>+ insurance commission you were never shown</Caption>
     </AbsoluteFill>
   );
 };
@@ -309,9 +299,7 @@ const Scene5: React.FC = () => {
       </div>
 
       {/* shutter flash */}
-      <AbsoluteFill
-        style={{ background: "white", opacity: flash, pointerEvents: "none" }}
-      />
+      <AbsoluteFill style={{ background: "white", opacity: flash, pointerEvents: "none" }} />
       <Caption theme={theme}>Just take a photo of the page</Caption>
     </AbsoluteFill>
   );
@@ -535,12 +523,12 @@ const Scene8: React.FC = () => {
       >
         {/* faint building-mullion lines to imply a façade */}
         <AbsoluteFill style={{ opacity: 0.16 }}>
-          {Array.from({ length: 9 }).map((_, i) => (
+          {Array.from({ length: 9 }, (_, i) => 8 + i * 11).map((left) => (
             <div
-              key={i}
+              key={`vertical-${left}`}
               style={{
                 position: "absolute",
-                left: `${8 + i * 11}%`,
+                left: `${left}%`,
                 top: 0,
                 bottom: 0,
                 width: 3,
@@ -548,12 +536,12 @@ const Scene8: React.FC = () => {
               }}
             />
           ))}
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 6 }, (_, i) => 10 + i * 16).map((top) => (
             <div
-              key={`h${i}`}
+              key={`horizontal-${top}`}
               style={{
                 position: "absolute",
-                top: `${10 + i * 16}%`,
+                top: `${top}%`,
                 left: 0,
                 right: 0,
                 height: 3,

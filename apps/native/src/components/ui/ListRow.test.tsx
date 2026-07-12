@@ -20,9 +20,7 @@ describe("ListRow", () => {
   });
 
   it("renders the right-hand content (figure / pill / date)", async () => {
-    await render(
-      <ListRow title="Levy notice" right={<Text>$420.00</Text>} />,
-    );
+    await render(<ListRow title="Levy notice" right={<Text>$420.00</Text>} />);
     expect(screen.getByText("$420.00")).toBeOnTheScreen();
   });
 

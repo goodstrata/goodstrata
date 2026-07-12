@@ -1,10 +1,10 @@
 import {
-  MINUS,
   formatDate,
   formatMoney,
   formatMoneyLabel,
   formatRelativeTime,
   humanise,
+  MINUS,
   plate,
 } from "./format";
 
@@ -155,21 +155,15 @@ describe("plate", () => {
   });
 
   it("joins plan and tier with the middot separator", () => {
-    expect(plate({ planOfSubdivision: "PS 543921K", tier: 2 })).toBe(
-      "PS 543921K · Tier 2",
-    );
+    expect(plate({ planOfSubdivision: "PS 543921K", tier: 2 })).toBe("PS 543921K · Tier 2");
   });
 
   it("strips non-digits from a stringy tier", () => {
-    expect(plate({ planOfSubdivision: "PS 543921K", tier: "T2" })).toBe(
-      "PS 543921K · Tier 2",
-    );
+    expect(plate({ planOfSubdivision: "PS 543921K", tier: "T2" })).toBe("PS 543921K · Tier 2");
   });
 
   it("shows only the plan when tier is null", () => {
-    expect(plate({ planOfSubdivision: "PS 543921K", tier: null })).toBe(
-      "PS 543921K",
-    );
+    expect(plate({ planOfSubdivision: "PS 543921K", tier: null })).toBe("PS 543921K");
   });
 
   it("shows only the plan when tier is omitted", () => {
@@ -177,15 +171,11 @@ describe("plate", () => {
   });
 
   it("shows only the plan when tier has no digits", () => {
-    expect(plate({ planOfSubdivision: "PS 543921K", tier: "none" })).toBe(
-      "PS 543921K",
-    );
+    expect(plate({ planOfSubdivision: "PS 543921K", tier: "none" })).toBe("PS 543921K");
   });
 
   it("treats tier 0 as a real tier, not as missing", () => {
-    expect(plate({ planOfSubdivision: "PS 543921K", tier: 0 })).toBe(
-      "PS 543921K · Tier 0",
-    );
+    expect(plate({ planOfSubdivision: "PS 543921K", tier: 0 })).toBe("PS 543921K · Tier 0");
   });
 });
 

@@ -1,5 +1,5 @@
-import { ReactNode } from "react";
-import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
+import type { ReactNode } from "react";
+import { type StyleProp, StyleSheet, View, type ViewStyle } from "react-native";
 import { radius, space } from "../../theme/tokens";
 import { useTheme } from "../../theme/useTheme";
 import { PressableScale } from "./PressableScale";

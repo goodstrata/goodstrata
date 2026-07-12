@@ -5,12 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { bundle } from "@remotion/bundler";
-import {
-  ensureBrowser,
-  renderMedia,
-  renderStill,
-  selectComposition,
-} from "@remotion/renderer";
+import { ensureBrowser, renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 
 const root = "/Users/jake/Projects/open-goodstrata/apps/motion-clips";
 const outDir = path.join(root, "out/ads");

@@ -1,6 +1,6 @@
 import {
-  OFFICER_ROLES,
   canDecide,
+  OFFICER_ROLES,
   schemeQueryOptions,
   useIsOfficer,
   useIsOwnerView,
@@ -87,11 +87,9 @@ describe("useSchemeRoles", () => {
 });
 
 describe("useIsOfficer", () => {
-  it("is true for any officer role", () => {
-    for (const role of OFFICER_ROLES) {
-      seedRoles([role]);
-      expect(useIsOfficer("s1")).toBe(true);
-    }
+  it.each(OFFICER_ROLES)("is true for officer role %s", (role) => {
+    seedRoles([role]);
+    expect(useIsOfficer("s1")).toBe(true);
   });
 
   it("is false for a committee member or plain owner", () => {

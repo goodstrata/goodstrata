@@ -57,7 +57,10 @@ export function MarkdownEditor({
   const editor = useEditor({
     immediatelyRender: false,
     editable: !loading,
-    extensions: [StarterKit, Markdown.configure({ bulletListMarker: "-", transformPastedText: true })],
+    extensions: [
+      StarterKit,
+      Markdown.configure({ bulletListMarker: "-", transformPastedText: true }),
+    ],
     content: value,
     onUpdate: ({ editor }) => {
       fromEditor.current = true;

@@ -1,11 +1,5 @@
 import type React from "react";
-import {
-  AbsoluteFill,
-  Img,
-  staticFile,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
+import { AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { dark, fonts } from "../theme";
 import { riseIn } from "./anim";
 

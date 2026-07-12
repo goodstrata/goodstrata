@@ -1,6 +1,5 @@
-import { ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Modal, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -9,6 +8,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { radius, space } from "../../theme/tokens";
 import { useTheme } from "../../theme/useTheme";
 

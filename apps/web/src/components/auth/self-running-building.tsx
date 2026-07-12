@@ -59,7 +59,15 @@ export function SelfRunningBuilding({ className }: { className?: string }) {
       `}</style>
 
       {/* ground line */}
-      <line x1="18" y1="152" x2="122" y2="152" stroke="currentColor" strokeOpacity="0.18" strokeWidth="1" />
+      <line
+        x1="18"
+        y1="152"
+        x2="122"
+        y2="152"
+        stroke="currentColor"
+        strokeOpacity="0.18"
+        strokeWidth="1"
+      />
 
       {/* tower body */}
       <rect
@@ -75,9 +83,29 @@ export function SelfRunningBuilding({ className }: { className?: string }) {
         strokeWidth="1"
       />
       {/* stepped crown + antenna */}
-      <path d="M58 34 v-9 h24 v9" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeWidth="1" />
-      <line x1="70" y1="25" x2="70" y2="12" stroke="currentColor" strokeOpacity="0.22" strokeWidth="1" />
-      <circle cx="70" cy="11" r="1.4" className="srb-win" style={{ ["--srb-delay" as string]: "0.4s", ["--srb-dur" as string]: "3s" }} />
+      <path
+        d="M58 34 v-9 h24 v9"
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.22"
+        strokeWidth="1"
+      />
+      <line
+        x1="70"
+        y1="25"
+        x2="70"
+        y2="12"
+        stroke="currentColor"
+        strokeOpacity="0.22"
+        strokeWidth="1"
+      />
+      <circle
+        cx="70"
+        cy="11"
+        r="1.4"
+        className="srb-win"
+        style={{ ["--srb-delay" as string]: "0.4s", ["--srb-dur" as string]: "3s" }}
+      />
 
       {windows.list.map((w, i) => (
         <rect

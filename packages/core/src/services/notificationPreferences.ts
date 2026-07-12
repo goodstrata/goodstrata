@@ -1,7 +1,6 @@
 import { notificationPreferences, people, pushTokens, users } from "@goodstrata/db";
 import {
   effectiveNotificationChannel,
-  NOTIFICATION_DEFAULTS,
   NOTIFICATION_PREF_CHANNELS,
   NOTIFICATION_TYPES,
   type NotificationPrefChannel,
@@ -66,10 +65,7 @@ async function loadOverrides(
  * else fall back to any linked `people.phone` (cross-scheme — prefs are
  * per-user, so we accept a roll number from any scheme the user appears in).
  */
-async function resolvePhones(
-  ctx: ServiceContext,
-  userIds: string[],
-): Promise<Map<string, string>> {
+async function resolvePhones(ctx: ServiceContext, userIds: string[]): Promise<Map<string, string>> {
   const phones = new Map<string, string>();
   if (userIds.length === 0) return phones;
 

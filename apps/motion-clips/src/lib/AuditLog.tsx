@@ -35,9 +35,7 @@ export const AuditLog: React.FC<{
   width?: number;
   rowCount?: number;
 }> = ({ theme, visible, scroll = 0, band = false, width = 1180, rowCount = 9 }) => {
-  const surface = band
-    ? `color-mix(in oklch, ${theme.bandBg} 55%, ${theme.card})`
-    : theme.card;
+  const surface = band ? `color-mix(in oklch, ${theme.bandBg} 55%, ${theme.card})` : theme.card;
   const border = band ? theme.bandLine : theme.line;
   const ink = band ? theme.bandInk : theme.ink;
   const muted = band ? theme.bandMuted : theme.faintInk;
@@ -86,9 +84,7 @@ export const AuditLog: React.FC<{
               <span style={{ color: muted, width: 90 }}>#{id}</span>
               <span style={{ color: good }}>✓</span>
               <span style={{ color: ink, flex: 1 }}>{evt}</span>
-              <span style={{ color: muted, letterSpacing: "0.02em" }}>
-                {hash8(`${evt}-${i}`)}
-              </span>
+              <span style={{ color: muted, letterSpacing: "0.02em" }}>{hash8(`${evt}-${i}`)}</span>
             </div>
           );
         })}

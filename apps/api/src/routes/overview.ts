@@ -18,9 +18,9 @@ import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppDeps } from "../deps.js";
 import {
+  isUpcoming,
   OPEN_MAINTENANCE_STATUSES,
   OPEN_WORK_ORDER_STATUSES,
-  isUpcoming,
 } from "../mcp/tools/helpers.js";
 import { type AppEnv, requireSchemeMember } from "../middleware.js";
 

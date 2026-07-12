@@ -90,7 +90,7 @@ export const maintenanceAgent: AgentDefinition = {
         where: and(eq(rfqs.id, payload.rfqId), eq(rfqs.schemeId, event.schemeId)),
       });
       // The spec is only editable while the RFQ is a draft — skip otherwise.
-      if (!rfq || rfq.status !== "draft") return null;
+      if (rfq?.status !== "draft") return null;
       const request = await services.db.query.maintenanceRequests.findFirst({
         where: and(
           eq(maintenanceRequests.id, rfq.requestId),

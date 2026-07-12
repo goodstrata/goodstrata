@@ -129,9 +129,7 @@ const Stack: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       justifyContent: "center",
     }}
   >
-    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-      {children}
-    </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>{children}</div>
   </AbsoluteFill>
 );
 
@@ -257,13 +255,7 @@ const Scene4: React.FC = () => (
       tone="critical"
       dropAt={-30}
     />
-    <FeeCard
-      theme={theme}
-      label="‘Automated’ tax report"
-      amount="$600"
-      greyed
-      dropAt={6}
-    />
+    <FeeCard theme={theme} label="‘Automated’ tax report" amount="$600" greyed dropAt={6} />
     <ExtrasChip amount="$3,840" />
   </Stack>
 );
@@ -284,13 +276,7 @@ const Scene5: React.FC = () => {
         tone="critical"
         dropAt={-30}
       />
-      <FeeCard
-        theme={theme}
-        label="‘Automated’ tax report"
-        amount="$600"
-        greyed
-        dropAt={-30}
-      />
+      <FeeCard theme={theme} label="‘Automated’ tax report" amount="$600" greyed dropAt={-30} />
       <div
         style={{
           position: "relative",
@@ -419,7 +405,12 @@ const Scene6: React.FC = () => {
           </div>
         </div>
         <div
-          style={{ fontFamily: fonts.sans, fontSize: 100, color: theme.bandMuted, opacity: right.opacity }}
+          style={{
+            fontFamily: fonts.sans,
+            fontSize: 100,
+            color: theme.bandMuted,
+            opacity: right.opacity,
+          }}
         >
           →
         </div>

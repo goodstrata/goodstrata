@@ -1,6 +1,6 @@
 // Learn more: https://docs.expo.dev/guides/monorepos/
 const { getDefaultConfig } = require("expo/metro-config");
-const path = require("path");
+const path = require("node:path");
 
 // Standard pnpm-monorepo config: watch the workspace root so Metro follows the
 // symlinked (.pnpm) packages. Nothing else — an earlier resolver.extraNodeModules

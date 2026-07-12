@@ -19,8 +19,8 @@ import { integrationsFromEnv } from "@goodstrata/integrations";
 import { type Actor, fixedClock, userActor } from "@goodstrata/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServiceContext } from "../src/context.js";
-import * as grievances from "../src/services/grievances.js";
 import type { S159Report } from "../src/services/grievances.js";
+import * as grievances from "../src/services/grievances.js";
 
 let tdb: TestDatabase;
 let schemeId: string;
@@ -179,7 +179,14 @@ describe("generateS159Report — s 159(1) contents", () => {
       receivedOn: "2026-07-02",
       status: "resolved",
       onApprovedForm: true,
-      actionsTaken: ["filed", "discussion", "notice_issued", "notice_issued", "rectified", "resolved"],
+      actionsTaken: [
+        "filed",
+        "discussion",
+        "notice_issued",
+        "notice_issued",
+        "rectified",
+        "resolved",
+      ],
       resolvedOn: "2026-07-15",
     });
     expect(b).toEqual({

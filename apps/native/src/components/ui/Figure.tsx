@@ -26,13 +26,7 @@ export function Figure({ cents, size = "regular", tone = "default", signed }: Fi
   const sizeStyle =
     size === "hero" ? type.figureHero : size === "small" ? type.figureSmall : type.figure;
   const colour =
-    tone === "ok"
-      ? theme.ok
-      : tone === "crit"
-        ? theme.crit
-        : cents < 0
-          ? theme.crit
-          : theme.text;
+    tone === "ok" ? theme.ok : tone === "crit" ? theme.crit : cents < 0 ? theme.crit : theme.text;
   const sign = signed && cents > 0 ? "+" : "";
 
   return (

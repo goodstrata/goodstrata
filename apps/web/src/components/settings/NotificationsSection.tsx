@@ -244,7 +244,7 @@ const E164 = /^\+[1-9]\d{7,14}$/;
  * spaces/dashes/parens are stripped. Anything already starting with + is kept.
  */
 function normalizeAuPhone(raw: string): string {
-  const digits = raw.replace(/[\s().\-]/g, "");
+  const digits = raw.replace(/[\s().-]/g, "");
   if (digits.startsWith("+")) return digits;
   if (digits.startsWith("0")) return `+61${digits.slice(1)}`;
   if (digits.startsWith("61")) return `+${digits}`;

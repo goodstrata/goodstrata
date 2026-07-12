@@ -19,12 +19,7 @@ export const MusicBed: React.FC<{
         volume *
         interpolate(
           f,
-          [
-            0,
-            fadeInSec * fps,
-            durationInFrames - fadeOutSec * fps,
-            durationInFrames - 1,
-          ],
+          [0, fadeInSec * fps, durationInFrames - fadeOutSec * fps, durationInFrames - 1],
           [0, 1, 1, 0],
           { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
         )

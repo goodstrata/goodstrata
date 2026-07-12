@@ -23,9 +23,7 @@ export const Ledger: React.FC<{
   width = 1080,
   title,
 }) => {
-  const surface = band
-    ? `color-mix(in oklch, ${theme.bandBg} 55%, ${theme.card})`
-    : theme.card;
+  const surface = band ? `color-mix(in oklch, ${theme.bandBg} 55%, ${theme.card})` : theme.card;
   const border = band ? theme.bandLine : theme.line;
   const ink = band ? theme.bandInk : theme.ink;
   const muted = band ? theme.bandMuted : theme.mutedInk;

@@ -1,6 +1,6 @@
+import * as SecureStore from "expo-secure-store";
 import { Component, type ReactNode } from "react";
 import { Pressable, ScrollView, Text } from "react-native";
-import * as SecureStore from "expo-secure-store";
 import { palette, radius, space, type as t } from "../../theme/tokens";
 
 interface Props {
@@ -67,7 +67,9 @@ export class RootErrorBoundary extends Component<Props, State> {
             paddingVertical: space(4),
           })}
         >
-          <Text style={{ ...t.label, fontSize: 16, color: palette.white }}>Reset and try again</Text>
+          <Text style={{ ...t.label, fontSize: 16, color: palette.white }}>
+            Reset and try again
+          </Text>
         </Pressable>
       </ScrollView>
     );

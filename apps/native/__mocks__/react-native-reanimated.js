@@ -6,7 +6,7 @@ const React = require("react");
 const { View, Text, Image, ScrollView } = require("react-native");
 
 // Chainable no-op: FadeInDown.springify().damping(15).delay(120).withInitialValues({}) → itself.
-const chainable = new Proxy(function () {}, {
+const chainable = new Proxy(() => {}, {
   get: () => chainable,
   apply: () => chainable,
 });

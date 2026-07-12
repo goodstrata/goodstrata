@@ -83,9 +83,9 @@ describe("posts", () => {
 
   it("rejects more than 8 images", async () => {
     const files = Array.from({ length: 9 }, (_, i) => png(`n${i}`));
-    await expect(community.createPost(ctx(), schemeId, { body: "too many" }, files)).rejects.toThrow(
-      /at most 8 images/i,
-    );
+    await expect(
+      community.createPost(ctx(), schemeId, { body: "too many" }, files),
+    ).rejects.toThrow(/at most 8 images/i);
   });
 
   it("rejects non-user actors (the AI never posts as the community)", async () => {

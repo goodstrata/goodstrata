@@ -10,15 +10,7 @@ import {
 } from "remotion";
 import { AdCaption } from "../lib/AdCaption";
 import { AdEndCard } from "../lib/AdEndCard";
-import {
-  countUp,
-  dropIn,
-  EASE_IN_OUT,
-  EASE_OUT,
-  fade,
-  riseIn,
-  slamIn,
-} from "../lib/anim";
+import { countUp, dropIn, EASE_IN_OUT, EASE_OUT, fade, riseIn, slamIn } from "../lib/anim";
 import "../lib/loadFonts";
 import { MusicBed } from "../lib/MusicBed";
 import { SceneFade } from "../lib/SceneFade";

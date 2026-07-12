@@ -6,12 +6,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundle } from "@remotion/bundler";
-import {
-  ensureBrowser,
-  renderMedia,
-  renderStill,
-  selectComposition,
-} from "@remotion/renderer";
+import { ensureBrowser, renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");

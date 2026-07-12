@@ -37,22 +37,17 @@ describe("Button", () => {
     expect(screen.getByRole("button")).toBeBusy();
   });
 
-  it.each(["primary", "secondary", "destructive"] as const)(
-    "renders the %s variant with its label",
-    async (variant) => {
-      await render(<Button label="Do it" variant={variant} onPress={jest.fn()} />);
-      expect(screen.getByText("Do it")).toBeOnTheScreen();
-    },
-  );
+  it.each([
+    "primary",
+    "secondary",
+    "destructive",
+  ] as const)("renders the %s variant with its label", async (variant) => {
+    await render(<Button label="Do it" variant={variant} onPress={jest.fn()} />);
+    expect(screen.getByText("Do it")).toBeOnTheScreen();
+  });
 
   it("renders a leading icon alongside the label", async () => {
-    await render(
-      <Button
-        label="With icon"
-        onPress={jest.fn()}
-        icon={<Text>ICON</Text>}
-      />,
-    );
+    await render(<Button label="With icon" onPress={jest.fn()} icon={<Text>ICON</Text>} />);
     expect(screen.getByText("ICON")).toBeOnTheScreen();
     expect(screen.getByText("With icon")).toBeOnTheScreen();
   });

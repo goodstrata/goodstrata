@@ -83,7 +83,7 @@ function GlowWindow({ win, color, reduce }: { win: Win; color: string; reduce: b
   useEffect(() => {
     if (reduce) {
       // calm, partly-lit static pattern
-      op.value = ((Math.round(win.x) * 7 + Math.round(win.y) * 3) % 10) < 4 ? 0.42 : 0.12;
+      op.value = (Math.round(win.x) * 7 + Math.round(win.y) * 3) % 10 < 4 ? 0.42 : 0.12;
       return;
     }
     op.value = withDelay(
@@ -133,9 +133,9 @@ export function SkylineHeader({ height = 46 }: { height?: number }) {
         strokeWidth={0.75}
       />
       {/* Faint tower bodies — fill only, no stroke. */}
-      {BUILDINGS.map(([bx, bw, bh], i) => (
+      {BUILDINGS.map(([bx, bw, bh]) => (
         <Rect
-          key={`b${i}`}
+          key={`body-${bx}`}
           x={bx}
           y={GROUND_Y - bh}
           width={bw}
@@ -146,9 +146,9 @@ export function SkylineHeader({ height = 46 }: { height?: number }) {
       ))}
       {/* Outline: left + top + right only — no bottom edge, so it never
           doubles up on the shared ground line. */}
-      {BUILDINGS.map(([bx, bw, bh], i) => (
+      {BUILDINGS.map(([bx, bw, bh]) => (
         <Path
-          key={`o${i}`}
+          key={`outline-${bx}`}
           d={`M${bx} ${GROUND_Y} L${bx} ${GROUND_Y - bh} L${bx + bw} ${GROUND_Y - bh} L${bx + bw} ${GROUND_Y}`}
           fill="none"
           stroke={theme.muted}
@@ -156,8 +156,13 @@ export function SkylineHeader({ height = 46 }: { height?: number }) {
           strokeWidth={0.75}
         />
       ))}
-      {wins.map((win, i) => (
-        <GlowWindow key={i} win={win} color={theme.accent} reduce={reduce} />
+      {wins.map((win) => (
+        <GlowWindow
+          key={`window-${win.x}-${win.y}`}
+          win={win}
+          color={theme.accent}
+          reduce={reduce}
+        />
       ))}
     </Svg>
   );

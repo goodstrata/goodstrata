@@ -1,10 +1,5 @@
 import type React from "react";
-import {
-  AbsoluteFill,
-  interpolate,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
+import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { AgmCard } from "../lib/AgmCard";
 import { fade, riseIn, slamIn } from "../lib/anim";
 import { fonts, type Theme } from "../theme";
@@ -54,12 +49,10 @@ export const PhoneSnap: React.FC<{
 }> = ({ theme, flashAt = 12 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const flash = interpolate(
-    frame,
-    [flashAt, flashAt + 4, flashAt + 10],
-    [0, 0.75, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
+  const flash = interpolate(frame, [flashAt, flashAt + 4, flashAt + 10], [0, 0.75, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
   const uiEnter = riseIn(frame, fps, flashAt + 12);
   const phoneDim = fade(frame, flashAt + 12, flashAt + 24, 1, 0.28);
 
@@ -138,9 +131,7 @@ export const PhoneSnap: React.FC<{
       </div>
 
       {/* shutter flash */}
-      <AbsoluteFill
-        style={{ background: "white", opacity: flash, pointerEvents: "none" }}
-      />
+      <AbsoluteFill style={{ background: "white", opacity: flash, pointerEvents: "none" }} />
     </AbsoluteFill>
   );
 };

@@ -1,6 +1,6 @@
 const { withDangerousMod } = require("expo/config-plugins");
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
 
 // The app targets iOS 16.4; nothing runs below it. Xcode 27 rejects any pod
 // whose IPHONEOS_DEPLOYMENT_TARGET is under iOS 15 — react-native-svg's
