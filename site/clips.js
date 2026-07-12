@@ -161,7 +161,7 @@
     var playWithSound = function () {
       hideMsg();
       if (againBtn) againBtn.hidden = true;
-      setPending(true); // keep the disc visible in a pending state until 'playing'
+      setPending(true); // keep the disc visible in a pending state until playback
       video.loop = false;
       video.muted = false;
       try {
@@ -169,6 +169,11 @@
       } catch (e) {}
       var p = video.play();
       dock();
+      // The play() promise resolves once playback is under way — including the
+      // case where the element was ALREADY playing, which the 'playing' event
+      // does NOT cover (see onPlaying). Without this the spinner outlives the
+      // tap forever on any clip caught mid-ambient-loop.
+      if (p && typeof p.then === "function") p.then(onPlaying, function () {});
       if (p && typeof p.catch === "function")
         p.catch(function () {
           // Recover instead of leaving a dead poster frame: undock, restore the
@@ -200,13 +205,26 @@
     });
 
     // Reflect real playback state onto the overlays.
-    video.addEventListener("playing", function () {
+    //
+    // NOTE: 'playing' only fires when playback STARTS after being paused,
+    // waiting or stalled. A clip tapped mid-ambient-loop is already playing, so
+    // unmuting + seeking to 0 fires nothing here — which is why this is also
+    // driven off the play() promise and 'timeupdate' below. Relying on the
+    // event alone stranded a spinner over a happily playing video.
+    function onPlaying() {
       setPending(false); // pixels are moving — clear the pending/loading state
       hideMsg();
       if (againBtn) againBtn.hidden = true;
       // Play button shows over the muted ambient loop, hides once sound is on.
       playBtn.hidden = !video.muted;
       if (video.muted) undock();
+    }
+    video.addEventListener("playing", onPlaying);
+    // Last line of defence: the frame has advanced, so playback is real,
+    // whatever the events did or didn't say (no play() promise on old browsers;
+    // Safari can also swallow 'playing' on an already-playing element).
+    video.addEventListener("timeupdate", function () {
+      if (!video.paused && playBtn.classList.contains("is-pending")) onPlaying();
     });
     video.addEventListener("pause", function () {
       setPending(false);
