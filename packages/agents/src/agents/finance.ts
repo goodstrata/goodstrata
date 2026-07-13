@@ -1,4 +1,9 @@
-import { arrearsService, commsService, decisionsService } from "@goodstrata/core";
+import {
+  arrearsService,
+  commsService,
+  decisionsService,
+  finalFeeNoticesService,
+} from "@goodstrata/core";
 import { lots, schemes } from "@goodstrata/db";
 import { addDays, formatCents } from "@goodstrata/shared";
 import { and, eq } from "drizzle-orm";
@@ -34,8 +39,8 @@ export const financeAgent: AgentDefinition = {
     "  forget; assume good faith.",
     "- Stage 2 (formal_reminder): call sendArrearsEmail once, firmer, note that penalty interest",
     "  is accruing.",
-    "- Stage 3 (final_notice): call sendArrearsEmail once, formal final notice before committee",
-    "  escalation, mention hardship/payment-plan option.",
+    "- Stage 3 (final_notice): call issueFinalFeeNotice once. This creates and serves the approved",
+    "  statutory final fee notice; do not substitute an ordinary arrears email.",
     "- Stage 4 (recovery_decision): do NOT email the owner. Call requestRecoveryDecision once so",
     "  the committee decides whether to commence recovery.",
     "An exact statement of amounts is appended to every email automatically — do not invent or",
@@ -72,6 +77,23 @@ export const financeAgent: AgentDefinition = {
     const payload = ctx.triggerEvent.payload as ArrearsPayload;
 
     return {
+      issueFinalFeeNotice: defineAgentTool(ctx, {
+        description:
+          "Create and serve the approved statutory final fee notice, starting its 28-day recovery standstill. Stage 3 only.",
+        inputSchema: z.object({}),
+        mutates: true,
+        async execute() {
+          if (!ctx.schemeId) throw new Error("no scheme");
+          const notice = await finalFeeNoticesService.issueFinalFeeNotice(
+            ctx.services,
+            ctx.schemeId,
+            payload.lotId,
+            { serviceMethod: "email" },
+          );
+          return { ok: true, finalFeeNoticeId: notice.id };
+        },
+      }),
+
       sendArrearsEmail: defineAgentTool(ctx, {
         description:
           "Send the arrears email for this lot. Provide subject and body prose; the exact " +

@@ -14,6 +14,7 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { causationFields, type ServiceContext } from "../context.js";
 import { arrearsStage, stageKind } from "../engines/arrears-ladder.js";
 import { interestAccrued } from "../engines/interest.js";
+import { activeInterestAuthorisation } from "./interestAuthorisations.js";
 
 export interface LotArrears {
   lotId: string;
@@ -132,6 +133,13 @@ export async function scanArrears(ctx: ServiceContext, schemeId: string) {
   const emitted: { lotId: string; stage: number }[] = [];
   const interestPosted: { lotId: string; amountCents: number }[] = [];
   const today = toDateOnly(ctx.clock.now());
+  // s 29: penalty interest is opt-in by OC resolution. A configured default
+  // rate alone is never authority to charge it.
+  const interestAuthority = await activeInterestAuthorisation(ctx, schemeId, today);
+  const interestSettings = {
+    penaltyInterestBps: interestAuthority?.rateBps ?? 0,
+    interestGraceDays: settings.interestGraceDays,
+  };
 
   for (const lot of arrears) {
     // 1. Flip past-due notices + accrue interest, committed together per lot.
@@ -161,7 +169,7 @@ export async function scanArrears(ctx: ServiceContext, schemeId: string) {
         });
       }
 
-      return await accrueInterestForLot(ctx, tx, schemeId, settings, lot, today);
+      return await accrueInterestForLot(ctx, tx, schemeId, interestSettings, lot, today);
     });
     if (posted > 0) interestPosted.push({ lotId: lot.lotId, amountCents: posted });
 

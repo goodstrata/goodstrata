@@ -1,10 +1,16 @@
 import {
+  addMaintenancePlanItemInput,
+  approveMaintenancePlanInput,
+  createAssetInput,
   createContractorInput,
   createEntityCommentInput,
   createRequestInput,
+  createStatutoryMaintenancePlanInput,
   entityCommentsService,
   maintenanceService,
   type RequestImageUpload,
+  reviewMaintenancePlanInput,
+  statutoryMaintenanceService,
   THREAD_OFFICER_ROLES,
 } from "@goodstrata/core";
 import { people } from "@goodstrata/db";
@@ -213,6 +219,100 @@ export function maintenanceRoutes(deps: AppDeps) {
             c.req.valid("json"),
           );
           return c.json(result, 201);
+        },
+      )
+      .get("/:schemeId/maintenance-plans", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json(await statutoryMaintenanceService.listPlans(ctx, c.get("schemeId")));
+      })
+      .get("/:schemeId/assets", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json({
+          assets: await statutoryMaintenanceService.listAssets(ctx, c.get("schemeId")),
+        });
+      })
+      .post(
+        "/:schemeId/assets",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", createAssetInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const asset = await statutoryMaintenanceService.createAsset(
+            ctx,
+            c.get("schemeId"),
+            c.req.valid("json"),
+          );
+          return c.json({ asset }, 201);
+        },
+      )
+      .get("/:schemeId/maintenance-plans/agm-report", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json(
+          await statutoryMaintenanceService.getAgmMaintenanceReport(ctx, c.get("schemeId")),
+        );
+      })
+      .post(
+        "/:schemeId/maintenance-plans",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", createStatutoryMaintenancePlanInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const plan = await statutoryMaintenanceService.createPlan(
+            ctx,
+            c.get("schemeId"),
+            c.req.valid("json"),
+          );
+          return c.json({ plan }, 201);
+        },
+      )
+      .post(
+        "/:schemeId/maintenance-plans/:planId/items",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", addMaintenancePlanItemInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const item = await statutoryMaintenanceService.addPlanItem(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("planId"),
+            c.req.valid("json"),
+          );
+          return c.json({ item }, 201);
+        },
+      )
+      .post(
+        "/:schemeId/maintenance-plans/:planId/approve",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", approveMaintenancePlanInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const plan = await statutoryMaintenanceService.approvePlan(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("planId"),
+            c.req.valid("json"),
+          );
+          return c.json({ plan });
+        },
+      )
+      .post(
+        "/:schemeId/maintenance-plans/:planId/review",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", reviewMaintenancePlanInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const plan = await statutoryMaintenanceService.reviewPlan(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("planId"),
+            c.req.valid("json"),
+          );
+          return c.json({ plan });
         },
       )
       // Soft-delete: the author retracts their own; officers moderate any.

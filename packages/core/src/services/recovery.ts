@@ -8,6 +8,7 @@ import { amountPanel, emailBrand, infoNote, keyValueTable, renderEmail } from ".
 import { arrearsForScheme, levyRecipient } from "./arrears.js";
 import { sendEmail } from "./comms.js";
 import { registerDecisionAction } from "./decisions.js";
+import { requireRecoveryEligibleFinalNotice } from "./finalFeeNotices.js";
 
 /**
  * Executor for the day-60 committee decision: on approval, code (not the
@@ -26,6 +27,9 @@ registerDecisionAction("finance.commenceDebtRecovery", async (ctx, args, decisio
 
   const arrears = (await arrearsForScheme(ctx, schemeId)).find((a) => a.lotId === lotId);
   if (!arrears) return; // paid up since the decision was made — nothing to recover
+  // ss 31–32: both approved-form notices and the final notice's full 28-day
+  // standstill are preconditions, even after committee approval.
+  await requireRecoveryEligibleFinalNotice(ctx, schemeId, lotId);
 
   await ctx.db.transaction(async (tx) => {
     await publishEvent(tx, {
@@ -61,7 +65,7 @@ registerDecisionAction("finance.commenceDebtRecovery", async (ctx, args, decisio
           "Account summary",
         ),
         infoNote(
-          "The owners corporation has resolved to commence debt recovery. Unless payment in full is received within 14 days, the matter may be referred for recovery action under the Owners Corporations Act 2006 (Vic), and recovery costs may be added to your lot account.",
+          "The owners corporation has resolved to commence debt recovery after the final fee notice's 28-day period expired. The matter may now be referred for recovery action under the Owners Corporations Act 2006 (Vic), and recoverable costs may be added to your lot account.",
           "warning",
         ),
         infoNote(

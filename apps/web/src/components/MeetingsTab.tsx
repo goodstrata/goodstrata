@@ -59,6 +59,10 @@ interface Meeting {
   status: string;
   quorumMet: boolean | null;
   minutesDocumentId: string | null;
+  chairPersonId: string | null;
+  chairName: string | null;
+  chairAppointedAt: string | null;
+  chairAssistedByAi: boolean;
 }
 /** Stored tally — older rows may predate the headcount/basis fields. */
 interface MotionResult {
@@ -70,6 +74,7 @@ interface MotionResult {
   abstainCount?: number;
   basis?: "headcount" | "entitlement";
   pollDemanded?: boolean;
+  castingVote?: "for" | "against";
 }
 /** A vote already on the register for this motion. */
 interface MotionVote {
@@ -102,6 +107,19 @@ interface MeetingDetail {
   /** Optional until the AI Chair backend ships — render gracefully when absent. */
   chairLog?: ChairLogEntry[] | null;
   transcriptionStarted?: boolean;
+  canExerciseCastingVote: boolean;
+  powersOfAttorney: PowerOfAttorneyRecord[];
+}
+
+interface PowerOfAttorneyRecord {
+  id: string;
+  lotId: string;
+  donorPersonId: string;
+  attorneyPersonId: string;
+  startsOn: string;
+  endsOn: string | null;
+  revokedAt: string | null;
+  canRevoke: boolean;
 }
 
 const MEETING_KINDS = ["agm", "sgm", "committee"] as const;
@@ -743,6 +761,421 @@ function AppointProxySheet({ schemeId, meetingId }: { schemeId: string; meetingI
   );
 }
 
+const powerOfAttorneySchema = z.object({
+  lotId: z.string().min(1, "Choose your lot."),
+  attorneyPersonId: z.string().min(1, "Choose the attorney."),
+  documentId: z.string().min(1, "Choose the retained signed instrument."),
+  startsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a start date."),
+  endsOn: z.string(),
+});
+type PowerOfAttorneyValues = z.infer<typeof powerOfAttorneySchema>;
+
+/** A power of attorney is durable authority, unlike a meeting-only proxy. */
+function PowerOfAttorneySheet({ schemeId }: { schemeId: string }) {
+  const [open, setOpen] = useState(false);
+  const sheet = useSheetSide();
+  const { data: lots } = useQuery({
+    queryKey: ["lots", schemeId],
+    enabled: open,
+    queryFn: async () =>
+      unwrap<{ lots: { id: string; lotNumber: string }[] }>(
+        await api.schemes[":schemeId"].lots.$get({ param: { schemeId } }),
+      ),
+  });
+  const { data: people } = useQuery({
+    queryKey: ["people", schemeId],
+    enabled: open,
+    queryFn: async () =>
+      unwrap<{
+        people: {
+          id: string;
+          givenName: string | null;
+          familyName: string | null;
+          companyName: string | null;
+          email: string | null;
+        }[];
+      }>(await api.schemes[":schemeId"].people.$get({ param: { schemeId } })),
+  });
+  const { data: documents } = useQuery({
+    queryKey: ["documents-for-power-of-attorney", schemeId],
+    enabled: open,
+    queryFn: async () =>
+      unwrap<{ documents: { id: string; title: string }[] }>(
+        await api.schemes[":schemeId"].documents.$get({
+          param: { schemeId },
+          query: {},
+        }),
+      ),
+  });
+  const form = useAppForm({
+    schema: powerOfAttorneySchema,
+    defaultValues: {
+      lotId: "",
+      attorneyPersonId: "",
+      documentId: "",
+      startsOn: new Date().toISOString().slice(0, 10),
+      endsOn: "",
+    } as PowerOfAttorneyValues,
+    onSubmit: async (values) => {
+      await unwrap(
+        await api.schemes[":schemeId"]["powers-of-attorney"].$post({
+          param: { schemeId },
+          json: {
+            lotId: values.lotId,
+            attorneyPersonId: values.attorneyPersonId,
+            documentId: values.documentId,
+            startsOn: values.startsOn,
+            ...(values.endsOn ? { endsOn: values.endsOn } : {}),
+          },
+        }),
+      );
+      toast.success("Power of attorney recorded and retained");
+      setOpen(false);
+      form.reset();
+    },
+  });
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="outline" size="sm" className="w-full sm:w-auto">
+          <FileText className="size-4" /> Record power of attorney
+        </Button>
+      </SheetTrigger>
+      <SheetContent side={sheet.side} className={sheet.className}>
+        <SheetHeader>
+          <SheetTitle>Record power of attorney</SheetTitle>
+          <SheetDescription>
+            File the signed instrument so the attorney can attend, count toward quorum and vote for
+            the lot while the authority remains current.
+          </SheetDescription>
+        </SheetHeader>
+        <form
+          className="flex flex-col gap-5 px-4 pb-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void form.handleSubmit();
+          }}
+        >
+          <FieldGroup>
+            <form.Field name="lotId">
+              {(field) => (
+                <Field label="Your lot" required error={fieldError(field.state.meta.errors)}>
+                  {(control) => (
+                    <Select value={field.state.value} onValueChange={field.handleChange}>
+                      <SelectTrigger id={control.id} className="w-full">
+                        <SelectValue placeholder="Choose a lot…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {lots?.lots.map((lot) => (
+                          <SelectItem key={lot.id} value={lot.id}>
+                            Lot {lot.lotNumber}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="attorneyPersonId">
+              {(field) => (
+                <Field label="Attorney" required error={fieldError(field.state.meta.errors)}>
+                  {(control) => (
+                    <Select value={field.state.value} onValueChange={field.handleChange}>
+                      <SelectTrigger id={control.id} className="w-full">
+                        <SelectValue placeholder="Choose a person…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {people?.people.map((person) => (
+                          <SelectItem key={person.id} value={person.id}>
+                            {personLabel(person)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+            <form.Field name="documentId">
+              {(field) => (
+                <Field
+                  label="Signed instrument"
+                  required
+                  hint="Upload it to Documents first with statutory retention."
+                  error={fieldError(field.state.meta.errors)}
+                >
+                  {(control) => (
+                    <Select value={field.state.value} onValueChange={field.handleChange}>
+                      <SelectTrigger id={control.id} className="w-full">
+                        <SelectValue placeholder="Choose a filed document…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {documents?.documents.map((document) => (
+                          <SelectItem key={document.id} value={document.id}>
+                            {document.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <form.Field name="startsOn">
+                {(field) => (
+                  <Field label="Starts" required error={fieldError(field.state.meta.errors)}>
+                    <Input
+                      type="date"
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                    />
+                  </Field>
+                )}
+              </form.Field>
+              <form.Field name="endsOn">
+                {(field) => (
+                  <Field label="Ends (optional)">
+                    <Input
+                      type="date"
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                    />
+                  </Field>
+                )}
+              </form.Field>
+            </div>
+          </FieldGroup>
+          <FormError form={form} />
+          <SubmitButton form={form}>Record authority</SubmitButton>
+        </form>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function MeetingChairCard({
+  schemeId,
+  meeting,
+  isOfficer,
+  onChange,
+}: {
+  schemeId: string;
+  meeting: Meeting;
+  isOfficer: boolean;
+  onChange: () => void;
+}) {
+  const [personId, setPersonId] = useState("");
+  const [managerName, setManagerName] = useState("");
+  const [useManager, setUseManager] = useState(false);
+  const [aiAssistanceAuthorized, setAiAssistanceAuthorized] = useState(false);
+  const { data } = useQuery({
+    queryKey: ["people", schemeId],
+    enabled: isOfficer,
+    queryFn: async () =>
+      unwrap<{
+        people: {
+          id: string;
+          givenName: string | null;
+          familyName: string | null;
+          companyName: string | null;
+          email: string | null;
+        }[];
+      }>(await api.schemes[":schemeId"].people.$get({ param: { schemeId } })),
+  });
+  const appoint = useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api.schemes[":schemeId"].meetings[":meetingId"].chair.$post({
+          param: { schemeId, meetingId: meeting.id },
+          json: useManager
+            ? { managerName: managerName.trim(), aiAssistanceAuthorized }
+            : { personId, aiAssistanceAuthorized },
+        }),
+      ),
+    onSuccess: () => {
+      toast.success("Human meeting chair recorded");
+      onChange();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Gavel className="size-4" /> Human meeting chair
+        </CardTitle>
+        <CardDescription>
+          {meeting.chairName
+            ? `${meeting.chairName} is the recorded chair${meeting.chairAssistedByAi ? "; AI assistance is authorised" : ""}.`
+            : "A human owner or manager must chair the meeting. AI may assist only when expressly authorised."}
+        </CardDescription>
+      </CardHeader>
+      {isOfficer && meeting.status !== "closed" && meeting.status !== "minutes_distributed" && (
+        <CardContent className="space-y-3">
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={!useManager ? "default" : "outline"}
+              onClick={() => setUseManager(false)}
+            >
+              Lot owner
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={useManager ? "default" : "outline"}
+              onClick={() => setUseManager(true)}
+            >
+              Human manager
+            </Button>
+          </div>
+          {useManager ? (
+            <Field label="Manager name">
+              <Input
+                value={managerName}
+                onChange={(event) => setManagerName(event.target.value)}
+                placeholder="Full legal name"
+              />
+            </Field>
+          ) : (
+            <Field label="Lot owner">
+              {(control) => (
+                <Select value={personId} onValueChange={setPersonId}>
+                  <SelectTrigger id={control.id} className="w-full">
+                    <SelectValue placeholder="Choose an owner from the roll…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data?.people.map((person) => (
+                      <SelectItem key={person.id} value={person.id}>
+                        {personLabel(person)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </Field>
+          )}
+          <Button
+            type="button"
+            variant={aiAssistanceAuthorized ? "default" : "outline"}
+            aria-pressed={aiAssistanceAuthorized}
+            onClick={() => setAiAssistanceAuthorized((value) => !value)}
+          >
+            <Bot className="size-4" /> AI assistance{" "}
+            {aiAssistanceAuthorized ? "authorised" : "not authorised"}
+          </Button>
+          <div>
+            <Button
+              onClick={() => appoint.mutate()}
+              pending={appoint.isPending}
+              disabled={useManager ? managerName.trim().length < 2 : !personId}
+            >
+              Record chair
+            </Button>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function PowerOfAttorneyRegister({
+  schemeId,
+  appointments,
+  onChange,
+}: {
+  schemeId: string;
+  appointments: PowerOfAttorneyRecord[];
+  onChange: () => void;
+}) {
+  const { data: lots } = useQuery({
+    queryKey: ["lots", schemeId],
+    queryFn: async () =>
+      unwrap<{ lots: { id: string; lotNumber: string }[] }>(
+        await api.schemes[":schemeId"].lots.$get({ param: { schemeId } }),
+      ),
+  });
+  const { data: people } = useQuery({
+    queryKey: ["people", schemeId],
+    queryFn: async () =>
+      unwrap<{
+        people: {
+          id: string;
+          givenName: string | null;
+          familyName: string | null;
+          companyName: string | null;
+          email: string | null;
+        }[];
+      }>(await api.schemes[":schemeId"].people.$get({ param: { schemeId } })),
+  });
+  const revoke = useMutation({
+    mutationFn: async (powerOfAttorneyId: string) =>
+      unwrap(
+        await api.schemes[":schemeId"]["powers-of-attorney"][":powerOfAttorneyId"].revoke.$post({
+          param: { schemeId, powerOfAttorneyId },
+        }),
+      ),
+    onSuccess: () => {
+      toast.success("Power of attorney revoked");
+      onChange();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  if (appointments.length === 0) return null;
+  const nameFor = (id: string) => {
+    const person = people?.people.find((candidate) => candidate.id === id);
+    return person ? personLabel(person) : "Person on the roll";
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Powers of attorney</CardTitle>
+        <CardDescription>Current and retained written authorities visible to you.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {appointments.map((appointment) => {
+          const lot = lots?.lots.find((candidate) => candidate.id === appointment.lotId);
+          return (
+            <div
+              key={appointment.id}
+              className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0 text-sm">
+                <p className="font-medium">
+                  Lot {lot?.lotNumber ?? "—"} · {nameFor(appointment.attorneyPersonId)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Appointed by {nameFor(appointment.donorPersonId)} · {appointment.startsOn}
+                  {appointment.endsOn ? ` to ${appointment.endsOn}` : " onward"}
+                </p>
+              </div>
+              {appointment.revokedAt ? (
+                <Badge tone="neutral">Revoked</Badge>
+              ) : appointment.canRevoke ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => revoke.mutate(appointment.id)}
+                  pending={revoke.isPending && revoke.variables === appointment.id}
+                >
+                  Revoke
+                </Button>
+              ) : (
+                <Badge tone="positive">Current</Badge>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
 function MeetingDetailView({
   schemeId,
   meetingId,
@@ -910,6 +1343,7 @@ function MeetingDetailView({
                   I'm attending
                 </Button>
                 <AppointProxySheet schemeId={schemeId} meetingId={meetingId} />
+                <PowerOfAttorneySheet schemeId={schemeId} />
                 {isOfficer && (
                   <Button
                     variant="outline"
@@ -971,6 +1405,19 @@ function MeetingDetailView({
         </CardContent>
       </Card>
 
+      <MeetingChairCard
+        schemeId={schemeId}
+        meeting={m}
+        isOfficer={isOfficer}
+        onChange={invalidate}
+      />
+
+      <PowerOfAttorneyRegister
+        schemeId={schemeId}
+        appointments={data.powersOfAttorney ?? []}
+        onChange={invalidate}
+      />
+
       <ChairLogCard
         chairLog={data.chairLog ?? []}
         transcriptionStarted={data.transcriptionStarted ?? false}
@@ -1005,6 +1452,7 @@ function MeetingDetailView({
                 schemeId={schemeId}
                 motion={motion}
                 isOfficer={isOfficer}
+                canExerciseCastingVote={data.canExerciseCastingVote}
                 onChange={invalidate}
               />
             ))}
@@ -1184,11 +1632,13 @@ function MotionCard({
   schemeId,
   motion,
   isOfficer,
+  canExerciseCastingVote,
   onChange,
 }: {
   schemeId: string;
   motion: Motion;
   isOfficer: boolean;
+  canExerciseCastingVote: boolean;
   onChange: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -1270,6 +1720,21 @@ function MotionCard({
       setError(e.message);
     },
   });
+  const castingVote = useMutation({
+    mutationFn: async (choice: "for" | "against") =>
+      unwrap(
+        await api.schemes[":schemeId"].motions[":motionId"]["casting-vote"].$post({
+          param: { schemeId, motionId: motion.id },
+          json: { choice },
+        }),
+      ),
+    onMutate: () => setError(null),
+    onSuccess: () => {
+      toast.success("Chair's casting vote recorded");
+      onChange();
+    },
+    onError: (error) => setError(error.message),
+  });
 
   // The register decides what is offered: a lot with a vote on record never
   // gets the buttons again (the API would 409 it anyway).
@@ -1291,6 +1756,31 @@ function MotionCard({
         </div>
         <p className="text-sm text-muted-foreground">{motion.text}</p>
         {motion.result && <MotionResultLine result={motion.result} />}
+        {canExerciseCastingVote &&
+          motion.resolutionType === "ordinary" &&
+          (motion.status === "carried" || motion.status === "lost") &&
+          !motion.result?.castingVote &&
+          motion.result?.forCount === motion.result?.againstCount && (
+            <div className="space-y-2 rounded-lg border border-caution/40 bg-caution/5 p-3">
+              <p className="text-sm font-medium">Equal vote — chair's casting vote</p>
+              <p className="text-xs text-muted-foreground">
+                As the recorded owner-chair, you may break this tie before the meeting closes.
+              </p>
+              <div className="flex gap-2">
+                {(["for", "against"] as const).map((choice) => (
+                  <Button
+                    key={choice}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => castingVote.mutate(choice)}
+                    pending={castingVote.isPending && castingVote.variables === choice}
+                  >
+                    Cast {choice}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
 
         {motion.status === "draft" &&
           (isOfficer ? (

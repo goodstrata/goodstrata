@@ -74,6 +74,45 @@ export interface LevyNoticeDoc {
   priorBalanceCents?: number | null;
   /** Interest accrued on overdue balances, if any (shown as a note). */
   interestNote?: string | null;
+  /** Resolution-authorised interest rate shown on the approved-form notice. */
+  interestRateBps?: number | null;
+  interestAuthorised?: boolean;
+  /** OC rules / internal grievance pathway for disputed fees. */
+  disputeProcess?: string | null;
+}
+
+export interface FinalFeeNoticeDoc {
+  scheme: SchemeParty;
+  billTo: BillToParty;
+  lot: LotRef;
+  notice: {
+    noticeNumber: string;
+    issuedAt: Date | string;
+    sourceNoticeNumber: string;
+    recoveryEligibleOn: string;
+    principalCents: number;
+    interestCents: number;
+    dailyInterestCents: number;
+    interestRateBps: number;
+  };
+  payment: PaymentRails;
+  disputeProcess: string;
+}
+
+export interface FinancialStatementDoc {
+  scheme: SchemeParty;
+  statement: {
+    periodStart: string;
+    periodEnd: string;
+    accountingBasis: string;
+    incomeCents: number;
+    expenditureCents: number;
+    cashCents: number;
+    receivablesCents: number;
+    liabilitiesCents: number;
+    penaltyInterestCents: number;
+    netAssetsCents: number;
+  };
 }
 
 /** PAYMENT RECEIPT for a reconciled payment. */

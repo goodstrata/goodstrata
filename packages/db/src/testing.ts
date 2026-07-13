@@ -17,16 +17,16 @@ const ADMIN_URL =
  * Uses the dev Postgres (TEST_DATABASE_URL or the docker-compose default);
  * falls back to a throwaway testcontainer when nothing is listening (CI).
  */
-export async function provisionTestDatabase(): Promise<TestDatabase> {
+export async function provisionTestDatabase(migrationsFolder?: string): Promise<TestDatabase> {
   const name = `gs_test_${randomBytes(6).toString("hex")}`;
 
   try {
-    return await provisionOnServer(ADMIN_URL, name);
+    return await provisionOnServer(ADMIN_URL, name, migrationsFolder);
   } catch (err) {
     if ((err as { code?: string }).code !== "ECONNREFUSED") throw err;
     const { PostgreSqlContainer } = await import("@testcontainers/postgresql");
     const container = await new PostgreSqlContainer("postgres:18-alpine").start();
-    const base = await provisionOnServer(container.getConnectionUri(), name);
+    const base = await provisionOnServer(container.getConnectionUri(), name, migrationsFolder);
     return {
       ...base,
       cleanup: async () => {
@@ -37,7 +37,11 @@ export async function provisionTestDatabase(): Promise<TestDatabase> {
   }
 }
 
-async function provisionOnServer(adminUrl: string, name: string): Promise<TestDatabase> {
+async function provisionOnServer(
+  adminUrl: string,
+  name: string,
+  migrationsFolder?: string,
+): Promise<TestDatabase> {
   const admin = new pg.Client({ connectionString: adminUrl });
   await admin.connect();
   try {
@@ -50,7 +54,7 @@ async function provisionOnServer(adminUrl: string, name: string): Promise<TestDa
   url.pathname = `/${name}`;
   const testUrl = url.toString();
 
-  await runMigrations(testUrl);
+  await runMigrations(testUrl, migrationsFolder);
   const { db, pool } = createDb(testUrl);
 
   return {

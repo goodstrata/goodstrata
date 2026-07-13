@@ -213,7 +213,7 @@ beforeAll(async () => {
       budgetId: budgetRows[0]!.id,
       frequency: "quarterly",
       instalments: 4,
-      firstDueOn: "2026-08-01",
+      firstDueOn: "2026-08-15",
     })
     .returning();
   scheduleId = scheduleRows[0]!.id;
@@ -231,6 +231,9 @@ beforeAll(async () => {
         title: "2025 AGM (wrapping up)",
         scheduledAt: new Date("2026-07-10T02:00:00Z"),
         status: "in_progress",
+        chairPersonId: personRows[0]!.id,
+        chairName: "Ada Owner",
+        chairAppointedAt: new Date("2026-07-10T02:00:00Z"),
       },
     ])
     .returning();
@@ -263,7 +266,11 @@ beforeAll(async () => {
           { id: "decline", label: "Decline" },
         ],
         deciderRole: "treasurer",
-        followUp: { type: "action", action: "finance.adoptBudget", args: { budgetId: "b-1" } },
+        followUp: {
+          type: "action",
+          action: "finance.approveBudgetProposal",
+          args: { budgetId: budgetRows[0]!.id },
+        },
       },
       {
         schemeId,
@@ -379,7 +386,7 @@ describe("issue_levy_run", () => {
     expect(textOf(res)).toContain("DRY RUN");
     expect(body.dryRun).toBe(true);
     expect(body.confirmToken).toBeTruthy();
-    expect(body.preview.dueOn).toBe("2026-08-01");
+    expect(body.preview.dueOn).toBe("2026-08-15");
     expect(body.preview.totalCents).toBe(15_000);
     const byLot = Object.fromEntries(body.preview.perLot.map((l) => [l.lotNumber, l.totalCents]));
     expect(byLot).toEqual({ "1": 7_500, "2": 4_500, "3": 3_000 });
@@ -445,7 +452,7 @@ describe("issue_levy_run", () => {
     });
     const body = payloadOf<{ result: { issued: number; dueOn: string } }>(res);
     expect(body.result.issued).toBe(3);
-    expect(body.result.dueOn).toBe("2026-08-01");
+    expect(body.result.dueOn).toBe("2026-08-15");
 
     const notices = await tdb.db.query.levyNotices.findMany({
       where: and(eq(levyNotices.schemeId, schemeId), eq(levyNotices.instalment, 1)),
@@ -561,7 +568,7 @@ describe("resolve_decision", () => {
     // Treasurer tier: eligible = treasurer + manager_admin.
     expect(body.preview.currentTally).toEqual({ votesFor: 0, votesAgainst: 0, eligible: 2 });
     expect(body.preview.projected.status).toBe("approved");
-    expect(body.preview.followUp?.action).toBe("finance.adoptBudget");
+    expect(body.preview.followUp?.action).toBe("finance.approveBudgetProposal");
 
     const before = await tdb.db.query.decisions.findFirst({
       where: eq(decisions.id, treasurerDecisionId),

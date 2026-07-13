@@ -1,5 +1,10 @@
 # GoodStrata — Compliance Gap Report (Victoria)
 
+> **Historical baseline:** implementation-status findings below describe the
+> pre-remediation code snapshot. The 13 July 2026 close-out and remaining
+> counsel/product questions are in
+> [`COMPLIANCE-IMPLEMENTATION-2026-07-13.md`](./COMPLIANCE-IMPLEMENTATION-2026-07-13.md).
+
 **Owners Corporations Act 2006 (Vic) · OC Regulations 2018 (Vic) · OCOAA 2021 · adjacent Commonwealth obligations**
 
 Version: 2026-07-03 · Prepared as a product/engineering compliance-gap assessment for Good Strata Pty Ltd (ACN 684 135 760)

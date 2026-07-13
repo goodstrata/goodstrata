@@ -47,6 +47,8 @@ interface DocumentRow {
   sizeBytes: number;
   accessLevel: string;
   retentionUntil: string | null;
+  retentionClass: string;
+  retentionBasis: string | null;
   createdAt: string;
 }
 
@@ -161,6 +163,9 @@ function DocumentViewerDialog({
                 <span className="text-xs">Retain until {formatDate(doc.retentionUntil)}</span>
               </>
             )}
+            {doc.retentionClass === "permanent" && (
+              <span className="text-xs">Permanent record</span>
+            )}
           </DialogDescription>
         </DialogHeader>
         {isError ? (
@@ -230,6 +235,7 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<Category>("insurance");
   const [accessLevel, setAccessLevel] = useState("owners");
+  const [retentionClass, setRetentionClass] = useState("statutory_7_years");
   const upload = useMutation({
     mutationFn: async () => {
       const file = fileRef.current?.files?.[0];
@@ -238,6 +244,7 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
       form.set("file", file);
       form.set("category", category);
       form.set("accessLevel", accessLevel);
+      form.set("retentionClass", retentionClass);
       const res = await fetch(`/api/schemes/${schemeId}/documents`, {
         method: "POST",
         body: form,
@@ -265,8 +272,8 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <Field className="sm:flex-1" label="File">
+            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start">
+              <Field className="sm:min-w-64 sm:flex-1" label="File">
                 <Input ref={fileRef} type="file" data-testid="doc-file" />
               </Field>
               <Field className="sm:w-44" label="Category">
@@ -311,6 +318,21 @@ export function DocumentsSection({ schemeId }: { schemeId: string }) {
                           {label}
                         </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+              <Field className="sm:w-44" label="Retention">
+                {(control) => (
+                  <Select value={retentionClass} onValueChange={setRetentionClass}>
+                    <SelectTrigger id={control.id} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="statutory_7_years">7-year minimum</SelectItem>
+                      <SelectItem value="minimum_12_months">12-month minimum</SelectItem>
+                      <SelectItem value="permanent">Building life</SelectItem>
+                      <SelectItem value="operational">Operational only</SelectItem>
                     </SelectContent>
                   </Select>
                 )}

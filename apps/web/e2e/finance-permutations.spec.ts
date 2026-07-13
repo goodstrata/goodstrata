@@ -7,6 +7,9 @@ const API = "http://localhost:3105";
 const section = (p: import("@playwright/test").Page, name: string) =>
   p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
 
+const dateOnlyDaysFromNow = (days: number) =>
+  new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
 test.describe.configure({ mode: "serial" });
 
 /**
@@ -27,8 +30,7 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
   const ownerEmail = `finlay.${id}@ledgerlane.example`;
   const csv = `lot_number,entitlement,liability,lot_type,owner_name,owner_email
 1,10,10,residential,Finlay Owner,${ownerEmail}
-2,10,10,residential,Greta Owner,greta.${id}@ledgerlane.example
-3,10,10,residential,Hana Owner,hana.${id}@ledgerlane.example`;
+2,10,10,residential,Greta Owner,greta.${id}@ledgerlane.example`;
 
   // --- Manager signs up and registers the scheme via the wizard ---
   await page.goto("/login");
@@ -108,33 +110,95 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
   ).toBeVisible();
   await expect(page.getByText("committee review")).toBeVisible();
 
-  // --- Treasurer decision gate, then the executor adopts asynchronously ---
+  // --- Treasurer approval advances the proposal, but cannot adopt it ---
   await section(page, "decisions").click();
   const budgetDecision = page.getByTestId("decision-budget_adoption");
   await expect(budgetDecision).toBeVisible();
   await budgetDecision.getByRole("button", { name: "Approve" }).click();
-  // Wait for the mutation to settle before the polling reload below; otherwise
-  // navigation can abort the in-flight resolve request.
   await expect(page.getByText("Decision recorded")).toBeVisible();
 
-  await expect(async () => {
-    await page.reload();
-    await section(page, "finance").click();
-    await expect(page.getByText("adopted", { exact: true })).toBeVisible({ timeout: 2000 });
-    // The pg-boss dispatcher + executor hop can exceed 20s on a cold stack.
-  }).toPass({ timeout: 45_000 });
+  await section(page, "finance").click();
+  await expect(page.getByText("committee review", { exact: true })).toBeVisible();
+  await expect(page.getByText("adopted", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "New schedule" })).toHaveCount(0);
+
+  // --- Statutory adoption: a carried ordinary motion at an AGM/SGM ---
+  const meetingTitle = `2026 budget AGM ${id}`;
+  await section(page, "meetings").click();
+  await page.getByRole("button", { name: "New meeting" }).click();
+  await page.getByTestId("meeting-title").fill(meetingTitle);
+  await page.getByTestId("meeting-when").fill(`${dateOnlyDaysFromNow(30)}T18:00`);
+  await page.getByTestId("meeting-agenda").fill("Adoption of the annual budget");
+  await page.getByRole("button", { name: "Schedule meeting" }).click();
+  await page.getByRole("button", { name: new RegExp(meetingTitle) }).click();
+  await page.getByRole("button", { name: "Send notice" }).click();
+  await expect(page.getByText("notice sent", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "New motion" }).click();
+  await page.getByTestId("motion-title").fill("Adopt the 2026 annual budget");
+  await page
+    .getByTestId("motion-text")
+    .fill("That the owners corporation adopts the proposed 2026 annual budget.");
+  const motionResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      /\/api\/schemes\/[^/]+\/motions$/.test(new URL(response.url()).pathname),
+  );
+  await page.getByRole("button", { name: "Add motion", exact: true }).click();
+  const motionPayload = (await (await motionResponse).json()) as { motion: { id: string } };
+  const budgetMotionId = motionPayload.motion.id;
+  const motionCard = page.getByTestId("motion-Adopt the 2026 annual budget");
+  await expect(motionCard).toBeVisible();
+  await motionCard.getByRole("button", { name: "Open voting" }).click();
+  await expect(motionCard.getByText("open", { exact: true })).toBeVisible();
+
+  await section(ownerPage, "meetings").click();
+  await expect(ownerPage.getByRole("button", { name: new RegExp(meetingTitle) })).toBeVisible({
+    timeout: 10_000,
+  });
+  await ownerPage.getByRole("button", { name: new RegExp(meetingTitle) }).click();
+  await ownerPage.getByRole("button", { name: "I'm attending" }).click();
+  const ownerMotion = ownerPage.getByTestId("motion-Adopt the 2026 annual budget");
+  await ownerMotion.getByTestId("vote-lot").click();
+  await ownerPage.getByRole("option", { name: "Lot 1", exact: true }).click();
+  await ownerMotion.getByRole("button", { name: "for", exact: true }).click();
+  await expect(ownerPage.getByText("Vote recorded")).toBeVisible();
+
+  await motionCard.getByRole("button", { name: "Close & tally" }).click();
+  await expect(motionCard.getByText("carried", { exact: true })).toBeVisible();
+
+  await section(page, "finance").click();
+  await page.getByRole("button", { name: "Record adoption" }).click();
+  const adoptionDialog = page.getByRole("dialog", { name: "Record budget adoption" });
+  await adoptionDialog.getByLabel("Carried motion ID").fill(budgetMotionId);
+  const adoptionResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      /\/api\/schemes\/[^/]+\/budgets\/[^/]+\/adopt$/.test(new URL(response.url()).pathname),
+  );
+  await adoptionDialog.getByRole("button", { name: "Adopt budget" }).click();
+  const adoptionResult = await adoptionResponse;
+  expect(adoptionResult.ok(), await adoptionResult.text()).toBeTruthy();
+  await expect(
+    page.getByText("Budget adoption linked to the carried general-meeting resolution"),
+  ).toBeVisible();
+  await expect(page.getByText("adopted", { exact: true })).toBeVisible();
 
   // --- Schedule + issue; a second issue of the SAME instalment is a 409 toast ---
+  // The exact 28-day boundary is valid; deriving it from the test clock keeps
+  // this spec statutory and evergreen.
+  const firstDueOn = dateOnlyDaysFromNow(28);
+  const paymentReceivedOn = dateOnlyDaysFromNow(29);
   await page.getByRole("button", { name: "New schedule" }).click();
   await page.getByTestId("schedule-budget").click();
   await page.getByRole("option").first().click();
-  await page.getByTestId("schedule-first-due").fill("2026-10-01");
+  await page.getByTestId("schedule-first-due").fill(firstDueOn);
   await page.getByRole("button", { name: "Create quarterly schedule" }).click();
   await expect(page.getByText(/quarterly × 4/)).toBeVisible();
 
   await page.getByRole("button", { name: "Issue notices" }).click();
   await expect(page.getByText("Levy notices issued to all lots")).toBeVisible();
-  await expect(page.getByText(/LN-2026-01-1/)).toBeVisible();
+  await expect(page.getByText(new RegExp(`LN-${firstDueOn.slice(0, 4)}-01-1`))).toBeVisible();
 
   // Same instalment again → the server's ALREADY_ISSUED lands as an error toast.
   await page.getByRole("button", { name: "Issue notices" }).click();
@@ -150,13 +214,13 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
 
   await page.getByTestId("manual-payment-notice").click();
   await page.getByRole("option").first().click();
-  await page.getByTestId("manual-payment-date").fill("2026-10-02");
+  await page.getByTestId("manual-payment-date").fill(paymentReceivedOn);
   // After the first submit the form revalidates live: a $0 amount errors
   // immediately (and keeps the submit disabled — the boundary never reaches the server).
   await page.getByTestId("manual-payment-amount").fill("0");
   await expect(page.getByText("Enter an amount greater than zero.")).toBeVisible();
 
-  // $120.50 against a $4000 quarterly notice → partial payment.
+  // $120.50 against a $6000 quarterly notice → partial payment.
   await page.getByTestId("manual-payment-amount").fill("120.50");
   await page.getByTestId("manual-payment-payer").fill("Finlay Owner");
   await page.getByTestId("manual-payment-reference").fill(`E2E-STMT-${id}`);

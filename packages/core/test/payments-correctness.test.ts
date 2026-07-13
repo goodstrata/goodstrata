@@ -7,6 +7,7 @@ import {
   funds,
   lotLedgerEntries,
   lots,
+  motions,
   ownerships,
   people,
   receipts,
@@ -21,6 +22,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServiceContext } from "../src/context.js";
 import { interestAccrued } from "../src/engines/interest.js";
 import * as arrearsService from "../src/services/arrears.js";
+import * as interestAuthorisationsService from "../src/services/interestAuthorisations.js";
 import * as leviesService from "../src/services/levies.js";
 import * as paymentsService from "../src/services/payments.js";
 
@@ -131,6 +133,22 @@ beforeAll(async () => {
     firstDueOn: "2026-07-01",
   });
   scheduleId = schedule.id;
+
+  const [interestMotion] = await tdb.db
+    .insert(motions)
+    .values({
+      schemeId,
+      title: "Authorise penalty interest",
+      text: "That penalty interest of 10% per annum apply to overdue fees and charges.",
+      resolutionType: "ordinary",
+      status: "carried",
+    })
+    .returning();
+  await interestAuthorisationsService.authoriseInterest(ctxAt(T0), schemeId, {
+    motionId: interestMotion!.id,
+    rateBps: 1_000,
+    effectiveFrom: "2026-06-01",
+  });
 }, 120_000);
 
 afterAll(async () => {
@@ -361,7 +379,7 @@ describe("refund/reversal of a recorded payment", () => {
 
   it("reverses allocations, ledger credit, fund split and notice status", async () => {
     // Instalment 2 (due 2026-10-01) gives a fresh, open notice.
-    const ctx = ctxAt("2026-09-10T00:00:00Z");
+    const ctx = ctxAt("2026-09-03T00:00:00Z");
     await leviesService.issueLevyRun(ctx, schemeId, scheduleId, 2);
     const notice = (await leviesService.listNotices(ctx, schemeId)).find(
       (n) => n.instalment === 2 && n.lotId === lotIds[0],

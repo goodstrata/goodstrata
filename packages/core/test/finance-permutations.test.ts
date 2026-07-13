@@ -4,6 +4,8 @@ import {
   budgets,
   funds,
   lots,
+  meetings,
+  motions,
   ownerships,
   people,
   schemes,
@@ -16,11 +18,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServiceContext } from "../src/context.js";
 import { interestAccrued } from "../src/engines/interest.js";
 import * as arrearsService from "../src/services/arrears.js";
-import { createBudget, createBudgetInput, listBudgets } from "../src/services/budgets.js";
+import {
+  adoptBudget,
+  createBudget,
+  createBudgetInput,
+  listBudgets,
+} from "../src/services/budgets.js";
 import * as decisionsService from "../src/services/decisions.js";
+import {
+  authoriseInterest,
+  authoriseInterestInput,
+} from "../src/services/interestAuthorisations.js";
 import {
   createLevySchedule,
   createLevyScheduleInput,
+  createSpecialFeeInput,
   issueLevyRun,
   listNotices,
 } from "../src/services/levies.js";
@@ -132,6 +144,31 @@ describe("money boundaries: client cents formula vs server schemas", () => {
     expect(parsed.frequency).toBe("quarterly");
     expect(createLevyScheduleInput.safeParse({ ...base, firstDueOn: "soon" }).success).toBe(false);
   });
+
+  it("statutory interest is resolution-linked and cannot exceed the Victorian cap", () => {
+    const base = {
+      motionId: randomUUID(),
+      effectiveFrom: "2026-07-01",
+    };
+    expect(authoriseInterestInput.safeParse({ ...base, rateBps: 1_000 }).success).toBe(true);
+    expect(authoriseInterestInput.safeParse({ ...base, rateBps: 1_001 }).success).toBe(false);
+    expect(authoriseInterestInput.safeParse({ ...base, rateBps: -1 }).success).toBe(false);
+  });
+
+  it("special fees require a carried-motion reference and explicit allocation method", () => {
+    const base = {
+      description: "Unexpected lift replacement",
+      totalCents: 500_000,
+      dueOn: "2026-09-01",
+      motionId: randomUUID(),
+      allocationMethod: "liability" as const,
+    };
+    expect(createSpecialFeeInput.safeParse(base).success).toBe(true);
+    expect(createSpecialFeeInput.safeParse({ ...base, motionId: "not-a-uuid" }).success).toBe(
+      false,
+    );
+    expect(createSpecialFeeInput.safeParse({ ...base, totalCents: 0 }).success).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -142,6 +179,7 @@ let tdb: TestDatabase;
 let schemeId: string;
 const lotIds: string[] = [];
 const treasurerId = "user-perm-treasurer";
+let adoptionMotionId: string;
 
 const integrations = {
   ...integrationsFromEnv({
@@ -245,12 +283,36 @@ describe("budget → schedule sequencing permutations", () => {
     ).rejects.toMatchObject({ code: "BUDGET_NOT_ADOPTED", status: 422 });
   });
 
-  it("treasurer approval adopts; zero-cent maintenance line never levies", async () => {
+  it("treasurer approval tables the proposal; a carried AGM motion adopts it", async () => {
     const ctx = ctxAt(T0);
     const pending = await decisionsService.listDecisions(ctx, schemeId, "pending");
     const decision = pending.find((d) => (d.subject as { id?: string } | null)?.id === budgetId)!;
     await decisionsService.resolveDecision(ctx, schemeId, decision.id, "approve", ["treasurer"]);
     await decisionsService.executeDecisionFollowUp(ctxAt(T0, systemActor("executor")), decision.id);
+
+    const [meeting] = await tdb.db
+      .insert(meetings)
+      .values({
+        schemeId,
+        kind: "agm",
+        title: "Annual general meeting",
+        scheduledAt: new Date(T0),
+        status: "closed",
+      })
+      .returning();
+    const [motion] = await tdb.db
+      .insert(motions)
+      .values({
+        schemeId,
+        meetingId: meeting!.id,
+        title: "Adopt annual budget",
+        text: "That the proposed annual budget be adopted.",
+        resolutionType: "ordinary",
+        status: "carried",
+      })
+      .returning();
+    adoptionMotionId = motion!.id;
+    await adoptBudget(ctx, schemeId, budgetId, motion!.id);
 
     const all = await listBudgets(ctx, schemeId);
     const adopted = all.find((b) => b.id === budgetId)!;
@@ -503,6 +565,11 @@ describe("arrears read model agrees with the deterministic interest engine", () 
 
   it("scanArrears flips the notice to overdue, POSTS interest per the engine, and emits stage 3 exactly once", async () => {
     const ctx = ctxAt("2026-08-01T00:00:00Z", systemActor("cron"));
+    await authoriseInterest(ctx, schemeId, {
+      motionId: adoptionMotionId,
+      rateBps: 1_000,
+      effectiveFrom: "2026-07-01",
+    });
     const scan = await arrearsService.scanArrears(ctx, schemeId);
     expect(scan.emitted).toEqual([{ lotId: lotIds[1], stage: 3 }]);
 

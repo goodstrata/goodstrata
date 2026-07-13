@@ -14,7 +14,11 @@ export const createSchemeInput = z.object({
   addressLine1: z.string().min(1),
   addressLine2: z.string().optional(),
   suburb: z.string().min(1),
-  state: z.string().default("VIC"),
+  // The product currently implements the Victorian Owners Corporations Act
+  // rule pack only. Accepting another state here would silently apply the
+  // wrong voting, notice, finance and records rules, so fail closed until a
+  // versioned jurisdiction pack exists for that state.
+  state: z.literal("VIC").default("VIC"),
   postcode: z.string().regex(/^\d{4}$/),
 });
 export type CreateSchemeInput = z.infer<typeof createSchemeInput>;

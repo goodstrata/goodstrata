@@ -37,6 +37,14 @@ interface SchemeMember {
   email: string;
 }
 
+interface MeetingOption {
+  id: string;
+  title: string | null;
+  kind: string;
+  status: string;
+  scheduledAt: string;
+}
+
 export default function CommitteeScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const schemeId = String(params.id ?? "");
@@ -46,6 +54,8 @@ export default function CommitteeScreen() {
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedRole, setSelectedRole] = useState<CommitteeRole>("chair");
   const [assignedMessage, setAssignedMessage] = useState<string | null>(null);
+  const [electionMeetingId, setElectionMeetingId] = useState("");
+  const [electedUserIds, setElectedUserIds] = useState<string[]>([]);
 
   const schemeQuery = useQuery({ ...schemeQueryOptions(schemeId), enabled: !!schemeId });
   const committeeQuery = useQuery({
@@ -57,6 +67,11 @@ export default function CommitteeScreen() {
     queryKey: ["scheme", schemeId, "members"],
     queryFn: () => api<{ members: SchemeMember[] }>(`/api/schemes/${schemeId}/members`),
     enabled: !!schemeId,
+  });
+  const meetingsQuery = useQuery({
+    queryKey: ["scheme", schemeId, "meetings"],
+    queryFn: () => api<{ meetings: MeetingOption[] }>(`/api/schemes/${schemeId}/meetings`),
+    enabled: !!schemeId && isOfficer,
   });
 
   const assignRole = useMutation({
@@ -70,6 +85,22 @@ export default function CommitteeScreen() {
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["scheme", schemeId, "committee"] }),
         queryClient.invalidateQueries({ queryKey: ["scheme", schemeId, "members"] }),
+        queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] }),
+      ]);
+    },
+  });
+  const recordElection = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/schemes/${schemeId}/committee/elections`, {
+        meetingId: electionMeetingId,
+        electedUserIds,
+      }),
+    onSuccess: () => {
+      setElectionMeetingId("");
+      setElectedUserIds([]);
+      setAssignedMessage("AGM committee election recorded.");
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["scheme", schemeId, "committee"] }),
         queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] }),
       ]);
     },
@@ -88,7 +119,8 @@ export default function CommitteeScreen() {
     return [...roster.entries()];
   }, [committeeQuery.data?.committee]);
 
-  const refresh = () => Promise.all([committeeQuery.refetch(), membersQuery.refetch()]);
+  const refresh = () =>
+    Promise.all([committeeQuery.refetch(), membersQuery.refetch(), meetingsQuery.refetch()]);
 
   return (
     <Screen
@@ -184,6 +216,88 @@ export default function CommitteeScreen() {
 
       {isOfficer ? (
         <>
+          <SectionHeader label="AGM election" />
+          <Card>
+            <Text style={{ ...t.title, color: theme.text }}>Record elected committee</Text>
+            <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(1) }}>
+              Select an issued AGM and 3–7 elected owners. Committees of 8–12 can be recorded on the
+              web app with their carried expansion motion.
+            </Text>
+
+            <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>AGM</Text>
+            <View style={{ gap: space(2), marginTop: space(2) }}>
+              {meetingsQuery.data?.meetings
+                .filter((meeting) => meeting.kind === "agm" && meeting.status !== "draft")
+                .map((meeting) => (
+                  <PressableScale
+                    key={meeting.id}
+                    onPress={() => setElectionMeetingId(meeting.id)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: electionMeetingId === meeting.id }}
+                    style={{
+                      minHeight: 48,
+                      justifyContent: "center",
+                      paddingHorizontal: space(3),
+                      borderRadius: radius.control,
+                      borderWidth: 1,
+                      borderColor: electionMeetingId === meeting.id ? theme.accent : theme.line,
+                      backgroundColor:
+                        electionMeetingId === meeting.id ? theme.accentSoft : theme.surface,
+                    }}
+                  >
+                    <Text style={{ ...t.bodySmall, color: theme.text }}>
+                      {meeting.title || "Annual general meeting"}
+                    </Text>
+                    <Text style={{ ...t.caption, color: theme.muted }}>
+                      {new Date(meeting.scheduledAt).toLocaleDateString("en-AU")}
+                    </Text>
+                  </PressableScale>
+                ))}
+            </View>
+
+            <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>
+              Elected owners ({electedUserIds.length})
+            </Text>
+            <View style={{ gap: space(2), marginTop: space(2) }}>
+              {membersQuery.data?.members.map((member) => {
+                const selected = electedUserIds.includes(member.userId);
+                return (
+                  <MemberOption
+                    key={member.userId}
+                    member={member}
+                    selected={selected}
+                    onPress={() =>
+                      setElectedUserIds((current) =>
+                        selected
+                          ? current.filter((id) => id !== member.userId)
+                          : current.length < 7
+                            ? [...current, member.userId]
+                            : current,
+                      )
+                    }
+                  />
+                );
+              })}
+            </View>
+
+            {recordElection.error ? (
+              <Text style={{ ...t.bodySmall, color: theme.crit, marginTop: space(3) }}>
+                {recordElection.error instanceof Error
+                  ? recordElection.error.message
+                  : "The election could not be recorded."}
+              </Text>
+            ) : null}
+
+            <View style={{ marginTop: space(4) }}>
+              <Button
+                label="Record election"
+                onPress={() => recordElection.mutate()}
+                pending={recordElection.isPending}
+                disabled={!electionMeetingId || electedUserIds.length < 3}
+              />
+            </View>
+          </Card>
+
           <SectionHeader label="Assign role" />
           <Card>
             <Text style={{ ...t.title, color: theme.text }}>Appoint a member</Text>

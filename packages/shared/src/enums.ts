@@ -191,6 +191,19 @@ export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
 export const DOCUMENT_ACCESS_LEVELS = ["owners", "committee", "admin"] as const;
 export type DocumentAccessLevel = (typeof DOCUMENT_ACCESS_LEVELS)[number];
 
+/**
+ * Minimum statutory hold applied to a filed record. `permanent` is used for
+ * building-life records (for example the plan of subdivision and AGM minutes)
+ * and is never eligible for the automated retention purge.
+ */
+export const RECORD_RETENTION_CLASSES = [
+  "operational",
+  "minimum_12_months",
+  "statutory_7_years",
+  "permanent",
+] as const;
+export type RecordRetentionClass = (typeof RECORD_RETENTION_CLASSES)[number];
+
 /** Community board moderation status. "removed" is the soft-delete tombstone. */
 export const COMMUNITY_POST_STATUSES = ["visible", "hidden", "removed"] as const;
 export type CommunityPostStatus = (typeof COMMUNITY_POST_STATUSES)[number];

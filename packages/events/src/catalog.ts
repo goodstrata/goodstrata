@@ -27,6 +27,11 @@ export const eventDefs = {
   "owner.invited": z.object({ personId: z.string(), email: z.string() }),
   "owner.joined": z.object({ personId: z.string(), userId: z.string() }),
   "committee.assigned": z.object({ userId: z.string(), role: z.string() }),
+  "committee.elected": z.object({
+    electionId: z.string(),
+    meetingId: z.string(),
+    electedUserIds: z.array(z.string()),
+  }),
   // ownership register (transfers end-date the old row and start a new one)
   "ownership.started": z.object({
     ownershipId: z.string(),
@@ -86,11 +91,37 @@ export const eventDefs = {
     fiscalYearStart: z.string(),
     totalCents: z.number().int(),
   }),
-  "budget.adopted": z.object({ budgetId: z.string() }),
+  "budget.adopted": z.object({
+    budgetId: z.string(),
+    meetingId: z.string(),
+    motionId: z.string(),
+  }),
+  "finance.interest.authorised": z.object({
+    authorisationId: z.string(),
+    motionId: z.string(),
+    rateBps: z.number().int(),
+    effectiveFrom: z.string(),
+    effectiveUntil: z.string().nullable(),
+  }),
+  "finance.statement.prepared": z.object({
+    financialStatementId: z.string(),
+    periodStart: z.string(),
+    periodEnd: z.string(),
+    documentId: z.string(),
+  }),
+  "finance.statement.reviewed": z.object({
+    financialStatementId: z.string(),
+    reviewId: z.string(),
+    kind: z.string(),
+  }),
+  "finance.statement.presented": z.object({
+    financialStatementId: z.string(),
+    meetingId: z.string(),
+  }),
   /** A levy instalment run opened: notices for every lot are about to issue. */
   "levy.period.opened": z.object({
     levyScheduleId: z.string(),
-    budgetId: z.string(),
+    budgetId: z.string().nullable(),
     instalment: z.number().int(),
     dueOn: z.string(),
     noticeCount: z.number().int(),
@@ -104,6 +135,12 @@ export const eventDefs = {
     payid: z.string().nullable(),
   }),
   "levy.notice.overdue": z.object({ levyNoticeId: z.string(), lotId: z.string() }),
+  "levy.final_fee_notice.issued": z.object({
+    finalFeeNoticeId: z.string(),
+    levyNoticeId: z.string(),
+    lotId: z.string(),
+    recoveryEligibleOn: z.string(),
+  }),
   /**
    * A treasurer/officer wrote off an uncollectible levy notice. The balancing
    * ledger adjustment is posted in the same transaction.
@@ -219,6 +256,16 @@ export const eventDefs = {
     category: z.string(),
     urgency: z.string(),
     isCommonProperty: z.boolean(),
+  }),
+  "maintenance.plan.approved": z.object({
+    planId: z.string(),
+    approvalResolutionId: z.string(),
+    itemCount: z.number().int(),
+  }),
+  "insurance.policy.recorded": z.object({
+    policyId: z.string(),
+    kind: z.string(),
+    periodEnd: z.string(),
   }),
   // trade market (RFQ → quotes → human award)
   "rfq.created": z.object({
@@ -339,6 +386,27 @@ export const eventDefs = {
     kind: z.enum(CHAIR_NOTE_KINDS),
     note: z.string(),
   }),
+  /** A human lot owner or registered manager was recorded as chair of record. */
+  "meeting.chair.appointed": z.object({
+    meetingId: z.string(),
+    chairPersonId: z.string().nullable(),
+    chairName: z.string(),
+    aiAssistanceAuthorized: z.boolean(),
+  }),
+  /** The human chair exercised the optional casting vote after an equal vote. */
+  "motion.casting_vote.exercised": z.object({
+    motionId: z.string(),
+    meetingId: z.string(),
+    chairPersonId: z.string(),
+    choice: z.enum(["for", "against"]),
+  }),
+  /** A signed power-of-attorney instrument was recorded for a lot. */
+  "power_of_attorney.recorded": z.object({
+    powerOfAttorneyId: z.string(),
+    lotId: z.string(),
+    donorPersonId: z.string(),
+    attorneyPersonId: z.string(),
+  }),
   /** An owner proposed a motion/agenda item for an upcoming meeting (pending officer review). */
   "agenda_item.submitted": z.object({
     agendaItemId: z.string(),
@@ -383,6 +451,13 @@ export const eventDefs = {
     documentId: z.string(),
     category: z.string(),
     retentionUntil: z.string(),
+  }),
+  "owners_corporation_certificate.issued": z.object({
+    requestId: z.string(),
+    lotId: z.string(),
+    documentId: z.string(),
+    dueAt: z.string().datetime(),
+    issuedAt: z.string().datetime(),
   }),
   "compliance.item.due": lax,
   /** An obligation was raised on the compliance calendar (idempotent per dedupeKey). */

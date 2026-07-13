@@ -9,6 +9,7 @@ import {
   onboardingService,
   ownershipsService,
   peopleService,
+  recordCommitteeElectionInput,
   updateOwnershipInput,
   updatePersonInput,
 } from "@goodstrata/core";
@@ -16,6 +17,7 @@ import {
   DOCUMENT_ACCESS_LEVELS,
   DOCUMENT_CATEGORIES,
   INVITABLE_ROLES,
+  RECORD_RETENTION_CLASSES,
   userActor,
 } from "@goodstrata/shared";
 import { Hono } from "hono";
@@ -235,6 +237,21 @@ export function committeeRoutes(deps: AppDeps) {
         await committeeService.assignCommitteeRole(ctx, c.get("schemeId"), userId, role);
         return c.json({ ok: true }, 201);
       },
+    )
+    .post(
+      "/:schemeId/committee/elections",
+      requireSchemeMember(deps),
+      officerOrAdmin,
+      zv("json", recordCommitteeElectionInput),
+      async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const election = await committeeService.recordCommitteeElection(
+          ctx,
+          c.get("schemeId"),
+          c.req.valid("json"),
+        );
+        return c.json({ election }, 201);
+      },
     );
 }
 
@@ -250,6 +267,8 @@ function documentDto(d: {
   sizeBytes: number;
   accessLevel: string;
   retentionUntil: string | null;
+  retentionClass: string;
+  retentionBasis: string | null;
   supersedesDocumentId: string | null;
   createdAt: Date;
 }) {
@@ -261,6 +280,8 @@ function documentDto(d: {
     sizeBytes: d.sizeBytes,
     accessLevel: d.accessLevel,
     retentionUntil: d.retentionUntil,
+    retentionClass: d.retentionClass,
+    retentionBasis: d.retentionBasis,
     supersedesDocumentId: d.supersedesDocumentId,
     createdAt: d.createdAt,
   };
@@ -358,6 +379,10 @@ export function documentsRoutes(deps: AppDeps) {
         .enum(DOCUMENT_ACCESS_LEVELS)
         .catch("owners")
         .parse(typeof body.accessLevel === "string" ? body.accessLevel : "owners");
+      const parsedRetention = z
+        .enum(RECORD_RETENTION_CLASSES)
+        .optional()
+        .parse(typeof body.retentionClass === "string" ? body.retentionClass : undefined);
       const ctx = deps.serviceContext(userActor(c.get("user").id));
       const doc = await documentsService.uploadDocument(ctx, c.get("schemeId"), {
         filename: file.name,
@@ -365,6 +390,7 @@ export function documentsRoutes(deps: AppDeps) {
         content: new Uint8Array(await file.arrayBuffer()),
         category: parsedCategory,
         accessLevel: parsedAccess,
+        retentionClass: parsedRetention,
         title: typeof body.title === "string" && body.title ? body.title : undefined,
       });
       return c.json({ document: documentDto(doc) }, 201);

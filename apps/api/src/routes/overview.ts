@@ -93,6 +93,9 @@ export function overviewRoutes(deps: AppDeps) {
         {
           hasLots: false,
           hasInsurance: false,
+          insuranceReasons: [],
+          managerReady: false,
+          managerReasons: [],
           ready: false,
           status: scheme.status,
         },

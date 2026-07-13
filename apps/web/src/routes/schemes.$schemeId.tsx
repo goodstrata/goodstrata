@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Mail,
   MessagesSquare,
+  NotebookTabs,
   Scale,
   ShieldCheck,
   User,
@@ -44,6 +45,11 @@ const OwnerFinanceSummary = lazy(() =>
 );
 const MaintenanceTab = lazy(() =>
   import("@/components/MaintenanceTab").then((module) => ({ default: module.MaintenanceTab })),
+);
+const BuildingComplianceTab = lazy(() =>
+  import("@/components/BuildingComplianceTab").then((module) => ({
+    default: module.BuildingComplianceTab,
+  })),
 );
 const MeetingsTab = lazy(() =>
   import("@/components/MeetingsTab").then((module) => ({ default: module.MeetingsTab })),
@@ -93,11 +99,17 @@ const PeopleSection = lazy(() =>
     default: module.PeopleSection,
   })),
 );
+const RecordsSection = lazy(() =>
+  import("@/components/sections/RecordsSection").then((module) => ({
+    default: module.RecordsSection,
+  })),
+);
 
 const SECTIONS = [
   "overview",
   "finance",
   "maintenance",
+  "insurance",
   "meetings",
   "decisions",
   "grievances",
@@ -107,6 +119,7 @@ const SECTIONS = [
   "people",
   "committee",
   "documents",
+  "records",
   "activity",
   "community",
   "messages",
@@ -144,7 +157,10 @@ const NAV_GROUPS: { heading: string | null; items: SectionItem[] }[] = [
   },
   {
     heading: "Building",
-    items: [{ key: "maintenance", label: "Maintenance", icon: Wrench }],
+    items: [
+      { key: "maintenance", label: "Maintenance", icon: Wrench },
+      { key: "insurance", label: "Insurance & plan", icon: ShieldCheck },
+    ],
   },
   {
     heading: "Governance",
@@ -162,6 +178,7 @@ const NAV_GROUPS: { heading: string | null; items: SectionItem[] }[] = [
       { key: "lots", label: "Lots", icon: Layers },
       { key: "people", label: "People", icon: User },
       { key: "documents", label: "Documents", icon: FolderOpen },
+      { key: "records", label: "OC records", icon: NotebookTabs },
       { key: "activity", label: "Activity", icon: Activity },
     ],
   },
@@ -195,6 +212,7 @@ const MOBILE_PRIMARY: readonly Section[] = ["overview", "finance", "meetings", "
 const OWNER_SECTIONS: readonly Section[] = [
   "overview",
   "maintenance",
+  "insurance",
   "finance",
   "meetings",
   "decisions",
@@ -204,6 +222,7 @@ const OWNER_SECTIONS: readonly Section[] = [
   "lots",
   "people",
   "documents",
+  "records",
   "community",
   "messages",
 ];
@@ -342,6 +361,8 @@ function SectionBody({
       );
     case "maintenance":
       return <MaintenanceTab schemeId={schemeId} />;
+    case "insurance":
+      return <BuildingComplianceTab schemeId={schemeId} />;
     case "meetings":
       return <MeetingsTab schemeId={schemeId} />;
     case "decisions":
@@ -360,6 +381,8 @@ function SectionBody({
       return <CommitteeSection schemeId={schemeId} />;
     case "documents":
       return <DocumentsSection schemeId={schemeId} />;
+    case "records":
+      return <RecordsSection schemeId={schemeId} />;
     case "activity":
       return <ActivitySection schemeId={schemeId} />;
     case "community":

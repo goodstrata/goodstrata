@@ -6,6 +6,7 @@ import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError, notFound } from "../errors.js";
 import { registerDecisionAction, requestDecision } from "./decisions.js";
+import { requireCarriedResolution } from "./resolutionValidation.js";
 
 export const createBudgetInput = z.object({
   fiscalYearStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -15,8 +16,9 @@ export const createBudgetInput = z.object({
 export type CreateBudgetInput = z.infer<typeof createBudgetInput>;
 
 /**
- * Draft a budget and open the committee adoption gate (SPEC §2.1: budgets are
- * a human decision; the system prepares everything).
+ * Draft a budget and open the committee proposal gate. This is deliberately
+ * not statutory adoption: owners adopt the budget through a carried motion at
+ * an AGM/SGM, recorded by `adoptBudget` below.
  */
 export async function createBudget(
   ctx: ServiceContext,
@@ -70,7 +72,7 @@ export async function createBudget(
   const decision = await requestDecision(ctx, {
     schemeId,
     kind: "budget_adoption",
-    title: `Adopt FY budget starting ${input.fiscalYearStart}`,
+    title: `Approve proposed FY budget starting ${input.fiscalYearStart}`,
     summaryMd: [
       `Proposed budget for the year starting **${input.fiscalYearStart}**:`,
       "",
@@ -78,16 +80,67 @@ export async function createBudget(
       `- Maintenance fund: **${formatCents(input.maintenanceCents)}**`,
       `- Total: **${formatCents(input.adminCents + input.maintenanceCents)}**`,
       "",
-      "On approval the budget becomes active and levy schedules can be issued against it.",
+      "Approval tables the proposal for an owners' resolution. It does not adopt the budget or authorise levies.",
     ].join("\n"),
     subject: { type: "budget", id: budget.id },
     deciderRole: "treasurer",
-    followUp: { type: "action", action: "finance.adoptBudget", args: { budgetId: budget.id } },
+    followUp: {
+      type: "action",
+      action: "finance.approveBudgetProposal",
+      args: { budgetId: budget.id },
+    },
   });
 
   await ctx.db.update(budgets).set({ decisionId: decision.id }).where(eq(budgets.id, budget.id));
 
   return { ...budget, decisionId: decision.id };
+}
+
+export const adoptBudgetInput = z.object({
+  motionId: z.string().uuid(),
+});
+
+/** Adopt a budget only against a carried AGM/SGM resolution record. */
+export async function adoptBudget(
+  ctx: ServiceContext,
+  schemeId: string,
+  budgetId: string,
+  motionId: string,
+) {
+  const budget = await ctx.db.query.budgets.findFirst({
+    where: and(eq(budgets.id, budgetId), eq(budgets.schemeId, schemeId)),
+  });
+  if (!budget) throw notFound("Budget");
+  if (budget.status === "adopted") {
+    if (budget.adoptedByMotionId === motionId) return budget;
+    throw new DomainError("BUDGET_ALREADY_ADOPTED", "Budget is already adopted", 409);
+  }
+
+  const { meeting } = await requireCarriedResolution(ctx, schemeId, motionId, {
+    generalMeeting: true,
+    minimum: "ordinary",
+  });
+
+  return await ctx.db.transaction(async (tx) => {
+    const rows = await tx
+      .update(budgets)
+      .set({
+        status: "adopted",
+        adoptedAtMeetingId: meeting!.id,
+        adoptedByMotionId: motionId,
+      })
+      .where(and(eq(budgets.id, budgetId), eq(budgets.schemeId, schemeId)))
+      .returning();
+    await publishEvent(tx, {
+      schemeId,
+      stream: `budget:${budgetId}`,
+      type: "budget.adopted",
+      payload: { budgetId, meetingId: meeting!.id, motionId },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+    return rows[0]!;
+  });
 }
 
 export async function listBudgets(ctx: ServiceContext, schemeId: string) {
@@ -126,20 +179,11 @@ export async function getAdoptedBudgetFunds(
     .map(([fundKind, annualCents]) => ({ fundKind, annualCents }));
 }
 
-// Executor action: the treasurer approved — code flips the state.
-registerDecisionAction("finance.adoptBudget", async (ctx, args) => {
+// Internal proposal approval. Statutory adoption remains resolution-gated.
+registerDecisionAction("finance.approveBudgetProposal", async (ctx, args) => {
   const budgetId = z.object({ budgetId: z.string() }).parse(args).budgetId;
   const budget = await ctx.db.query.budgets.findFirst({ where: eq(budgets.id, budgetId) });
-  if (!budget || budget.status === "adopted") return; // idempotent
-  await ctx.db.transaction(async (tx) => {
-    await tx.update(budgets).set({ status: "adopted" }).where(eq(budgets.id, budgetId));
-    await publishEvent(tx, {
-      schemeId: budget.schemeId,
-      stream: `budget:${budgetId}`,
-      type: "budget.adopted",
-      payload: { budgetId },
-      actor: ctx.actor,
-      ...causationFields(ctx),
-    });
-  });
+  if (!budget) return;
+  // Intentionally no budget state transition: the carried owners' motion is
+  // the only code path that can set status=adopted.
 });

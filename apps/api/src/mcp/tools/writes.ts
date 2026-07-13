@@ -207,14 +207,14 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
   // ── draft_budget ──────────────────────────────────────────────────────────
   // HIGHER-STAKES: this opens a treasurer decision gate. It moves NO money — it
   // drafts the budget and requests a human decision. On the treasurer's
-  // approval the budget becomes adopted and levies can then be issued against
-  // it (a separate, still-manual step). Officer/admin-tier, matching the route.
+  // approval the proposal is ready to table; only a carried AGM/SGM motion can
+  // adopt it and unlock levy schedules. Officer/admin-tier, matching the route.
   server.registerTool(
     "draft_budget",
     {
       title: "Draft a budget (opens a decision requiring human approval)",
       description:
-        "Draft an annual budget (administration + maintenance fund totals, in cents) and OPEN A TREASURER DECISION GATE to adopt it. IMPORTANT: this moves no money and does not raise any levy on its own — it creates a budget in committee_review status and a pending decision that a human treasurer must approve. Only on that approval does the budget become adopted, after which levy schedules can be issued against it as a separate step. Requires an officer role (chair, secretary, or treasurer) or manager_admin.",
+        "Draft an annual budget (administration + maintenance fund totals, in cents) and OPEN A TREASURER DECISION GATE to approve the proposal for tabling. IMPORTANT: this moves no money and does not raise any levy. A carried AGM or SGM motion must then be recorded to adopt the budget before levy schedules can be issued. Requires an officer role (chair, secretary, or treasurer) or manager_admin.",
       inputSchema: {
         schemeId: z.string().describe("Scheme id from list_schemes"),
         ...createBudgetInput.shape,
@@ -231,7 +231,7 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext): void
         const { ctx: svc } = await ctx.actor(schemeId, [...OFFICER_ROLES]);
         const budget = await budgetsService.createBudget(svc, schemeId, input);
         return jsonResult(
-          `Drafted budget for FY starting ${budget.fiscalYearStart} and opened a treasurer decision to adopt it (no money moved). budgetId: ${budget.id}; decisionId: ${budget.decisionId}. A human treasurer must approve the decision before the budget is adopted.`,
+          `Drafted budget for FY starting ${budget.fiscalYearStart} and opened a treasurer decision to approve it for tabling (no money moved). budgetId: ${budget.id}; decisionId: ${budget.decisionId}. Adoption still requires a carried AGM/SGM motion.`,
           { budget },
         );
       }),

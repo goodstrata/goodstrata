@@ -37,6 +37,19 @@ export const quoteStatusEnum = pgEnum("quote_status", [
 ]);
 export const rfqStatusEnum = pgEnum("rfq_status", RFQ_STATUSES);
 export const rfqChannelStatusEnum = pgEnum("rfq_channel_status", RFQ_CHANNEL_STATUSES);
+export const statutoryMaintenancePlanStatusEnum = pgEnum("statutory_maintenance_plan_status", [
+  "draft",
+  "approved",
+  "review_due",
+  "superseded",
+]);
+export const capitalItemConditionEnum = pgEnum("capital_item_condition", [
+  "good",
+  "fair",
+  "poor",
+  "critical",
+  "unknown",
+]);
 
 export const maintenanceRequests = pgTable(
   "maintenance_requests",
@@ -279,4 +292,59 @@ export const assets = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("assets_scheme_idx").on(t.schemeId)],
+);
+
+/** Approved-form, ten-year capital maintenance plan (distinct from recurring task schedules). */
+export const statutoryMaintenancePlans = pgTable(
+  "statutory_maintenance_plans",
+  {
+    id: pk(),
+    schemeId: uuid()
+      .notNull()
+      .references(() => schemes.id),
+    title: text().notNull(),
+    status: statutoryMaintenancePlanStatusEnum().notNull().default("draft"),
+    approvedFormVersion: text().notNull(),
+    preparedOn: date().notNull(),
+    coverageStartOn: date().notNull(),
+    coverageEndOn: date().notNull(),
+    /** Soft link avoids the finance -> maintenance schema cycle. Must identify this scheme's maintenance fund. */
+    maintenanceFundId: uuid(),
+    approvalResolutionId: uuid(),
+    approvedOn: date(),
+    approvedAtMeetingId: uuid(),
+    lastReviewedOn: date(),
+    nextReviewOn: date(),
+    sourceDocumentId: uuid().references(() => documents.id),
+    notes: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("statutory_maintenance_plans_scheme_idx").on(t.schemeId, t.status)],
+);
+
+/** Major capital items and works forecast within a statutory plan's ten-year horizon. */
+export const maintenancePlanItems = pgTable(
+  "maintenance_plan_items",
+  {
+    id: pk(),
+    schemeId: uuid()
+      .notNull()
+      .references(() => schemes.id),
+    planId: uuid()
+      .notNull()
+      .references(() => statutoryMaintenancePlans.id),
+    assetId: uuid().references(() => assets.id),
+    name: text().notNull(),
+    presentCondition: capitalItemConditionEnum().notNull().default("unknown"),
+    plannedAction: text().notNull(),
+    scheduledOn: date().notNull(),
+    estimatedCostCents: bigint({ mode: "number" }).notNull(),
+    expectedLifeAfterWorksYears: integer().notNull(),
+    completedAt: timestamp({ withTimezone: true }),
+    completionWorkOrderId: uuid().references(() => workOrders.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("maintenance_plan_items_plan_idx").on(t.planId, t.scheduledOn)],
 );

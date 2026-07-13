@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronLeft, ShieldAlert } from "lucide-react";
+import { AppointmentSection } from "@/components/manager/AppointmentSection";
 import { RegistrationSection } from "@/components/manager/RegistrationSection";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -15,6 +16,9 @@ function ManagerSettingsPage() {
   const roles = useSchemeRoles(schemeId);
   const loading = roles.length === 0;
   const isAdmin = roles.includes("manager_admin");
+  const canManage = roles.some((role) =>
+    ["chair", "secretary", "treasurer", "manager_admin"].includes(role),
+  );
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
@@ -39,8 +43,11 @@ function ManagerSettingsPage() {
           <Skeleton className="h-40" />
           <Skeleton className="h-56" />
         </div>
-      ) : isAdmin ? (
-        <RegistrationSection schemeId={schemeId} />
+      ) : canManage ? (
+        <div className="space-y-6">
+          <AppointmentSection schemeId={schemeId} />
+          {isAdmin ? <RegistrationSection schemeId={schemeId} /> : null}
+        </div>
       ) : (
         <EmptyState
           icon={ShieldAlert}

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { attemptId, attemptPlan, expectPrefilledInviteName } from "./test-fixtures";
 
-const API = "http://localhost:3105";
+const API = process.env.E2E_API_URL ?? "http://localhost:3105";
 
 // Register index navigation (sidebar link per section), as in onboarding.spec.ts.
 const section = (p: import("@playwright/test").Page, name: string) =>
@@ -146,9 +146,14 @@ test("register gating: wizard validation, CSV line errors, owner & committee_mem
   await expect(ownerPage.getByRole("button", { name: "Invite" })).toHaveCount(0);
   await expect(ownerPage.getByText("Add a person")).toHaveCount(0);
 
-  // Committee: list visible (the manager shows as manager admin), no assign card.
+  // Committee: the scheme creator's manager_admin access is not a statutory
+  // committee office, so the current-committee register is empty until an
+  // office holder or committee member is actually appointed.
   await section(ownerPage, "committee").click();
-  await expect(ownerPage.getByTestId("committee-list").getByText("manager admin")).toBeVisible();
+  await expect(
+    ownerPage.getByTestId("committee-list").getByText("No office holders yet"),
+  ).toBeVisible();
+  await expect(ownerPage.getByTestId("committee-list").getByText("manager admin")).toHaveCount(0);
   await expect(ownerPage.getByText("Assign role")).toHaveCount(0);
   await expect(ownerPage.getByTestId("committee-member")).toHaveCount(0);
 

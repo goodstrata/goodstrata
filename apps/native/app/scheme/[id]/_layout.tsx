@@ -49,7 +49,10 @@ export default function SchemeLayout() {
       <Stack.Screen name="decisions" />
       <Stack.Screen name="meetings" />
       <Stack.Screen name="documents" />
+      <Stack.Screen name="records" />
       <Stack.Screen name="maintenance" />
+      <Stack.Screen name="building-compliance" />
+      <Stack.Screen name="manager" />
       <Stack.Screen name="grievances" />
       <Stack.Screen name="compliance" />
       <Stack.Screen name="people" />

@@ -118,6 +118,15 @@ export function buildLevyNoticePdf(data: LevyNoticeDoc): Promise<Buffer> {
     );
   }
   if (data.interestNote) notes.push(data.interestNote);
+  if (data.interestAuthorised && data.interestRateBps && data.interestRateBps > 0) {
+    notes.push(
+      `The owners corporation has resolved that penalty interest at ${String(data.interestRateBps / 100)}% per annum is payable on fees and charges unpaid after the due date.`,
+    );
+  }
+  notes.push(
+    data.disputeProcess ??
+      "The owners corporation's internal dispute resolution process applies to disputes about these fees and charges. Contact the secretary or manager to lodge a written complaint.",
+  );
   if (notes.length) {
     y += 10;
     for (const n of notes) {
@@ -146,7 +155,9 @@ export function buildLevyNoticePdf(data: LevyNoticeDoc): Promise<Buffer> {
     .font(fonts.face(font.sans))
     .fontSize(7.5)
     .text(
-      "Payment is due at least 28 days after the date of this notice (Owners Corporations Act 2006 (Vic)). Interest may accrue on amounts unpaid after the due date.",
+      data.interestAuthorised
+        ? "You must pay these fees and charges within 28 days of this notice. Resolution-authorised penalty interest is payable on overdue amounts (Owners Corporations Act 2006 (Vic) ss 28–29)."
+        : "You must pay these fees and charges within 28 days of this notice. No penalty interest is stated unless the owners corporation has authorised it by resolution (Owners Corporations Act 2006 (Vic) ss 28–29).",
       page.margin,
       noteY,
       { width: contentWidth },

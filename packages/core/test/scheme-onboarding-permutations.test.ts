@@ -14,6 +14,7 @@ import type { ServiceContext } from "../src/context.js";
 import { DomainError } from "../src/errors.js";
 import * as committeeService from "../src/services/committee.js";
 import * as documentsService from "../src/services/documents.js";
+import * as insuranceService from "../src/services/insurance.js";
 import * as invitesService from "../src/services/invites.js";
 import * as lotsService from "../src/services/lots.js";
 import * as onboardingService from "../src/services/onboarding.js";
@@ -135,6 +136,16 @@ describe("createSchemeInput validation", () => {
     });
     expect(parsed.state).toBe("VIC");
   });
+
+  it("fails closed for non-Victorian schemes until another jurisdiction rule pack exists", () => {
+    expect(
+      schemesService.createSchemeInput.safeParse({
+        ...base,
+        planOfSubdivision: "PS543211W",
+        state: "NSW",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("createScheme", () => {
@@ -143,7 +154,7 @@ describe("createScheme", () => {
     planOfSubdivision: "ps600111k", // lowercase on purpose
     addressLine1: "12 Acacia Lane",
     suburb: "Brunswick",
-    state: "VIC",
+    state: "VIC" as const,
     postcode: "3056",
   };
 
@@ -604,6 +615,9 @@ describe("activation gate permutations", () => {
     expect(await onboardingService.onboardingStatus(ctx(), scheme.id)).toEqual({
       hasLots: false,
       hasInsurance: false,
+      insuranceReasons: ["Current reinstatement and replacement building cover is required"],
+      managerReady: true,
+      managerReasons: [],
       ready: false,
       status: "onboarding",
     });
@@ -635,11 +649,21 @@ describe("activation gate permutations", () => {
     });
     expect((await onboardingService.onboardingStatus(ctx(), scheme.id)).hasInsurance).toBe(false);
 
-    await documentsService.uploadDocument(ctx(), scheme.id, {
+    const certificate = await documentsService.uploadDocument(ctx(), scheme.id, {
       filename: "certificate-of-currency.pdf",
       contentType: "application/pdf",
       content: new TextEncoder().encode("%PDF-1.4 cover"),
       category: "insurance",
+    });
+    await insuranceService.recordPolicy(ctx(), scheme.id, {
+      kind: "building",
+      insurer: "Test Insurer",
+      policyNumber: "BLD-ONBOARDING",
+      sumInsuredCents: 100_000_000,
+      periodStart: "2026-01-01",
+      periodEnd: "2026-12-31",
+      reinstatementAndReplacement: true,
+      certificateDocumentId: certificate.id,
     });
     expect(await onboardingService.onboardingStatus(ctx(), scheme.id)).toMatchObject({
       ready: true,

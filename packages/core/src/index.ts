@@ -13,8 +13,9 @@ export {
 } from "./services/announcements.js";
 export * as arrearsService from "./services/arrears.js";
 export * as budgetsService from "./services/budgets.js";
-export { createBudgetInput } from "./services/budgets.js";
+export { adoptBudgetInput, createBudgetInput } from "./services/budgets.js";
 export * as committeeService from "./services/committee.js";
+export { recordCommitteeElectionInput } from "./services/committee.js";
 export * as commsService from "./services/comms.js";
 export type {
   CommentView,
@@ -32,17 +33,38 @@ export * as documentsService from "./services/documents.js";
 export type { EntityCommentView, ThreadAccess } from "./services/entityComments.js";
 export * as entityCommentsService from "./services/entityComments.js";
 export { createEntityCommentInput, THREAD_OFFICER_ROLES } from "./services/entityComments.js";
+export * as finalFeeNoticesService from "./services/finalFeeNotices.js";
+export { issueFinalFeeNoticeInput } from "./services/finalFeeNotices.js";
+export * as financialStatementsService from "./services/financialStatements.js";
+export {
+  prepareFinancialStatementInput,
+  presentFinancialStatementInput,
+  recordFinancialReviewInput,
+} from "./services/financialStatements.js";
 export * as grievancesService from "./services/grievances.js";
 export {
   advanceComplaintInput,
   fileComplaintInput,
   issueBreachNoticeInput,
 } from "./services/grievances.js";
+export * as insuranceService from "./services/insurance.js";
+export {
+  createInsuranceClaimInput,
+  recordInsurancePolicyInput,
+  recordInsuranceValuationInput,
+  updateInsuranceClaimInput,
+} from "./services/insurance.js";
+export * as interestAuthorisationsService from "./services/interestAuthorisations.js";
+export { authoriseInterestInput } from "./services/interestAuthorisations.js";
 export * as invitesService from "./services/invites.js";
 export * as invoicesService from "./services/invoices.js";
 export { executePayoutInput, recordInvoiceInput } from "./services/invoices.js";
 export * as leviesService from "./services/levies.js";
-export { createLevyScheduleInput, writeOffNoticeInput } from "./services/levies.js";
+export {
+  createLevyScheduleInput,
+  createSpecialFeeInput,
+  writeOffNoticeInput,
+} from "./services/levies.js";
 export * as lotsService from "./services/lots.js";
 export type { RequestImageUpload, RequestImageView } from "./services/maintenance.js";
 export * as maintenanceService from "./services/maintenance.js";
@@ -53,17 +75,22 @@ export {
 } from "./services/maintenance.js";
 export * as managerRegistrationService from "./services/managerRegistration.js";
 export {
+  createManagerAppointmentInput,
   recordPiPolicyInput,
   recordRegistrationInput,
+  terminateManagerAppointmentInput,
 } from "./services/managerRegistration.js";
 export * as meetingsService from "./services/meetings.js";
 export {
   acceptAgendaItemInput,
   addMotionInput,
+  appointMeetingChairInput,
   castVoteInput,
   createMeetingInput,
+  exerciseCastingVoteInput,
   rejectAgendaItemInput,
   submitAgendaItemInput,
+  submitPowerOfAttorneyInput,
   submitProxyInput,
 } from "./services/meetings.js";
 export type {
@@ -87,9 +114,26 @@ export * as paymentsService from "./services/payments.js";
 export { recordManualPaymentInput, refundPaymentInput } from "./services/payments.js";
 export * as peopleService from "./services/people.js";
 export { createPersonInput, updatePersonInput } from "./services/people.js";
+export * as recordsService from "./services/records.js";
+export {
+  createCertificateRequestInput,
+  createInspectionRequestInput,
+  createRegisterItemInput,
+  issueCertificateInput,
+  updateRegisterBasisInput,
+  verifyInspectionRequestInput,
+} from "./services/records.js";
 export * as recoveryService from "./services/recovery.js";
 export * as schemesService from "./services/schemes.js";
 export { createSchemeInput } from "./services/schemes.js";
+export * as statutoryMaintenanceService from "./services/statutoryMaintenance.js";
+export {
+  addMaintenancePlanItemInput,
+  approveMaintenancePlanInput,
+  createAssetInput,
+  createStatutoryMaintenancePlanInput,
+  reviewMaintenancePlanInput,
+} from "./services/statutoryMaintenance.js";
 export * as tradeRfqService from "./services/tradeRfq.js";
 export {
   applyRfqSpecInput,

@@ -117,6 +117,20 @@ interface PaymentsStatusData {
   webhookLastSeenAt: string | null;
   unprocessedWebhooks: number;
 }
+interface FinancialStatement {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  status: string;
+  requiredReviewKind: "audit" | "independent_review" | null;
+  review: { kind: string; outcome: string } | null;
+}
+interface InterestAuthorisation {
+  id: string;
+  rateBps: number;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+}
 
 const OPEN_NOTICE_STATUSES = ["issued", "partially_paid", "overdue"];
 
@@ -170,6 +184,20 @@ const paymentsStatusQuery = (schemeId: string) => ({
       await api.schemes[":schemeId"].payments.status.$get({ param: { schemeId } }),
     ),
 });
+const financialStatementsQuery = (schemeId: string) => ({
+  queryKey: ["financial-statements", schemeId] as const,
+  queryFn: async () =>
+    unwrap<{ statements: FinancialStatement[] }>(
+      await api.schemes[":schemeId"]["financial-statements"].$get({ param: { schemeId } }),
+    ),
+});
+const interestAuthorisationsQuery = (schemeId: string) => ({
+  queryKey: ["interest-authorisations", schemeId] as const,
+  queryFn: async () =>
+    unwrap<{ authorisations: InterestAuthorisation[] }>(
+      await api.schemes[":schemeId"]["interest-authorisations"].$get({ param: { schemeId } }),
+    ),
+});
 
 export function FinanceTab({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
@@ -183,6 +211,8 @@ export function FinanceTab({ schemeId }: { schemeId: string }) {
       "decisions",
       "payments",
       "payments-status",
+      "financial-statements",
+      "interest-authorisations",
     ]) {
       void queryClient.invalidateQueries({ queryKey: [key, schemeId] });
     }
@@ -192,10 +222,11 @@ export function FinanceTab({ schemeId }: { schemeId: string }) {
   return (
     <div className="space-y-6">
       <FinanceStats schemeId={schemeId} />
-      <ArrearsSection schemeId={schemeId} />
+      <ArrearsSection schemeId={schemeId} isOfficer={isOfficer} />
       <HowToPaySection schemeId={schemeId} isOfficer={isOfficer} />
       <PaymentsSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       <BudgetsSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
+      {isOfficer && <StatutoryFinanceSection schemeId={schemeId} onChange={invalidate} />}
       <SchedulesSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
       <NoticesSection schemeId={schemeId} isOfficer={isOfficer} onChange={invalidate} />
     </div>
@@ -919,13 +950,72 @@ function BudgetsSection({
                     ))}
                   </dl>
                 </div>
-                <StatusBadge status={b.status} />
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={b.status} />
+                  {isOfficer && b.status === "committee_review" ? (
+                    <AdoptBudgetDialog schemeId={schemeId} budgetId={b.id} onChange={onChange} />
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function AdoptBudgetDialog({
+  schemeId,
+  budgetId,
+  onChange,
+}: {
+  schemeId: string;
+  budgetId: string;
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [motionId, setMotionId] = useState("");
+  const adopt = useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api.schemes[":schemeId"].budgets[":budgetId"].adopt.$post({
+          param: { schemeId, budgetId },
+          json: { motionId },
+        }),
+      ),
+    onSuccess: () => {
+      toast.success("Budget adoption linked to the carried general-meeting resolution");
+      onChange();
+      setOpen(false);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          Record adoption
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Record budget adoption</DialogTitle>
+          <DialogDescription>
+            Link the carried ordinary motion from the AGM or SGM. A treasurer approval alone cannot
+            adopt the budget.
+          </DialogDescription>
+        </DialogHeader>
+        <Field label="Carried motion ID" required>
+          <Input value={motionId} onChange={(event) => setMotionId(event.target.value)} />
+        </Field>
+        <DialogFooter>
+          <Button disabled={!motionId} pending={adopt.isPending} onClick={() => adopt.mutate()}>
+            Adopt budget
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1031,6 +1121,263 @@ function NewBudgetDialog({ schemeId, onChange }: { schemeId: string; onChange: (
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function StatutoryFinanceSection({
+  schemeId,
+  onChange,
+}: {
+  schemeId: string;
+  onChange: () => void;
+}) {
+  const statements = useQuery(financialStatementsQuery(schemeId));
+  const interest = useQuery(interestAuthorisationsQuery(schemeId));
+  const [action, setAction] = useState<"statement" | "special" | "interest" | "review" | null>(
+    null,
+  );
+  const [targetStatement, setTargetStatement] = useState<FinancialStatement | null>(null);
+  const [motionId, setMotionId] = useState("");
+  const [periodStart, setPeriodStart] = useState("");
+  const [periodEnd, setPeriodEnd] = useState("");
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dueOn, setDueOn] = useState("");
+  const [rate, setRate] = useState("10");
+  const [reviewer, setReviewer] = useState("");
+  const [reportDocumentId, setReportDocumentId] = useState("");
+  const [completedAt, setCompletedAt] = useState("");
+
+  const close = () => {
+    setAction(null);
+    setTargetStatement(null);
+  };
+  const save = useMutation({
+    mutationFn: async () => {
+      if (action === "statement") {
+        return unwrap(
+          await api.schemes[":schemeId"]["financial-statements"].$post({
+            param: { schemeId },
+            json: { periodStart, periodEnd, accountingBasis: "special_purpose_accrual" },
+          }),
+        );
+      }
+      if (action === "special") {
+        return unwrap(
+          await api.schemes[":schemeId"]["special-fees"].$post({
+            param: { schemeId },
+            json: {
+              description,
+              totalCents: Math.round(Number(amount) * 100),
+              fundKind: "admin",
+              dueOn,
+              motionId,
+              allocationMethod: "liability",
+            },
+          }),
+        );
+      }
+      if (action === "interest") {
+        return unwrap(
+          await api.schemes[":schemeId"]["interest-authorisations"].$post({
+            param: { schemeId },
+            json: { motionId, rateBps: Math.round(Number(rate) * 100), effectiveFrom: periodStart },
+          }),
+        );
+      }
+      if (action === "review" && targetStatement) {
+        const kind = targetStatement.requiredReviewKind ?? "independent_review";
+        return unwrap(
+          await api.schemes[":schemeId"]["financial-statements"][":statementId"].review.$post({
+            param: { schemeId, statementId: targetStatement.id },
+            json: {
+              kind,
+              reviewerName: reviewer,
+              professionalBody: kind === "audit" ? "ASIC" : "CA ANZ",
+              independentDeclaration:
+                "I declare that I have no direct or indirect personal or financial interest in this owners corporation.",
+              outcome: "unmodified",
+              reportDocumentId,
+              completedAt: `${completedAt}T00:00:00.000Z`,
+            },
+          }),
+        );
+      }
+      throw new Error("Choose a statutory finance action");
+    },
+    onSuccess: () => {
+      toast.success("Statutory finance record saved");
+      onChange();
+      close();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const activeInterest = interest.data?.authorisations[0];
+  const disabled =
+    action === "statement"
+      ? !periodStart || !periodEnd
+      : action === "special"
+        ? !motionId || description.trim().length < 3 || Number(amount) <= 0 || !dueOn
+        : action === "interest"
+          ? !motionId || !periodStart || Number(rate) < 0 || Number(rate) > 10
+          : action === "review"
+            ? !reviewer || !reportDocumentId || !completedAt
+            : true;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <CardTitle>Statutory finance</CardTitle>
+            <CardDescription>
+              Annual statements, independent review, special fees and resolution-authorised
+              interest.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setAction("statement")}>
+              Prepare statements
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setAction("special")}>
+              Special fee
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setAction("interest")}>
+              Interest authority
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          {activeInterest
+            ? `${activeInterest.rateBps / 100}% p.a. authorised from ${formatDate(activeInterest.effectiveFrom)}`
+            : "No active interest authority recorded — penalty interest will not accrue."}
+        </p>
+        {(statements.data?.statements ?? []).map((statement) => (
+          <div
+            key={statement.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
+          >
+            <div>
+              <p className="text-sm font-medium">
+                {formatDate(statement.periodStart)} – {formatDate(statement.periodEnd)}
+              </p>
+              <StatusBadge status={statement.status} />
+            </div>
+            {statement.requiredReviewKind && !statement.review ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setTargetStatement(statement);
+                  setAction("review");
+                }}
+              >
+                Record {statement.requiredReviewKind.replaceAll("_", " ")}
+              </Button>
+            ) : null}
+          </div>
+        ))}
+      </CardContent>
+
+      <Dialog open={action !== null} onOpenChange={(open) => !open && close()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {action === "statement"
+                ? "Prepare annual statements"
+                : action === "special"
+                  ? "Create special fee"
+                  : action === "interest"
+                    ? "Record interest authority"
+                    : "Record independent report"}
+            </DialogTitle>
+            <DialogDescription>
+              These records carry statutory consequences and preserve the authorising evidence.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {action === "statement" ? (
+              <>
+                <Field label="Period start">
+                  <Input
+                    type="date"
+                    value={periodStart}
+                    onChange={(e) => setPeriodStart(e.target.value)}
+                  />
+                </Field>
+                <Field label="Period end">
+                  <Input
+                    type="date"
+                    value={periodEnd}
+                    onChange={(e) => setPeriodEnd(e.target.value)}
+                  />
+                </Field>
+              </>
+            ) : null}
+            {action === "special" ? (
+              <>
+                <Field label="Carried motion ID">
+                  <Input value={motionId} onChange={(e) => setMotionId(e.target.value)} />
+                </Field>
+                <Field label="Purpose">
+                  <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+                </Field>
+                <Field label="Total ($)">
+                  <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                </Field>
+                <Field label="Due date">
+                  <Input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} />
+                </Field>
+              </>
+            ) : null}
+            {action === "interest" ? (
+              <>
+                <Field label="Carried motion ID">
+                  <Input value={motionId} onChange={(e) => setMotionId(e.target.value)} />
+                </Field>
+                <Field label="Rate (% p.a., maximum 10)">
+                  <Input type="number" value={rate} onChange={(e) => setRate(e.target.value)} />
+                </Field>
+                <Field label="Effective from">
+                  <Input
+                    type="date"
+                    value={periodStart}
+                    onChange={(e) => setPeriodStart(e.target.value)}
+                  />
+                </Field>
+              </>
+            ) : null}
+            {action === "review" ? (
+              <>
+                <Field label="Reviewer name">
+                  <Input value={reviewer} onChange={(e) => setReviewer(e.target.value)} />
+                </Field>
+                <Field label="Report document ID">
+                  <Input
+                    value={reportDocumentId}
+                    onChange={(e) => setReportDocumentId(e.target.value)}
+                  />
+                </Field>
+                <Field label="Completed date">
+                  <Input
+                    type="date"
+                    value={completedAt}
+                    onChange={(e) => setCompletedAt(e.target.value)}
+                  />
+                </Field>
+              </>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button disabled={disabled} pending={save.isPending} onClick={() => save.mutate()}>
+              Save statutory record
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 
@@ -1462,8 +1809,19 @@ function NoticesSection({
 
 // ------------------------------- Arrears -------------------------------
 
-function ArrearsSection({ schemeId }: { schemeId: string }) {
+function ArrearsSection({ schemeId, isOfficer }: { schemeId: string; isOfficer: boolean }) {
   const arrears = useQuery(arrearsQuery(schemeId));
+  const issueFinal = useMutation({
+    mutationFn: async (lotId: string) =>
+      unwrap(
+        await api.schemes[":schemeId"].lots[":lotId"]["final-fee-notice"].$post({
+          param: { schemeId, lotId },
+          json: { serviceMethod: "email" },
+        }),
+      ),
+    onSuccess: () => toast.success("Approved final fee notice issued and served"),
+    onError: (error) => toast.error(error.message),
+  });
 
   if (arrears.isError) {
     return (
@@ -1505,6 +1863,16 @@ function ArrearsSection({ schemeId }: { schemeId: string }) {
                   <span className="text-muted-foreground"> interest</span>
                 </span>
                 <LotStatementDialog schemeId={schemeId} lotId={a.lotId} lotNumber={a.lotNumber} />
+                {isOfficer && a.stage >= 3 ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    pending={issueFinal.isPending && issueFinal.variables === a.lotId}
+                    onClick={() => issueFinal.mutate(a.lotId)}
+                  >
+                    Issue final notice
+                  </Button>
+                ) : null}
               </div>
             </li>
           ))}

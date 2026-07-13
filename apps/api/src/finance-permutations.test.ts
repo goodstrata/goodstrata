@@ -406,7 +406,7 @@ describe("business errors surface as their DomainError envelope (never swallowed
     const create = await request("treasurer", "POST", "/levy-schedules", {
       budgetId: adoptedBudgetId,
       frequency: "quarterly",
-      firstDueOn: "2026-07-01",
+      firstDueOn: "2026-08-15",
     });
     expect(create.status).toBe(201);
     scheduleId = ((await create.json()) as { schedule: { id: string } }).schedule.id;

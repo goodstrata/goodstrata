@@ -1,12 +1,17 @@
-import { documents, lots, schemes } from "@goodstrata/db";
+import { lots, managerAppointments, schemes } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import { and, eq } from "drizzle-orm";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError, notFound } from "../errors.js";
+import { getInsuranceReadiness } from "./insurance.js";
+import { getRegistrationStatus } from "./managerRegistration.js";
 
 export interface OnboardingStatus {
   hasLots: boolean;
   hasInsurance: boolean;
+  insuranceReasons: string[];
+  managerReady: boolean;
+  managerReasons: string[];
   ready: boolean;
   status: string;
 }
@@ -20,16 +25,41 @@ export async function onboardingStatus(
   if (!scheme) throw notFound("Scheme");
 
   const lot = await ctx.db.query.lots.findFirst({ where: eq(lots.schemeId, schemeId) });
-  const insurance = await ctx.db.query.documents.findFirst({
-    where: and(eq(documents.schemeId, schemeId), eq(documents.category, "insurance")),
-  });
-
   const hasLots = !!lot;
-  const hasInsurance = !!insurance;
+  const insurance = await getInsuranceReadiness(ctx, schemeId);
+  const hasInsurance = insurance.ready;
+  const managerReasons: string[] = [];
+  let managerReady = true;
+  if (scheme.managementMode === "registered_manager") {
+    const appointment = await ctx.db.query.managerAppointments.findFirst({
+      where: and(
+        eq(managerAppointments.schemeId, schemeId),
+        eq(managerAppointments.status, "active"),
+      ),
+      orderBy: (t, { desc }) => desc(t.endsOn),
+    });
+    if (!appointment)
+      managerReasons.push("A current manager appointment and delegation are required");
+    if (!scheme.organizationId) managerReasons.push("A management organisation is required");
+    if (scheme.organizationId) {
+      const status = await getRegistrationStatus(ctx, scheme.organizationId);
+      if (!status.registrationCurrent)
+        managerReasons.push("Current BLA registration must be verified");
+      if (!status.piCoverSufficient || !status.piContinuous)
+        managerReasons.push("At least $2 million of continuous current PI cover is required");
+    }
+    managerReady = managerReasons.length === 0;
+  } else if (scheme.tier === 1 && !scheme.managerOptOutResolutionId) {
+    managerReady = false;
+    managerReasons.push("Tier 1 must appoint a manager or record the special-resolution opt-out");
+  }
   return {
     hasLots,
     hasInsurance,
-    ready: hasLots && hasInsurance,
+    insuranceReasons: insurance.reasons,
+    managerReady,
+    managerReasons,
+    ready: hasLots && hasInsurance && managerReady,
     status: scheme.status,
   };
 }
@@ -49,9 +79,13 @@ export async function activateScheme(ctx: ServiceContext, schemeId: string) {
   if (!status.hasInsurance) {
     throw new DomainError(
       "NO_INSURANCE",
-      "Upload a current insurance certificate of currency before activating",
+      status.insuranceReasons.join("; ") ||
+        "Record the required current insurance before activating",
       422,
     );
+  }
+  if (!status.managerReady) {
+    throw new DomainError("MANAGER_NOT_READY", status.managerReasons.join("; "), 422);
   }
 
   await ctx.db.transaction(async (tx) => {

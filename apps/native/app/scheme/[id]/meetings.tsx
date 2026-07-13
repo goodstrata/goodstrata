@@ -57,6 +57,10 @@ interface Meeting {
   noticeSentAt: string | null;
   quorumMet: boolean | null;
   minutesDocumentId: string | null;
+  chairPersonId: string | null;
+  chairName: string | null;
+  chairAppointedAt: string | null;
+  chairAssistedByAi: boolean;
 }
 
 interface AgendaItem {
@@ -88,6 +92,7 @@ interface MotionResult {
   abstainCount?: number;
   basis?: "headcount" | "entitlement";
   pollDemanded?: boolean;
+  castingVote?: "for" | "against";
 }
 
 /** A vote already on the register for this motion. */
@@ -148,6 +153,19 @@ interface MeetingDetailResponse {
   quorum: Quorum;
   chairLog?: ChairLogEntry[] | null;
   transcriptionStarted?: boolean;
+  canExerciseCastingVote: boolean;
+  powersOfAttorney: PowerOfAttorneyRecord[];
+}
+
+interface PowerOfAttorneyRecord {
+  id: string;
+  lotId: string;
+  donorPersonId: string;
+  attorneyPersonId: string;
+  startsOn: string;
+  endsOn: string | null;
+  revokedAt: string | null;
+  canRevoke: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -876,6 +894,7 @@ function MeetingDetailScreen({
   const isOfficer = useIsOfficer(schemeId);
   const queryClient = useQueryClient();
   const [showProxy, setShowProxy] = useState(false);
+  const [showPowerOfAttorney, setShowPowerOfAttorney] = useState(false);
   const [showAgendaProposal, setShowAgendaProposal] = useState(false);
   const [showAddMotion, setShowAddMotion] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -1108,6 +1127,12 @@ function MeetingDetailScreen({
               label={showProxy ? "Hide proxy form" : "Appoint a proxy"}
               onPress={() => setShowProxy((visible) => !visible)}
             />
+            <Button
+              full
+              variant="secondary"
+              label={showPowerOfAttorney ? "Hide authority form" : "Record power of attorney"}
+              onPress={() => setShowPowerOfAttorney((visible) => !visible)}
+            />
             {isOfficer ? (
               <Button
                 full
@@ -1169,6 +1194,31 @@ function MeetingDetailScreen({
           }}
         />
       ) : null}
+
+      {showPowerOfAttorney && !ended ? (
+        <PowerOfAttorneyForm
+          schemeId={schemeId}
+          onCancel={() => setShowPowerOfAttorney(false)}
+          onRecorded={() => {
+            setShowPowerOfAttorney(false);
+            setActionMessage("Power of attorney recorded and retained.");
+            invalidate();
+          }}
+        />
+      ) : null}
+
+      <MeetingChairCard
+        schemeId={schemeId}
+        meeting={meeting}
+        isOfficer={isOfficer}
+        onChanged={invalidate}
+      />
+
+      <PowerOfAttorneyRegister
+        schemeId={schemeId}
+        appointments={detail.powersOfAttorney ?? []}
+        onChanged={invalidate}
+      />
 
       <QuorumCard quorum={detail.quorum} final={ended} />
 
@@ -1350,6 +1400,7 @@ function MeetingDetailScreen({
               schemeId={schemeId}
               motion={motion}
               isOfficer={isOfficer}
+              canExerciseCastingVote={detail.canExerciseCastingVote}
               lots={lotsQuery.data?.lots ?? []}
               lotsPending={lotsQuery.isPending}
               onChange={invalidate}
@@ -1358,6 +1409,197 @@ function MeetingDetailScreen({
         </View>
       )}
     </Screen>
+  );
+}
+
+function MeetingChairCard({
+  schemeId,
+  meeting,
+  isOfficer,
+  onChanged,
+}: {
+  schemeId: string;
+  meeting: Meeting;
+  isOfficer: boolean;
+  onChanged: () => void;
+}) {
+  const theme = useTheme();
+  const [useManager, setUseManager] = useState(false);
+  const [personId, setPersonId] = useState("");
+  const [managerName, setManagerName] = useState("");
+  const [aiAssistanceAuthorized, setAiAssistanceAuthorized] = useState(false);
+  const people = useQuery({
+    queryKey: ["scheme", schemeId, "people"],
+    queryFn: () => api<{ people: PersonOption[] }>(`/api/schemes/${schemeId}/people`),
+    enabled: isOfficer,
+  });
+  const appoint = useMutation({
+    mutationFn: () =>
+      apiPost(
+        `/api/schemes/${schemeId}/meetings/${meeting.id}/chair`,
+        useManager
+          ? { managerName: managerName.trim(), aiAssistanceAuthorized }
+          : { personId, aiAssistanceAuthorized },
+      ),
+    onSuccess: onChanged,
+  });
+  const ended = meetingEnded(meeting.status);
+  return (
+    <>
+      <SectionHeader label="Meeting chair" />
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
+          <Ionicons name="person-outline" size={20} color={theme.accent} />
+          <Text style={{ ...t.title, color: theme.text, flex: 1 }}>
+            {meeting.chairName || "No human chair recorded"}
+          </Text>
+          {meeting.chairAssistedByAi ? <StatusPill tone="agent" label="AI assists" /> : null}
+        </View>
+        <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(2) }}>
+          AI can guide and transcribe only when authorised; the owner or manager remains the legal
+          chair.
+        </Text>
+        {isOfficer && !ended ? (
+          <View style={{ gap: space(3), marginTop: space(4) }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
+              <ChoiceOption
+                label="Lot owner"
+                selected={!useManager}
+                onPress={() => setUseManager(false)}
+              />
+              <ChoiceOption
+                label="Human manager"
+                selected={useManager}
+                onPress={() => setUseManager(true)}
+              />
+            </View>
+            {useManager ? (
+              <FormField
+                label="Manager name"
+                value={managerName}
+                onChangeText={setManagerName}
+                placeholder="Full legal name"
+              />
+            ) : (
+              <View style={{ gap: space(2) }}>
+                <Text style={{ ...t.label, color: theme.muted }}>Owner from the roll</Text>
+                {people.data?.people.map((person) => (
+                  <ChoiceOption
+                    key={person.id}
+                    label={personLabel(person)}
+                    selected={personId === person.id}
+                    onPress={() => setPersonId(person.id)}
+                  />
+                ))}
+              </View>
+            )}
+            <ChoiceOption
+              label={
+                aiAssistanceAuthorized ? "AI assistance authorised" : "Authorise AI assistance"
+              }
+              selected={aiAssistanceAuthorized}
+              onPress={() => setAiAssistanceAuthorized((value) => !value)}
+            />
+            {appoint.error ? (
+              <InlineFeedback
+                message={
+                  appoint.error instanceof Error
+                    ? appoint.error.message
+                    : "The chair could not be recorded."
+                }
+              />
+            ) : null}
+            <Button
+              full
+              label="Record human chair"
+              onPress={() => appoint.mutate()}
+              pending={appoint.isPending}
+              disabled={useManager ? managerName.trim().length < 2 : !personId}
+            />
+          </View>
+        ) : null}
+      </Card>
+    </>
+  );
+}
+
+function PowerOfAttorneyRegister({
+  schemeId,
+  appointments,
+  onChanged,
+}: {
+  schemeId: string;
+  appointments: PowerOfAttorneyRecord[];
+  onChanged: () => void;
+}) {
+  const theme = useTheme();
+  const lots = useQuery({
+    queryKey: ["scheme", schemeId, "lots"],
+    queryFn: () => api<{ lots: LotOption[] }>(`/api/schemes/${schemeId}/lots`),
+    enabled: appointments.length > 0,
+  });
+  const people = useQuery({
+    queryKey: ["scheme", schemeId, "people"],
+    queryFn: () => api<{ people: PersonOption[] }>(`/api/schemes/${schemeId}/people`),
+    enabled: appointments.length > 0,
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => apiPost(`/api/schemes/${schemeId}/powers-of-attorney/${id}/revoke`),
+    onSuccess: onChanged,
+  });
+  if (appointments.length === 0) return null;
+  const nameFor = (id: string) => {
+    const person = people.data?.people.find((candidate) => candidate.id === id);
+    return person ? personLabel(person) : "Person on the roll";
+  };
+  return (
+    <>
+      <SectionHeader label="Powers of attorney" />
+      <View style={{ gap: space(3) }}>
+        {appointments.map((appointment) => {
+          const lot = lots.data?.lots.find((candidate) => candidate.id === appointment.lotId);
+          return (
+            <Card key={appointment.id}>
+              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space(3) }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ ...t.body, color: theme.text }}>
+                    Lot {lot?.lotNumber ?? "—"} · {nameFor(appointment.attorneyPersonId)}
+                  </Text>
+                  <Text style={{ ...t.caption, color: theme.muted, marginTop: space(1) }}>
+                    From {appointment.startsOn}
+                    {appointment.endsOn ? ` to ${appointment.endsOn}` : " onward"}
+                  </Text>
+                </View>
+                <StatusPill
+                  tone={appointment.revokedAt ? "neutral" : "ok"}
+                  label={appointment.revokedAt ? "Revoked" : "Current"}
+                />
+              </View>
+              {appointment.canRevoke ? (
+                <View style={{ marginTop: space(3) }}>
+                  <Button
+                    full
+                    variant="secondary"
+                    label="Revoke authority"
+                    onPress={() => revoke.mutate(appointment.id)}
+                    pending={revoke.isPending && revoke.variables === appointment.id}
+                  />
+                </View>
+              ) : null}
+              {revoke.error ? (
+                <InlineFeedback
+                  message={
+                    revoke.error instanceof Error
+                      ? revoke.error.message
+                      : "The authority could not be revoked."
+                  }
+                />
+              ) : null}
+            </Card>
+          );
+        })}
+      </View>
+    </>
   );
 }
 
@@ -1808,6 +2050,125 @@ function ProxyAppointmentForm({
   );
 }
 
+function PowerOfAttorneyForm({
+  schemeId,
+  onCancel,
+  onRecorded,
+}: {
+  schemeId: string;
+  onCancel: () => void;
+  onRecorded: () => void;
+}) {
+  const theme = useTheme();
+  const [lotId, setLotId] = useState("");
+  const [attorneyPersonId, setAttorneyPersonId] = useState("");
+  const [documentId, setDocumentId] = useState("");
+  const [startsOn, setStartsOn] = useState(new Date().toISOString().slice(0, 10));
+  const [endsOn, setEndsOn] = useState("");
+  const lots = useQuery({
+    queryKey: ["scheme", schemeId, "lots", "mine"],
+    queryFn: () => api<{ lots: LotOption[] }>(`/api/schemes/${schemeId}/lots/mine`),
+  });
+  const people = useQuery({
+    queryKey: ["scheme", schemeId, "people"],
+    queryFn: () => api<{ people: PersonOption[] }>(`/api/schemes/${schemeId}/people`),
+  });
+  const documents = useQuery({
+    queryKey: ["scheme", schemeId, "documents", "power-of-attorney"],
+    queryFn: () =>
+      api<{ documents: { id: string; title: string }[] }>(`/api/schemes/${schemeId}/documents`),
+  });
+  const record = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/schemes/${schemeId}/powers-of-attorney`, {
+        lotId,
+        attorneyPersonId,
+        documentId,
+        startsOn,
+        ...(endsOn.trim() ? { endsOn: endsOn.trim() } : {}),
+      }),
+    onSuccess: onRecorded,
+  });
+  return (
+    <Card style={{ marginTop: space(4) }}>
+      <Text style={{ ...t.title, color: theme.text }}>Record power of attorney</Text>
+      <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(1) }}>
+        File the signed instrument so the attorney may represent this lot while it remains current.
+      </Text>
+      <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>Your lot</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2), marginTop: space(2) }}>
+        {lots.data?.lots.map((lot) => (
+          <ChoiceOption
+            key={lot.id}
+            label={`Lot ${lot.lotNumber}`}
+            selected={lotId === lot.id}
+            onPress={() => setLotId(lot.id)}
+          />
+        ))}
+      </View>
+      <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>Attorney</Text>
+      <View style={{ gap: space(2), marginTop: space(2) }}>
+        {people.data?.people.map((person) => (
+          <ChoiceOption
+            key={person.id}
+            label={personLabel(person)}
+            selected={attorneyPersonId === person.id}
+            onPress={() => setAttorneyPersonId(person.id)}
+          />
+        ))}
+      </View>
+      <Text style={{ ...t.label, color: theme.muted, marginTop: space(4) }}>
+        Retained signed instrument
+      </Text>
+      <View style={{ gap: space(2), marginTop: space(2) }}>
+        {documents.data?.documents.map((document) => (
+          <ChoiceOption
+            key={document.id}
+            label={document.title}
+            selected={documentId === document.id}
+            onPress={() => setDocumentId(document.id)}
+          />
+        ))}
+      </View>
+      <View style={{ gap: space(3), marginTop: space(4) }}>
+        <FormField
+          label="Starts on (YYYY-MM-DD)"
+          value={startsOn}
+          onChangeText={setStartsOn}
+          placeholder="2026-07-13"
+        />
+        <FormField
+          label="Ends on (optional)"
+          value={endsOn}
+          onChangeText={setEndsOn}
+          placeholder="YYYY-MM-DD"
+        />
+      </View>
+      {record.error ? (
+        <InlineFeedback
+          message={
+            record.error instanceof Error
+              ? record.error.message
+              : "The authority could not be recorded."
+          }
+        />
+      ) : null}
+      <View style={{ gap: space(2), marginTop: space(4) }}>
+        <Button
+          full
+          label="Record authority"
+          onPress={() => record.mutate()}
+          pending={record.isPending}
+          disabled={
+            !lotId || !attorneyPersonId || !documentId || !/^\d{4}-\d{2}-\d{2}$/.test(startsOn)
+          }
+        />
+        <Button full variant="secondary" label="Cancel" onPress={onCancel} />
+      </View>
+    </Card>
+  );
+}
+
 function AddMotionForm({
   schemeId,
   meetingId,
@@ -1900,6 +2261,7 @@ function MotionCard({
   schemeId,
   motion,
   isOfficer,
+  canExerciseCastingVote,
   lots,
   lotsPending,
   onChange,
@@ -1907,6 +2269,7 @@ function MotionCard({
   schemeId: string;
   motion: Motion;
   isOfficer: boolean;
+  canExerciseCastingVote: boolean;
   lots: LotOption[];
   lotsPending: boolean;
   onChange: () => void;
@@ -1960,6 +2323,13 @@ function MotionCard({
       fail(value, "The vote could not be recorded.");
     },
   });
+  const castingVote = useMutation({
+    mutationFn: (choice: "for" | "against") =>
+      apiPost(`/api/schemes/${schemeId}/motions/${motion.id}/casting-vote`, { choice }),
+    onMutate: begin,
+    onSuccess: (_result, choice) => changed(`Chair's casting vote recorded ${choice}.`),
+    onError: (value) => fail(value, "The casting vote could not be recorded."),
+  });
 
   const result = motion.result;
   const headcount = result?.basis === "headcount";
@@ -1998,6 +2368,26 @@ function MotionCard({
                 ? "Decided by entitlement after a poll demand"
                 : "Decided by lot entitlement"}
           </Text>
+        </View>
+      ) : null}
+
+      {canExerciseCastingVote &&
+      motion.resolutionType === "ordinary" &&
+      (motion.status === "carried" || motion.status === "lost") &&
+      !result?.castingVote &&
+      result?.forCount === result?.againstCount ? (
+        <View style={{ gap: space(2), marginTop: space(4) }}>
+          <Text style={{ ...t.label, color: theme.text }}>Equal vote — chair's casting vote</Text>
+          {(["for", "against"] as const).map((choice) => (
+            <Button
+              key={choice}
+              full
+              variant="secondary"
+              label={`Cast ${choice}`}
+              onPress={() => castingVote.mutate(choice)}
+              pending={castingVote.isPending && castingVote.variables === choice}
+            />
+          ))}
         </View>
       ) : null}
 

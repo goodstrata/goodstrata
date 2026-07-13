@@ -4,6 +4,7 @@
   "compatibility_date": "2026-07-01",
   "containers": [
     {
+      "name": "goodstrata-demo-goodstratademo",
       "class_name": "GoodstrataDemo",
       "image": "./Dockerfile",
       "image_build_context": "../..",

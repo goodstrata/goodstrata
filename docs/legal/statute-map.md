@@ -1,5 +1,10 @@
 # GoodStrata — Statute-to-Code Map (Owners Corporations Act 2006 (Vic))
 
+> **Snapshot note:** the code assessment below was prepared on 5 July 2026.
+> The implemented remediation and residual counsel questions as at 13 July are
+> recorded in
+> [`../COMPLIANCE-IMPLEMENTATION-2026-07-13.md`](../COMPLIANCE-IMPLEMENTATION-2026-07-13.md).
+
 > **Prepared as factual/product research for counsel review. Not legal advice.**
 
 Prepared 5 July 2026 for Australian counsel reviewing the go-live of GoodStrata

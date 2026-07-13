@@ -105,6 +105,13 @@ test("meetings permutations: role gating, voting errors, polls, close, bad deep 
   await expect(page.getByRole("button", { name: "Join video call" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Start video meeting" })).toHaveCount(0);
 
+  // A general meeting must have a recorded human chair. The AI conductor may
+  // assist, but can never occupy the statutory chair role.
+  await page.getByRole("button", { name: "Human manager" }).click();
+  await page.getByPlaceholder("Full legal name").fill("Morgan Manager");
+  await page.getByRole("button", { name: "Record chair" }).click();
+  await expect(page.getByText(/Morgan Manager is the recorded chair/)).toBeVisible();
+
   // --- Officer adds two motions and opens voting on both ---
   await page.getByRole("button", { name: "New motion" }).click();
   await page.getByTestId("motion-title").fill("Install a bike rack");

@@ -1,7 +1,11 @@
 import { documents } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import { storageKey } from "@goodstrata/integrations";
-import type { DocumentAccessLevel, DocumentCategory } from "@goodstrata/shared";
+import type {
+  DocumentAccessLevel,
+  DocumentCategory,
+  RecordRetentionClass,
+} from "@goodstrata/shared";
 import { aliasedTable, and, eq, inArray, isNotNull, isNull, lt, notExists, sql } from "drizzle-orm";
 import { causationFields, type ServiceContext } from "../context.js";
 import { DomainError, notFound } from "../errors.js";
@@ -12,6 +16,9 @@ export interface UploadDocumentInput {
   content: Uint8Array;
   category: DocumentCategory;
   accessLevel?: DocumentAccessLevel;
+  retentionClass?: RecordRetentionClass;
+  /** Human-readable legal/operational reason displayed in the record register. */
+  retentionBasis?: string;
   title?: string;
 }
 
@@ -24,7 +31,37 @@ export interface SupersedeDocumentInput extends Omit<UploadDocumentInput, "categ
   category?: DocumentCategory;
 }
 
-const FINANCIAL_RETENTION_YEARS = 7;
+const DAY_MS = 86_400_000;
+
+export function defaultRetentionClass(category: DocumentCategory): RecordRetentionClass {
+  if (category === "plan_of_subdivision") return "permanent";
+  if (category === "other") return "operational";
+  return "statutory_7_years";
+}
+
+function retentionDate(now: Date, retentionClass: RecordRetentionClass): string | null {
+  if (retentionClass === "minimum_12_months") {
+    return new Date(now.getTime() + 365.25 * DAY_MS).toISOString().slice(0, 10);
+  }
+  if (retentionClass === "statutory_7_years") {
+    return new Date(now.getTime() + 7 * 365.25 * DAY_MS).toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+function defaultRetentionBasis(
+  category: DocumentCategory,
+  retentionClass: RecordRetentionClass,
+): string | null {
+  if (retentionClass === "permanent") return "Building-life record";
+  if (retentionClass === "minimum_12_months") return "OC Act minimum 12-month hold";
+  if (retentionClass === "statutory_7_years") {
+    return category === "financial"
+      ? "OC Act financial record — minimum seven years"
+      : "OC Act owners corporation record — minimum seven years";
+  }
+  return null;
+}
 
 /** Roles that unlock the committee/admin record tiers (s146 OC Act). */
 const OFFICER_TIER_ROLES: ReadonlySet<string> = new Set([
@@ -66,13 +103,8 @@ async function createDocument(
   const key = storageKey(schemeId, input.filename);
   await ctx.integrations.storage.put(key, input.content, input.contentType);
 
-  // s144 OC Act: financial records kept 7 years.
-  const retentionUntil =
-    input.category === "financial"
-      ? new Date(ctx.clock.now().getTime() + FINANCIAL_RETENTION_YEARS * 365.25 * 86_400_000)
-          .toISOString()
-          .slice(0, 10)
-      : null;
+  const retentionClass = input.retentionClass ?? defaultRetentionClass(input.category);
+  const retentionUntil = retentionDate(ctx.clock.now(), retentionClass);
 
   return await ctx.db.transaction(async (tx) => {
     const rows = await tx
@@ -86,6 +118,9 @@ async function createDocument(
         sizeBytes: input.content.byteLength,
         accessLevel: input.accessLevel ?? "owners",
         retentionUntil,
+        retentionClass,
+        retentionBasis:
+          input.retentionBasis ?? defaultRetentionBasis(input.category, retentionClass),
         supersedesDocumentId,
         uploadedBy: ctx.actor,
       })
@@ -160,6 +195,8 @@ export async function supersedeDocument(
       ...input,
       category: input.category ?? oldDoc.category,
       accessLevel: input.accessLevel ?? oldDoc.accessLevel,
+      retentionClass: input.retentionClass ?? oldDoc.retentionClass,
+      retentionBasis: input.retentionBasis ?? oldDoc.retentionBasis ?? undefined,
     },
     documentId,
   );
@@ -179,6 +216,13 @@ export async function deleteDocument(ctx: ServiceContext, schemeId: string, docu
   // Mirror of enforceRetention's due test (`retentionUntil < today`): until
   // the date has passed, the record is statutorily held.
   const today = ctx.clock.now().toISOString().slice(0, 10);
+  if (doc.retentionClass === "permanent") {
+    throw new DomainError(
+      "PERMANENT_RECORD",
+      "This is a permanent owners corporation record and cannot be deleted",
+      409,
+    );
+  }
   if (doc.retentionUntil && doc.retentionUntil >= today) {
     throw new DomainError(
       "RETENTION_HELD",

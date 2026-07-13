@@ -197,6 +197,10 @@ export function documentsPdfRoutes(deps: AppDeps) {
             },
             priorBalanceCents,
             interestNote,
+            interestRateBps: notice.interestRateBps,
+            interestAuthorised: notice.interestRateBps > 0 && Boolean(notice.interestMotionId),
+            disputeProcess:
+              "The owners corporation's internal dispute resolution process applies to disputes about these fees and charges. Contact the secretary or manager to lodge a written complaint.",
           };
 
           const pdf = await buildLevyNoticePdf(doc);

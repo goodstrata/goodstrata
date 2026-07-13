@@ -20,7 +20,7 @@ export type DecisionOption = z.infer<typeof decisionOptionSchema>;
 
 export interface DecisionFollowUp {
   type: "action";
-  /** Registered executor action, e.g. "finance.adoptBudget". */
+  /** Registered executor action, e.g. "finance.approveBudgetProposal". */
   action: string;
   args: Record<string, unknown>;
   /** Which option triggers the action (default "approve"). */

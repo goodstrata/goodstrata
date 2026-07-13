@@ -1,5 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
-import { attemptId, attemptPlan, expectPrefilledInviteName } from "./test-fixtures";
+import {
+  attemptId,
+  attemptPlan,
+  expectPrefilledInviteName,
+  prepareStructuredInsurance,
+  schemeIdFromPage,
+} from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
@@ -118,16 +124,12 @@ test("treasurer decision: owner is read-only, treasurer resolves with a note, po
   await page.getByRole("button", { name: "Assign" }).click();
   await expect(page.getByTestId("committee-list").getByText("treasurer")).toBeVisible();
 
-  // --- Insurance + activation (finance flows need an active scheme) ---
-  await section(page, "documents").click();
-  await page.getByTestId("doc-file").setInputFiles({
-    name: "certificate-of-currency.pdf",
-    mimeType: "application/pdf",
-    buffer: Buffer.from("%PDF-1.4 fake insurance certificate"),
-  });
-  await page.getByRole("button", { name: "Upload" }).click();
-  await expect(page.getByText("certificate-of-currency.pdf")).toBeVisible();
+  // --- Insurance + activation (fixture plumbing; finance is the subject) ---
+  // This two-lot scheme still needs current building reinstatement cover, but
+  // falls within the two-lot public-liability exception.
+  await prepareStructuredInsurance(page, schemeIdFromPage(page), { publicLiability: false });
   await section(page, "overview").click();
+  await expect(page.getByRole("button", { name: "Activate scheme" })).toBeEnabled();
   await page.getByRole("button", { name: "Activate scheme" }).click();
   await expect(page.getByRole("heading", { name: "Financial position" })).toBeVisible();
 

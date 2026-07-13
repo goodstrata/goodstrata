@@ -1,8 +1,7 @@
 /* GoodStrata homepage clips — tiny, dependency-free playback shim.
-   Each .clip autoplays MUTED and loops as ambient motion only while ≥50% in
-   view (IntersectionObserver), and pauses when it leaves. A big centred PLAY
-   button sits over the idle clip; pressing it plays the clip WITH SOUND from
-   the start (loop off) as a one-shot. When that playthrough ends, a full-frame
+   Each .clip stays paused on its poster until the visitor presses the big
+   centred PLAY button. That explicit action plays the clip WITH SOUND from the
+   start as a one-shot. When that playthrough ends, a full-frame
    "Watch again" overlay restarts it with sound; if it's merely paused, the play
    button returns so it can be restarted with sound.
 
@@ -61,11 +60,9 @@
       return; // no video load, no controls (they ship `hidden`)
     }
 
-    // Make sure the video actually loads before it's needed: preload="none"
-    // defers every byte, so an ambient play() at 50%-visible used to race the
-    // network (posters that never started, long dead frames). Start fetching
-    // once the clip is within ~600px of the viewport — by the time it's half
-    // visible, frames are ready. Skipped if playback already began.
+    // Make sure the video is ready for an explicit play request: preload="none"
+    // defers every byte, so start fetching once the clip is within ~600px of
+    // the viewport. Loading media here never starts playback.
     if ("IntersectionObserver" in window) {
       var warm = new IntersectionObserver(
         function (entries, obs) {
@@ -150,13 +147,7 @@
       spacer = null;
     }
 
-    // Ambient muted playback. preload="none" means the first play() also loads.
-    var ambientPlay = function () {
-      var p = video.play();
-      if (p && typeof p.catch === "function") p.catch(function () {});
-    };
-
-    // Opt into sound: unmute, drop the loop, restart from 0, play as a one-shot;
+    // Opt into sound: unmute, restart from 0, play as a one-shot;
     // dock to the top on mobile so it stays on screen.
     var playWithSound = function () {
       hideMsg();
@@ -165,23 +156,25 @@
       video.loop = false;
       video.muted = false;
       try {
+        // A previous network/media error requires an explicit reload before a
+        // visitor can retry. This remains inside the click-driven path.
+        if (video.error) video.load();
         video.currentTime = 0;
       } catch (e) {}
       var p = video.play();
       dock();
       // The play() promise resolves once playback is under way — including the
-      // case where the element was ALREADY playing, which the 'playing' event
-      // does NOT cover (see onPlaying). Without this the spinner outlives the
-      // tap forever on any clip caught mid-ambient-loop.
+      // case where the element was already playing, which the 'playing' event
+      // does not cover (see onPlaying).
       if (p && typeof p.then === "function") p.then(onPlaying, function () {});
       if (p && typeof p.catch === "function")
         p.catch(function () {
           // Recover instead of leaving a dead poster frame: undock, restore the
-          // ambient (muted/looping) defaults, bring the play affordance back, and
+          // initial paused defaults, bring the play affordance back, and
           // say what happened so the reader can retry.
           setPending(false);
           undock();
-          video.loop = true;
+          video.loop = false;
           video.muted = true;
           playBtn.hidden = false;
           showMsg("That didn’t play — tap play to try again.");
@@ -207,17 +200,13 @@
     // Reflect real playback state onto the overlays.
     //
     // NOTE: 'playing' only fires when playback STARTS after being paused,
-    // waiting or stalled. A clip tapped mid-ambient-loop is already playing, so
-    // unmuting + seeking to 0 fires nothing here — which is why this is also
-    // driven off the play() promise and 'timeupdate' below. Relying on the
-    // event alone stranded a spinner over a happily playing video.
+    // waiting or stalled, so this is also driven off the play() promise and
+    // 'timeupdate' below for older/Safari event behaviour.
     function onPlaying() {
       setPending(false); // pixels are moving — clear the pending/loading state
       hideMsg();
       if (againBtn) againBtn.hidden = true;
-      // Play button shows over the muted ambient loop, hides once sound is on.
-      playBtn.hidden = !video.muted;
-      if (video.muted) undock();
+      playBtn.hidden = true;
     }
     video.addEventListener("playing", onPlaying);
     // Last line of defence: the frame has advanced, so playback is real,
@@ -240,32 +229,17 @@
       if (againBtn) againBtn.hidden = false;
       undock();
     });
-    // Both sources 404 / blocked / network drop mid-load: retry once,
-    // silently, before declaring it dead — a transient blip (stream reset,
-    // flaky hotel wifi) shouldn't strand the reader on an error line. Only a
-    // second failure (or an outright unsupported source) shows the message,
-    // which points to the summary + link that already sit below the frame.
-    var errRetried = false;
+    // Both sources 404 / blocked / network drop mid-load: stop and tell the
+    // visitor what happened. The play control remains available so any retry
+    // is also an explicit visitor action rather than automatic playback.
     video.addEventListener("error", function () {
-      var code = video.error && video.error.code;
-      if (!errRetried && code !== 4 /* SRC_NOT_SUPPORTED */) {
-        errRetried = true;
-        setPending(false);
-        undock();
-        video.muted = true; // back to the safe ambient defaults
-        video.loop = true;
-        try {
-          video.load();
-        } catch (e) {}
-        playBtn.hidden = false;
-        ambientPlay();
-        return;
-      }
       setPending(false);
       undock();
-      playBtn.hidden = true;
+      video.loop = false;
+      video.muted = true;
+      playBtn.hidden = false;
       if (againBtn) againBtn.hidden = true;
-      showMsg("Couldn’t load the video — the summary and link are just below.");
+      showMsg("Couldn’t load the video — tap play to retry, or use the summary and link below.");
     });
 
     // Leaving mobile width (rotate / resize to desktop) can't stay docked.
@@ -275,10 +249,10 @@
     if (MOBILE.addEventListener) MOBILE.addEventListener("change", onMQ);
     else if (MOBILE.addListener) MOBILE.addListener(onMQ);
 
-    // No IntersectionObserver (very old browser): load + play once, best effort.
+    // No IntersectionObserver (very old browser): leave the poster and explicit
+    // play control in place. Playback must never start as a fallback behaviour.
     if (!("IntersectionObserver" in window)) {
       ensurePoster();
-      ambientPlay();
       return;
     }
 
@@ -286,17 +260,13 @@
       function (entries) {
         entries.forEach(function (entry) {
           var inView = entry.isIntersecting && entry.intersectionRatio >= 0.5;
-          if (inView) {
-            // Don't restart a finished with-sound playthrough (leave the
-            // Watch-again overlay up); only auto-resume the muted ambient loop.
-            if (video.ended) return;
-            if (video.muted) ambientPlay();
-          } else if (
+          if (
+            !inView &&
             !video.paused &&
             !clip.classList.contains("clip-docked")
           ) {
-            // Out of view and not docked → pause (ambient saves resources;
-            // a docked with-sound clip keeps playing at the top).
+            // Out of view and not docked → pause; a docked with-sound clip
+            // keeps playing at the top until the visitor dismisses it.
             video.pause();
           }
         });

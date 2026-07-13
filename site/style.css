@@ -1658,7 +1658,7 @@ ul.proof-list li strong {
 /* =====================================================================
    Motion clip embed — the C1 "The Number" explainer under the hero.
    Self-contained muted <video>; poster reserves the box so there's no CLS.
-   Playback is driven by clips.js (IntersectionObserver + reduced-motion).
+   Playback is driven by clips.js (explicit play controls + reduced-motion).
    Tokens only; no external requests.
    ===================================================================== */
 
@@ -1719,7 +1719,7 @@ ul.proof-list li strong {
 }
 
 /* --- play-with-sound button ------------------------------------------------
-   The clip autoplays muted (browser policy) and loops as ambient motion.
+   The clip stays paused until the visitor explicitly starts it.
    clips.js injects this full-frame button with a centred eucalypt play disc;
    pressing it plays the clip WITH SOUND from the start and hides the button. It
    returns (via [hidden] toggling) whenever the clip is paused. */
@@ -1873,8 +1873,8 @@ ul.proof-list li strong {
 }
 
 /* --- "Watch again" overlay -------------------------------------------------
-   Once the viewer has opted into sound the loop is off; on 'ended' clips.js
-   reveals this full-frame button. Big tap target, on-brand eucalypt. */
+   When the user-started playthrough ends, clips.js reveals this full-frame
+   button. Big tap target, on-brand eucalypt. */
 .clip-again {
   position: absolute;
   inset: 0;

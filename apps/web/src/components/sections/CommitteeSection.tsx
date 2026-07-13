@@ -1,12 +1,14 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { User } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -31,6 +33,9 @@ type AssignValues = z.infer<typeof assignSchema>;
 export function CommitteeSection({ schemeId }: { schemeId: string }) {
   const queryClient = useQueryClient();
   const isOfficer = useIsOfficer(schemeId);
+  const [electionMeetingId, setElectionMeetingId] = useState("");
+  const [electedUserIds, setElectedUserIds] = useState<string[]>([]);
+  const [expansionMotionId, setExpansionMotionId] = useState("");
   const {
     data: committee,
     isError: committeeError,
@@ -49,6 +54,45 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
       unwrap<{ members: { userId: string; name: string; email: string }[] }>(
         await api.schemes[":schemeId"].members.$get({ param: { schemeId } }),
       ),
+  });
+  const { data: meetings } = useQuery({
+    queryKey: ["meetings", schemeId],
+    queryFn: async () =>
+      unwrap<{
+        meetings: {
+          id: string;
+          title: string;
+          kind: string;
+          status: string;
+          scheduledAt: string;
+        }[];
+      }>(await api.schemes[":schemeId"].meetings.$get({ param: { schemeId } })),
+    enabled: isOfficer,
+  });
+
+  const recordElection = useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api.schemes[":schemeId"].committee.elections.$post({
+          param: { schemeId },
+          json: {
+            meetingId: electionMeetingId,
+            electedUserIds,
+            ...(electedUserIds.length > 7 && expansionMotionId.trim()
+              ? { expansionMotionId: expansionMotionId.trim() }
+              : {}),
+          },
+        }),
+      ),
+    onSuccess: () => {
+      toast.success("AGM committee election recorded");
+      setElectionMeetingId("");
+      setElectedUserIds([]);
+      setExpansionMotionId("");
+      void queryClient.invalidateQueries({ queryKey: ["committee", schemeId] });
+      void queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
+    },
+    onError: (error) => toast.error(error.message),
   });
 
   const formRef = useRef<{ reset: () => void } | null>(null);
@@ -131,6 +175,98 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
           )}
         </CardContent>
       </Card>
+
+      {isOfficer && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Record AGM election</CardTitle>
+            <CardDescription>
+              Replace the outgoing committee with the 3–12 owners elected at an issued AGM.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Field label="AGM">
+              {(control) => (
+                <Select value={electionMeetingId} onValueChange={setElectionMeetingId}>
+                  <SelectTrigger id={control.id} className="w-full">
+                    <SelectValue placeholder="Select an AGM…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {meetings?.meetings
+                      .filter((meeting) => meeting.kind === "agm" && meeting.status !== "draft")
+                      .map((meeting) => (
+                        <SelectItem key={meeting.id} value={meeting.id}>
+                          {meeting.title} ·{" "}
+                          {new Date(meeting.scheduledAt).toLocaleDateString("en-AU")}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </Field>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Elected owners ({electedUserIds.length})</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {members?.members.map((member) => {
+                  const selected = electedUserIds.includes(member.userId);
+                  return (
+                    <Button
+                      key={member.userId}
+                      type="button"
+                      variant={selected ? "default" : "outline"}
+                      className="h-auto min-h-11 justify-start px-3 py-2 text-left"
+                      aria-pressed={selected}
+                      onClick={() =>
+                        setElectedUserIds((current) =>
+                          selected
+                            ? current.filter((id) => id !== member.userId)
+                            : current.length < 12
+                              ? [...current, member.userId]
+                              : current,
+                        )
+                      }
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate">{member.name}</span>
+                        <span className="block truncate text-xs font-normal opacity-75">
+                          {member.email}
+                        </span>
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {electedUserIds.length > 7 && (
+              <Field
+                label="Expansion motion ID"
+                hint="Required for 8–12 members; the ordinary motion must be finally carried at this AGM."
+              >
+                <Input
+                  value={expansionMotionId}
+                  onChange={(event) => setExpansionMotionId(event.target.value)}
+                  placeholder="Carried motion UUID"
+                />
+              </Field>
+            )}
+
+            <Button
+              onClick={() => recordElection.mutate()}
+              pending={recordElection.isPending}
+              disabled={
+                !electionMeetingId ||
+                electedUserIds.length < 3 ||
+                electedUserIds.length > 12 ||
+                (electedUserIds.length > 7 && !expansionMotionId.trim())
+              }
+            >
+              Record election
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {isOfficer && (
         <Card>

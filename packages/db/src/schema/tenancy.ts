@@ -19,6 +19,16 @@ export const schemeStatusEnum = pgEnum("scheme_status", SCHEME_STATUSES);
 export const lotTypeEnum = pgEnum("lot_type", LOT_TYPES);
 export const membershipRoleEnum = pgEnum("membership_role", MEMBERSHIP_ROLES);
 export const ownershipKindEnum = pgEnum("ownership_kind", OWNERSHIP_KINDS);
+export const managementModeEnum = pgEnum("management_mode", [
+  "self_managed",
+  "volunteer_manager",
+  "registered_manager",
+]);
+export const insuranceExemptionEnum = pgEnum("insurance_exemption", [
+  "two_lot_no_common_property",
+  "unanimous_no_common_property",
+  "vcat_order",
+]);
 
 /** Optional management umbrella (a strata manager or self-managed group). */
 export const organizations = pgTable("organizations", {
@@ -72,10 +82,23 @@ export const schemes = pgTable(
     state: text().notNull().default("VIC"),
     postcode: text().notNull(),
     tier: integer().notNull(), // 1–5, derived from lot count (OC Act)
+    /** Basis stated on the plan for setting lot liability/entitlement, if available. */
+    lotLiabilityBasis: text(),
+    lotEntitlementBasis: text(),
     abn: text(),
     gstRegistered: boolean().notNull().default(false),
     /** Month (1-12) the financial year ends; day is last day of that month. */
     financialYearEndMonth: integer().notNull().default(6),
+    /** Legal operating mode. Paid/rewarded management uses registered_manager. */
+    managementMode: managementModeEnum().notNull().default("self_managed"),
+    /** Tier 1 may be self-managed only where the OC opts out by special resolution. */
+    managerOptOutResolutionId: uuid(),
+    /** Appointment terms may run to five years only for a retirement-village OC. */
+    isRetirementVillage: boolean().notNull().default(false),
+    /** Insurance applicability inputs; an exemption must be explicit and evidenced elsewhere. */
+    hasCommonProperty: boolean().notNull().default(true),
+    isMultiStorey: boolean().notNull().default(false),
+    insuranceExemption: insuranceExemptionEnum(),
     status: schemeStatusEnum().notNull().default("onboarding"),
     settings: jsonb().$type<SchemeSettings>().notNull().default(defaultSchemeSettings),
     createdAt: createdAt(),

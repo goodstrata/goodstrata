@@ -5,11 +5,10 @@ import {
   integrationsFromEnv,
   mockPaymentsProvider,
 } from "@goodstrata/integrations";
-import { type Actor, fixedClock, systemActor, userActor } from "@goodstrata/shared";
+import { type Actor, fixedClock, systemActor } from "@goodstrata/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServiceContext } from "../src/context.js";
 import * as budgetsService from "../src/services/budgets.js";
-import * as decisionsService from "../src/services/decisions.js";
 import * as leviesService from "../src/services/levies.js";
 import * as meetingsService from "../src/services/meetings.js";
 
@@ -228,27 +227,32 @@ describe("AGM lifecycle", () => {
 
   it("s 89B: a lot in arrears cannot vote on ordinary resolutions", async () => {
     // Put Pat's lot 4 into arrears: adopt a budget, issue levies due long ago.
-    const mgr = userActor("mgr-agm");
-    await tdb.db.insert((await import("@goodstrata/db")).users).values({
-      id: "mgr-agm",
-      name: "Mgr",
-      email: "mgr@example.com",
-    });
-    const ctxPast = ctxAt("2026-01-01T00:00:00Z", mgr);
+    const ctxPast = ctxAt("2026-01-01T00:00:00Z");
     const budget = await budgetsService.createBudget(ctxPast, schemeId, {
       fiscalYearStart: "2026-01-01",
       adminCents: 500_000,
       maintenanceCents: 0,
     });
-    const pending = await decisionsService.listDecisions(ctxPast, schemeId, "pending");
-    const budgetDecision = pending.find((d) => (d.subject as { id?: string })?.id === budget.id)!;
-    await decisionsService.resolveDecision(ctxPast, schemeId, budgetDecision.id, "approve", [
-      "treasurer",
-    ]);
-    await decisionsService.executeDecisionFollowUp(
-      ctxAt("2026-01-01T00:00:00Z"),
-      budgetDecision.id,
-    );
+    const budgetMotion = await meetingsService.addMotion(ctxPast, schemeId, {
+      meetingId,
+      title: "Adopt annual budget",
+      text: "That the owners corporation adopts the annual budget and fees.",
+      resolutionType: "ordinary",
+    });
+    await meetingsService.openMotion(ctxPast, schemeId, budgetMotion.id);
+    for (const [person, lot] of [
+      ["Alex", "2"],
+      ["Kim", "3"],
+      ["Sam", "1"],
+    ] as const) {
+      await meetingsService.castVote(ctxPast, schemeId, personByName.get(person)!, {
+        motionId: budgetMotion.id,
+        lotId: lotByNumber.get(lot)!,
+        choice: "for",
+      });
+    }
+    await meetingsService.closeMotion(ctxPast, schemeId, budgetMotion.id);
+    await budgetsService.adoptBudget(ctxPast, schemeId, budget.id, budgetMotion.id);
     const schedule = await leviesService.createLevySchedule(ctxPast, schemeId, {
       budgetId: budget.id,
       frequency: "annual",
@@ -336,6 +340,10 @@ describe("AGM lifecycle", () => {
 
   it("closing the meeting records quorum and emits meeting.closed", async () => {
     const ctx = ctxAt(NOW);
+    await meetingsService.appointMeetingChair(ctx, schemeId, meetingId, {
+      personId: personByName.get("Sam")!,
+      aiAssistanceAuthorized: false,
+    });
     const quorum = await meetingsService.closeMeeting(ctx, schemeId, meetingId);
     expect(quorum.quorate).toBe(true);
     const events = await tdb.db.query.eventLog.findMany({

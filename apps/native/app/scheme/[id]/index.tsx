@@ -112,6 +112,7 @@ export default function SchemeHub() {
   const isOfficer = useIsOfficer(schemeId);
   const rolesLoaded = !!detailQuery.data;
   const isCommitteeMember = detailQuery.data?.roles.includes("committee_member") ?? false;
+  const isManagerAdmin = detailQuery.data?.roles.includes("manager_admin") ?? false;
 
   const financeSubtitle =
     lotsInArrears > 0
@@ -162,6 +163,24 @@ export default function SchemeHub() {
       path: `/scheme/${schemeId}/maintenance`,
     },
     {
+      key: "building-compliance",
+      icon: "shield-checkmark-outline",
+      title: "Insurance & plan",
+      subtitle: "Cover and ten-year capital works",
+      path: `/scheme/${schemeId}/building-compliance`,
+    },
+    ...(isManagerAdmin || isOfficer
+      ? [
+          {
+            key: "manager",
+            icon: "briefcase-outline" as const,
+            title: "Manager",
+            subtitle: "Appointment, delegation and registration",
+            path: `/scheme/${schemeId}/manager`,
+          },
+        ]
+      : []),
+    {
       key: "meetings",
       icon: "calendar-outline",
       title: "Meetings",
@@ -211,6 +230,13 @@ export default function SchemeHub() {
       path: `/scheme/${schemeId}/documents`,
     },
     {
+      key: "records",
+      icon: "library-outline",
+      title: "OC records",
+      subtitle: "Register, inspections and certificates",
+      path: `/scheme/${schemeId}/records`,
+    },
+    {
       key: "activity",
       icon: "pulse-outline",
       title: "Activity",
@@ -228,6 +254,13 @@ export default function SchemeHub() {
 
   // Owner-voiced subset, matching the web owner nav order.
   const ownerLinks: HubLink[] = [
+    {
+      key: "building-compliance",
+      icon: "shield-checkmark-outline",
+      title: "Insurance & plan",
+      subtitle: "Cover and major works",
+      path: `/scheme/${schemeId}/building-compliance`,
+    },
     {
       key: "maintenance",
       icon: "construct-outline",
@@ -269,6 +302,13 @@ export default function SchemeHub() {
       title: "Documents",
       subtitle: "The scheme's records",
       path: `/scheme/${schemeId}/documents`,
+    },
+    {
+      key: "records",
+      icon: "library-outline",
+      title: "OC records",
+      subtitle: "Register and certificate requests",
+      path: `/scheme/${schemeId}/records`,
     },
   ];
 

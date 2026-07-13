@@ -1,11 +1,13 @@
 import { funds, lots, ownerships, people, schemes, users } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import { integrationsFromEnv, mockPaymentsProvider } from "@goodstrata/integrations";
-import { type Actor, fixedClock, systemActor, userActor } from "@goodstrata/shared";
+import { type Actor, fixedClock, systemActor } from "@goodstrata/shared";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ServiceContext } from "../src/context.js";
 import * as budgetsService from "../src/services/budgets.js";
-import * as decisionsService from "../src/services/decisions.js";
+import * as committeeService from "../src/services/committee.js";
+import * as documentsService from "../src/services/documents.js";
 import * as leviesService from "../src/services/levies.js";
 import * as meetingsService from "../src/services/meetings.js";
 import * as paymentsService from "../src/services/payments.js";
@@ -98,18 +100,40 @@ async function seedScheme(
 
 /** Adopt a budget and issue one overdue annual levy run, putting every lot in arrears. */
 async function issueOverdueLevies(schemeId: string) {
-  const uid = `mgr-${schemeSeq}`;
-  await tdb.db.insert(users).values({ id: uid, name: "Mgr", email: `${uid}@ex.com` });
-  const ctxPast = ctxAt("2026-01-01T00:00:00Z", userActor(uid));
+  const ctxPast = ctxAt("2026-01-01T00:00:00Z");
   const budget = await budgetsService.createBudget(ctxPast, schemeId, {
     fiscalYearStart: "2026-01-01",
     adminCents: 500_000,
     maintenanceCents: 0,
   });
-  const pending = await decisionsService.listDecisions(ctxPast, schemeId, "pending");
-  const decision = pending.find((d) => (d.subject as { id?: string })?.id === budget.id)!;
-  await decisionsService.resolveDecision(ctxPast, schemeId, decision.id, "approve", ["treasurer"]);
-  await decisionsService.executeDecisionFollowUp(ctxAt("2026-01-01T00:00:00Z"), decision.id);
+  const meeting = await meetingsService.createMeeting(ctxPast, schemeId, {
+    kind: "sgm",
+    title: "Annual fees SGM",
+    scheduledAt: "2026-01-01T00:00:00Z",
+    agenda: [],
+  });
+  const motion = await meetingsService.addMotion(ctxPast, schemeId, {
+    meetingId: meeting.id,
+    title: "Adopt annual budget",
+    text: "That the owners corporation adopts the annual budget and fees.",
+    resolutionType: "ordinary",
+  });
+  const currentOwnerships = await tdb.db.query.ownerships.findMany({
+    where: (table, { and, eq, isNull }) => and(eq(table.schemeId, schemeId), isNull(table.endedOn)),
+  });
+  for (const owner of currentOwnerships) {
+    await meetingsService.recordAttendance(ctxPast, schemeId, meeting.id, owner.personId, "online");
+  }
+  await meetingsService.openMotion(ctxPast, schemeId, motion.id);
+  for (const owner of currentOwnerships) {
+    await meetingsService.castVote(ctxPast, schemeId, owner.personId, {
+      motionId: motion.id,
+      lotId: owner.lotId,
+      choice: "for",
+    });
+  }
+  await meetingsService.closeMotion(ctxPast, schemeId, motion.id);
+  await budgetsService.adoptBudget(ctxPast, schemeId, budget.id, motion.id);
   const schedule = await leviesService.createLevySchedule(ctxPast, schemeId, {
     budgetId: budget.id,
     frequency: "annual",
@@ -248,6 +272,10 @@ describe("poll window (s 89(3)–(5))", () => {
       choice: "for",
     });
     await meetingsService.closeMotion(ctx(), schemeId, motion.id);
+    await meetingsService.appointMeetingChair(ctx(), schemeId, meeting.id, {
+      personId: personByName.get("Ada")!,
+      aiAssistanceAuthorized: false,
+    });
     await meetingsService.closeMeeting(ctx(), schemeId, meeting.id);
     await expect(
       meetingsService.demandPoll(ctx(), schemeId, personByName.get("Ada")!, motion.id),
@@ -672,5 +700,174 @@ describe("arrears eligibility — proxy bar (s 89C(10))", () => {
       choice: "for",
     });
     expect(vote.choice).toBe("for");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ss 79/89A and powers of attorney: human chair + casting vote + representation
+// ---------------------------------------------------------------------------
+describe("human chair and casting vote (ss 79, 89A)", () => {
+  it("records a human owner as chair and lets only that chair break an equal vote", async () => {
+    const { schemeId, lotByNumber, personByName } = await seedScheme("Casting vote OC", [
+      ["1", 50, "Ada"],
+      ["2", 50, "Bo"],
+    ]);
+    const meeting = await meetingsService.createMeeting(ctx(), schemeId, {
+      kind: "sgm",
+      title: "Casting vote SGM",
+      scheduledAt: "2026-08-01T09:00:00Z",
+      agenda: [],
+    });
+    await meetingsService.appointMeetingChair(ctx(), schemeId, meeting.id, {
+      personId: personByName.get("Ada")!,
+      aiAssistanceAuthorized: true,
+    });
+    for (const person of ["Ada", "Bo"]) {
+      await meetingsService.recordAttendance(
+        ctx(),
+        schemeId,
+        meeting.id,
+        personByName.get(person)!,
+        "online",
+      );
+    }
+    const motion = await meetingsService.addMotion(ctx(), schemeId, {
+      meetingId: meeting.id,
+      title: "Equal motion",
+      text: "That the OC resolves an equally divided matter.",
+      resolutionType: "ordinary",
+    });
+    await meetingsService.openMotion(ctx(), schemeId, motion.id);
+    await meetingsService.castVote(ctx(), schemeId, personByName.get("Ada")!, {
+      motionId: motion.id,
+      lotId: lotByNumber.get("1")!,
+      choice: "for",
+    });
+    await meetingsService.castVote(ctx(), schemeId, personByName.get("Bo")!, {
+      motionId: motion.id,
+      lotId: lotByNumber.get("2")!,
+      choice: "against",
+    });
+    expect(await meetingsService.closeMotion(ctx(), schemeId, motion.id)).toMatchObject({
+      carried: false,
+      forCount: 1,
+      againstCount: 1,
+    });
+    await expect(
+      meetingsService.exerciseCastingVote(ctx(), schemeId, personByName.get("Bo")!, motion.id, {
+        choice: "for",
+      }),
+    ).rejects.toMatchObject({ code: "NOT_MEETING_CHAIR", status: 403 });
+    expect(
+      await meetingsService.exerciseCastingVote(
+        ctx(),
+        schemeId,
+        personByName.get("Ada")!,
+        motion.id,
+        { choice: "for" },
+      ),
+    ).toMatchObject({ carried: true, interim: false });
+  });
+});
+
+describe("powers of attorney", () => {
+  it("requires a retained instrument and counts a current attorney for quorum and voting", async () => {
+    const { schemeId, lotByNumber, personByName } = await seedScheme("Attorney OC", [
+      ["1", 60, "Ada"],
+      ["2", 20, "Bo"],
+      ["3", 20, "Cy"],
+    ]);
+    const rex = await tdb.db
+      .insert(people)
+      .values({ schemeId, givenName: "Rex", email: `attorney-${schemeSeq}@ex.com` })
+      .returning();
+    const instrument = await documentsService.uploadDocument(ctx(), schemeId, {
+      filename: "power-of-attorney.pdf",
+      contentType: "application/pdf",
+      content: new TextEncoder().encode("%PDF signed instrument"),
+      category: "other",
+      accessLevel: "committee",
+    });
+    const appointment = await meetingsService.submitPowerOfAttorney(
+      ctx(),
+      schemeId,
+      personByName.get("Ada")!,
+      {
+        lotId: lotByNumber.get("1")!,
+        attorneyPersonId: rex[0]!.id,
+        startsOn: "2026-01-01",
+        documentId: instrument.id,
+      },
+    );
+    expect(appointment.documentId).toBe(instrument.id);
+
+    const meeting = await meetingsService.createMeeting(ctx(), schemeId, {
+      kind: "sgm",
+      title: "Attorney SGM",
+      scheduledAt: "2026-08-01T09:00:00Z",
+      agenda: [],
+    });
+    await meetingsService.recordAttendance(ctx(), schemeId, meeting.id, rex[0]!.id, "online");
+    expect(await meetingsService.quorumStatus(ctx(), schemeId, meeting.id)).toMatchObject({
+      representedLotCount: 1,
+      representedEntitlement: 60,
+      quorate: true,
+      quorumBasis: "entitlement",
+    });
+    const motion = await meetingsService.addMotion(ctx(), schemeId, {
+      meetingId: meeting.id,
+      title: "Attorney vote",
+      text: "That the attorney cast the donor lot vote.",
+      resolutionType: "ordinary",
+    });
+    await meetingsService.openMotion(ctx(), schemeId, motion.id);
+    const vote = await meetingsService.castVote(ctx(), schemeId, rex[0]!.id, {
+      motionId: motion.id,
+      lotId: lotByNumber.get("1")!,
+      choice: "for",
+    });
+    expect(vote.viaPowerOfAttorneyId).toBe(appointment.id);
+    expect(vote.viaProxyId).toBeNull();
+  });
+});
+
+describe("AGM committee election", () => {
+  it("replaces the committee with 3–7 owners elected at an issued AGM", async () => {
+    const { schemeId, personByName } = await seedScheme("Election OC", [
+      ["1", 10, "Ada"],
+      ["2", 10, "Bo"],
+      ["3", 10, "Cy"],
+    ]);
+    const electedUserIds: string[] = [];
+    for (const name of ["Ada", "Bo", "Cy"]) {
+      const userId = `elected-${name.toLowerCase()}-${schemeSeq}`;
+      await tdb.db.insert(users).values({
+        id: userId,
+        name,
+        email: `${userId}@example.com`,
+      });
+      await tdb.db
+        .update(people)
+        .set({ userId })
+        .where(eq(people.id, personByName.get(name)!));
+      electedUserIds.push(userId);
+    }
+    const meeting = await meetingsService.createMeeting(ctx(), schemeId, {
+      kind: "agm",
+      title: "Election AGM",
+      scheduledAt: "2026-08-01T09:00:00Z",
+      agenda: [],
+    });
+    await meetingsService.sendMeetingNotice(ctx(), schemeId, meeting.id);
+
+    const election = await committeeService.recordCommitteeElection(ctx(), schemeId, {
+      meetingId: meeting.id,
+      electedUserIds,
+    });
+    expect(election.electedUserIds).toEqual(electedUserIds);
+    const committee = await committeeService.listCommittee(ctx(), schemeId);
+    expect(committee).toHaveLength(3);
+    expect(committee.map((member) => member.userId).sort()).toEqual([...electedUserIds].sort());
+    expect(committee.every((member) => member.role === "committee_member")).toBe(true);
   });
 });

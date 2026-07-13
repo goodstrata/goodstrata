@@ -1,11 +1,18 @@
 import { expect, test } from "@playwright/test";
-import { attemptId, attemptPlan } from "./test-fixtures";
+import {
+  attemptId,
+  attemptPlan,
+  prepareStructuredInsurance,
+  schemeIdFromPage,
+} from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
 // Scheme navigation is a register index of section links (see onboarding.spec).
 const section = (p: import("@playwright/test").Page, name: string) =>
-  p.getByRole("link", { name: new RegExp(`^${name}$`, "i") });
+  p
+    .getByRole("navigation", { name: "Scheme sections" })
+    .getByRole("link", { name: new RegExp(`^${name}$`, "i") });
 
 const SCHEME_NAME = "77 Spanner St Owners Corporation";
 const REPORT_SUBMITTED = "Thanks — your report's in. The maintenance agent will take it from here.";
@@ -57,6 +64,19 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   await page.getByRole("button", { name: "Finish setup" }).click();
   await page.getByRole("button", { name: "Go to your building" }).click();
   await expect(page.getByRole("heading", { name: SCHEME_NAME })).toBeVisible();
+
+  // The maintenance journey starts from a legally active six-lot OC. Set up
+  // both structured covers through the authenticated fixture API; insurance
+  // UI behaviour is exercised end-to-end in onboarding.spec.ts.
+  await prepareStructuredInsurance(page, schemeIdFromPage(page), { publicLiability: true });
+  // The wizard leaves Overview mounted with its pre-policy query result. A
+  // reload mirrors returning to the building and fetches composed readiness.
+  await page.reload();
+  await section(page, "overview").click();
+  const activate = page.getByRole("button", { name: "Activate scheme" });
+  await expect(activate).toBeEnabled();
+  await activate.click();
+  await expect(page.getByRole("heading", { name: "Financial position" })).toBeVisible();
 
   await section(page, "maintenance").click();
 

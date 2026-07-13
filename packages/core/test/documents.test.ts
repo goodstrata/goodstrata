@@ -70,7 +70,8 @@ describe("documents service", () => {
 
     expect(doc.title).toBe("Insurance certificate of currency");
     expect(doc.accessLevel).toBe("owners");
-    expect(doc.retentionUntil).toBeNull();
+    expect(doc.retentionClass).toBe("statutory_7_years");
+    expect(doc.retentionUntil).toMatch(/^2033-/);
     const stored = await integrations.storage.get(doc.storageKey);
     expect(new TextDecoder().decode(stored)).toContain("%PDF-1.4 demo");
   });
@@ -317,6 +318,18 @@ describe("deleteDocument", () => {
     // Untouched: still current in the register.
     const listed = await documentsService.listDocuments(ctx(), schemeId);
     expect(listed.some((d) => d.id === doc.id)).toBe(true);
+  });
+
+  it("never deletes a permanent building-life record", async () => {
+    const doc = await upload({
+      filename: "plan-of-subdivision.pdf",
+      category: "plan_of_subdivision",
+    });
+    expect(doc.retentionClass).toBe("permanent");
+    expect(doc.retentionUntil).toBeNull();
+    await expect(documentsService.deleteDocument(ctx(), schemeId, doc.id)).rejects.toMatchObject({
+      code: "PERMANENT_RECORD",
+    });
   });
 
   it("soft-deletes an unretained document: hidden from the register, row and object kept for audit", async () => {

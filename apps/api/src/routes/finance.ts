@@ -1,13 +1,23 @@
 import {
+  adoptBudgetInput,
   arrearsService,
+  authoriseInterestInput,
   budgetsService,
   createBudgetInput,
   createLevyScheduleInput,
+  createSpecialFeeInput,
   decisionsService,
   executePayoutInput,
+  finalFeeNoticesService,
+  financialStatementsService,
+  interestAuthorisationsService,
   invoicesService,
+  issueFinalFeeNoticeInput,
   leviesService,
   paymentsService,
+  prepareFinancialStatementInput,
+  presentFinancialStatementInput,
+  recordFinancialReviewInput,
   recordInvoiceInput,
   recordManualPaymentInput,
   refundPaymentInput,
@@ -47,6 +57,22 @@ export function financeRoutes(deps: AppDeps) {
           return c.json({ budget }, 201);
         },
       )
+      .post(
+        "/:schemeId/budgets/:budgetId/adopt",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", adoptBudgetInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const budget = await budgetsService.adoptBudget(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("budgetId"),
+            c.req.valid("json").motionId,
+          );
+          return c.json({ budget });
+        },
+      )
       .get("/:schemeId/levy-schedules", requireSchemeMember(deps), async (c) => {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({ schedules: await leviesService.listSchedules(ctx, c.get("schemeId")) });
@@ -59,6 +85,21 @@ export function financeRoutes(deps: AppDeps) {
         async (c) => {
           const ctx = deps.serviceContext(userActor(c.get("user").id));
           const schedule = await leviesService.createLevySchedule(
+            ctx,
+            c.get("schemeId"),
+            c.req.valid("json"),
+          );
+          return c.json({ schedule }, 201);
+        },
+      )
+      .post(
+        "/:schemeId/special-fees",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", createSpecialFeeInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const schedule = await leviesService.createSpecialFee(
             ctx,
             c.get("schemeId"),
             c.req.valid("json"),
@@ -86,6 +127,102 @@ export function financeRoutes(deps: AppDeps) {
         const ctx = deps.serviceContext(userActor(c.get("user").id));
         return c.json({ notices: await leviesService.listNotices(ctx, c.get("schemeId")) });
       })
+      .post(
+        "/:schemeId/lots/:lotId/final-fee-notice",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", issueFinalFeeNoticeInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const notice = await finalFeeNoticesService.issueFinalFeeNotice(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("lotId"),
+            c.req.valid("json"),
+          );
+          return c.json({ notice }, 201);
+        },
+      )
+      .get("/:schemeId/financial-statements", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json({
+          statements: await financialStatementsService.listFinancialStatements(
+            ctx,
+            c.get("schemeId"),
+          ),
+        });
+      })
+      .post(
+        "/:schemeId/financial-statements",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", prepareFinancialStatementInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const statement = await financialStatementsService.prepareFinancialStatement(
+            ctx,
+            c.get("schemeId"),
+            c.req.valid("json"),
+          );
+          return c.json({ statement }, 201);
+        },
+      )
+      .post(
+        "/:schemeId/financial-statements/:statementId/review",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", recordFinancialReviewInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const review = await financialStatementsService.recordFinancialReview(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("statementId"),
+            c.req.valid("json"),
+          );
+          return c.json({ review }, 201);
+        },
+      )
+      .post(
+        "/:schemeId/financial-statements/:statementId/present",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", presentFinancialStatementInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const statement = await financialStatementsService.presentFinancialStatement(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("statementId"),
+            c.req.valid("json").meetingId,
+          );
+          return c.json({ statement });
+        },
+      )
+      .get("/:schemeId/interest-authorisations", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        return c.json({
+          authorisations: await interestAuthorisationsService.listInterestAuthorisations(
+            ctx,
+            c.get("schemeId"),
+          ),
+        });
+      })
+      .post(
+        "/:schemeId/interest-authorisations",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", authoriseInterestInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const authorisation = await interestAuthorisationsService.authoriseInterest(
+            ctx,
+            c.get("schemeId"),
+            c.req.valid("json"),
+          );
+          return c.json({ authorisation }, 201);
+        },
+      )
       // Write off an uncollectible levy notice: status transition, balancing
       // ledger adjustment and a typed event, all committed together.
       .post(

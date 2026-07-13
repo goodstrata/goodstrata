@@ -86,6 +86,8 @@ export const budgets = pgTable(
     status: budgetStatusEnum().notNull().default("draft"),
     /** Soft reference to meetings.id (meetings.ts is downstream). */
     adoptedAtMeetingId: uuid(),
+    /** Carried general-meeting motion that adopted the budget. */
+    adoptedByMotionId: uuid(),
     /** Soft reference to decisions.id. */
     decisionId: uuid(),
     createdAt: createdAt(),
@@ -116,9 +118,17 @@ export const levySchedules = pgTable(
     schemeId: uuid()
       .notNull()
       .references(() => schemes.id),
-    budgetId: uuid()
-      .notNull()
-      .references(() => budgets.id),
+    /** Annual fees point to an adopted budget; special fees do not. */
+    budgetId: uuid().references(() => budgets.id),
+    /** annual | special (kept as text so statutory variants remain data-driven). */
+    feeKind: text().notNull().default("annual"),
+    /** Carried motion authorising a special fee. */
+    resolutionMotionId: uuid(),
+    description: text(),
+    specialFeeCents: bigint({ mode: "number" }),
+    specialFundKind: fundKindEnum(),
+    /** Snapshot of benefit/liability allocations: [{ lotId, amountCents }]. */
+    specialAllocations: jsonb().$type<{ lotId: string; amountCents: number }[]>(),
     frequency: levyFrequencyEnum().notNull().default("quarterly"),
     instalments: integer().notNull().default(4),
     firstDueOn: date().notNull(),
@@ -149,6 +159,9 @@ export const levyNotices = pgTable(
     status: levyNoticeStatusEnum().notNull().default("draft"),
     /** Unique payment reference for reconciliation (PayID / provider ref). */
     payid: text(),
+    /** Interest authority snapshotted when the approved-form fee notice issues. */
+    interestRateBps: integer().notNull().default(0),
+    interestMotionId: uuid(),
     documentId: uuid().references(() => documents.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -161,6 +174,122 @@ export const levyNotices = pgTable(
       t.instalment,
     ),
     index("levy_notices_lot_idx").on(t.lotId),
+  ],
+);
+
+/** Annual financial statement generated from the append-only ledgers. */
+export const financialStatements = pgTable(
+  "financial_statements",
+  {
+    id: pk(),
+    schemeId: uuid()
+      .notNull()
+      .references(() => schemes.id),
+    periodStart: date().notNull(),
+    periodEnd: date().notNull(),
+    status: text().notNull().default("prepared"), // prepared | reviewed | presented
+    accountingBasis: text().notNull().default("special_purpose_accrual"),
+    figures: jsonb()
+      .$type<{
+        incomeCents: number;
+        expenditureCents: number;
+        cashCents: number;
+        receivablesCents: number;
+        liabilitiesCents: number;
+        penaltyInterestCents: number;
+        netAssetsCents: number;
+      }>()
+      .notNull(),
+    documentId: uuid().references(() => documents.id),
+    presentedAtMeetingId: uuid(),
+    preparedAt: timestamp({ withTimezone: true }).notNull(),
+    presentedAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("financial_statements_period_idx").on(t.schemeId, t.periodStart, t.periodEnd),
+  ],
+);
+
+/** Independent audit/review evidence attached to an annual statement. */
+export const financialStatementReviews = pgTable(
+  "financial_statement_reviews",
+  {
+    id: pk(),
+    schemeId: uuid()
+      .notNull()
+      .references(() => schemes.id),
+    financialStatementId: uuid()
+      .notNull()
+      .references(() => financialStatements.id),
+    kind: text().notNull(), // audit | independent_review
+    reviewerName: text().notNull(),
+    reviewerOrganisation: text(),
+    professionalBody: text().notNull(),
+    membershipNumber: text(),
+    independentDeclaration: text().notNull(),
+    outcome: text().notNull(), // unmodified | qualified | adverse | disclaimer
+    reportDocumentId: uuid()
+      .notNull()
+      .references(() => documents.id),
+    completedAt: timestamp({ withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("financial_statement_reviews_statement_idx").on(t.financialStatementId)],
+);
+
+/** A carried OC resolution authorising penalty interest under s 29. */
+export const interestAuthorisations = pgTable(
+  "interest_authorisations",
+  {
+    id: pk(),
+    schemeId: uuid()
+      .notNull()
+      .references(() => schemes.id),
+    motionId: uuid().notNull(),
+    rateBps: integer().notNull(),
+    effectiveFrom: date().notNull(),
+    effectiveUntil: date(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("interest_authorisations_motion_idx").on(t.motionId),
+    index("interest_authorisations_scheme_idx").on(t.schemeId, t.effectiveFrom),
+  ],
+);
+
+/** Approved-form final fee notice and the 28-day recovery standstill. */
+export const finalFeeNotices = pgTable(
+  "final_fee_notices",
+  {
+    id: pk(),
+    schemeId: uuid()
+      .notNull()
+      .references(() => schemes.id),
+    levyNoticeId: uuid()
+      .notNull()
+      .references(() => levyNotices.id),
+    lotId: uuid()
+      .notNull()
+      .references(() => lots.id),
+    noticeNumber: text().notNull(),
+    issuedAt: timestamp({ withTimezone: true }).notNull(),
+    recoveryEligibleOn: date().notNull(),
+    principalCents: bigint({ mode: "number" }).notNull(),
+    interestCents: bigint({ mode: "number" }).notNull(),
+    dailyInterestCents: bigint({ mode: "number" }).notNull(),
+    interestRateBps: integer().notNull(),
+    documentId: uuid().references(() => documents.id),
+    servedAt: timestamp({ withTimezone: true }),
+    serviceMethod: text(),
+    serviceRecipient: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("final_fee_notices_levy_idx").on(t.levyNoticeId),
+    uniqueIndex("final_fee_notices_number_idx").on(t.schemeId, t.noticeNumber),
+    index("final_fee_notices_lot_idx").on(t.schemeId, t.lotId),
   ],
 );
 

@@ -10,6 +10,7 @@ import {
   ownerships,
   payments,
   people,
+  powersOfAttorney,
   proxies,
   schemes,
   votes,
@@ -83,6 +84,12 @@ interface MotionResult extends Partial<MotionTally> {
   challengedAt?: string | null;
   /** Set when an interim resolution ripened into a final one. */
   ripenedAt?: string | null;
+  /** s 89A casting vote exercised by the human chair after a tie. */
+  castingVote?: {
+    chairPersonId: string;
+    choice: "for" | "against";
+    exercisedAt: string;
+  } | null;
   /** s 77 quorum at close, for a general-meeting motion (null otherwise). */
   quorate?: boolean | null;
   /** s 86(2)(a): a circular ordinary ballot fell below the returned-votes floor. */
@@ -287,6 +294,96 @@ export async function createMeeting(
 
     return meeting;
   });
+}
+
+export const appointMeetingChairInput = z
+  .object({
+    /** A lot owner on the scheme roll. */
+    personId: z.string().uuid().optional(),
+    /** A human registered manager who is not represented on the people roll. */
+    managerName: z.string().trim().min(2).max(200).optional(),
+    /** Records the OC's express authorisation for the AI conductor to assist. */
+    aiAssistanceAuthorized: z.boolean().default(false),
+  })
+  .refine((v) => Number(Boolean(v.personId)) + Number(Boolean(v.managerName)) === 1, {
+    message: "Choose either a lot owner or a human manager as chair",
+  });
+export type AppointMeetingChairInput = z.infer<typeof appointMeetingChairInput>;
+
+/**
+ * Record the human chair of a meeting. The AI conductor is deliberately only
+ * an assistant: it cannot be written into the chair field or exercise the
+ * chair's casting vote.
+ */
+export async function appointMeetingChair(
+  ctx: ServiceContext,
+  schemeId: string,
+  meetingId: string,
+  input: AppointMeetingChairInput,
+) {
+  const parsed = appointMeetingChairInput.parse(input);
+  const meeting = await ctx.db.query.meetings.findFirst({
+    where: and(eq(meetings.id, meetingId), eq(meetings.schemeId, schemeId)),
+  });
+  if (!meeting) throw notFound("Meeting");
+  if (meetingEnded(meeting.status)) {
+    throw new DomainError("MEETING_ENDED", "The chair cannot change after the meeting closes", 409);
+  }
+
+  let chairName = parsed.managerName ?? null;
+  if (parsed.personId) {
+    const person = await ctx.db.query.people.findFirst({
+      where: and(eq(people.id, parsed.personId), eq(people.schemeId, schemeId)),
+    });
+    if (!person) throw notFound("Person");
+    const owner = await ctx.db.query.ownerships.findFirst({
+      where: and(
+        eq(ownerships.schemeId, schemeId),
+        eq(ownerships.personId, parsed.personId),
+        isNull(ownerships.endedOn),
+      ),
+    });
+    if (!owner) {
+      throw new DomainError(
+        "CHAIR_INELIGIBLE",
+        "A chair selected from the roll must be a current lot owner",
+        422,
+      );
+    }
+    chairName =
+      [person.givenName, person.familyName].filter(Boolean).join(" ") ||
+      person.companyName ||
+      "Lot owner";
+  }
+
+  const appointedAt = ctx.clock.now();
+  const rows = await ctx.db.transaction(async (tx) => {
+    const updated = await tx
+      .update(meetings)
+      .set({
+        chairPersonId: parsed.personId ?? null,
+        chairName,
+        chairAppointedAt: appointedAt,
+        chairAssistedByAi: parsed.aiAssistanceAuthorized,
+      })
+      .where(eq(meetings.id, meetingId))
+      .returning();
+    await publishEvent(tx, {
+      schemeId,
+      stream: `meeting:${meetingId}`,
+      type: "meeting.chair.appointed",
+      payload: {
+        meetingId,
+        chairPersonId: parsed.personId ?? null,
+        chairName,
+        aiAssistanceAuthorized: parsed.aiAssistanceAuthorized,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+    return updated;
+  });
+  return rows[0]!;
 }
 
 /**
@@ -522,6 +619,13 @@ export async function startVideoMeeting(ctx: ServiceContext, schemeId: string, m
   }
   if (meetingEnded(meeting.status)) {
     throw new DomainError("ALREADY_CLOSED", "Meeting is already closed", 409);
+  }
+  if (meeting.kind === "agm" && !meeting.chairName) {
+    throw new DomainError(
+      "CHAIR_REQUIRED",
+      "Record the human chair of the general meeting before starting it",
+      422,
+    );
   }
   if (meeting.videoUrl) return { url: meeting.videoUrl };
 
@@ -768,10 +872,21 @@ async function assertPollStanding(ctx: ServiceContext, schemeId: string, personI
       isNull(proxies.revokedAt),
     ),
   });
-  if (!proxy) {
+  if (proxy) return;
+  const today = toDateOnly(ctx.clock.now());
+  const attorney = await ctx.db.query.powersOfAttorney.findFirst({
+    where: and(
+      eq(powersOfAttorney.schemeId, schemeId),
+      eq(powersOfAttorney.attorneyPersonId, personId),
+      isNull(powersOfAttorney.revokedAt),
+      sql`${powersOfAttorney.startsOn} <= ${today}`,
+      or(isNull(powersOfAttorney.endsOn), gte(powersOfAttorney.endsOn, today)),
+    ),
+  });
+  if (!attorney) {
     throw new DomainError(
       "NO_STANDING",
-      "Only a lot owner or a proxy holder may demand a poll (s 89(3))",
+      "Only a lot owner, proxy holder or attorney may demand a poll (s 89(3))",
       403,
     );
   }
@@ -934,6 +1049,7 @@ export async function castVote(
     ),
   });
   let viaProxyId: string | null = null;
+  let viaPowerOfAttorneyId: string | null = null;
   if (!ownership) {
     // A person can hold several proxy rows for one lot (a lapsed or
     // otherwise-scoped one alongside a current one), so validity — expiry and
@@ -953,14 +1069,28 @@ export async function castVote(
           : isNull(proxies.meetingId),
       ),
     });
-    if (!proxy) {
-      throw new DomainError(
-        "NO_STANDING",
-        "You are not an owner of this lot and hold no valid proxy for it",
-        403,
-      );
+    if (proxy) {
+      viaProxyId = proxy.id;
+    } else {
+      const attorney = await ctx.db.query.powersOfAttorney.findFirst({
+        where: and(
+          eq(powersOfAttorney.schemeId, schemeId),
+          eq(powersOfAttorney.lotId, input.lotId),
+          eq(powersOfAttorney.attorneyPersonId, personId),
+          isNull(powersOfAttorney.revokedAt),
+          sql`${powersOfAttorney.startsOn} <= ${today}`,
+          or(isNull(powersOfAttorney.endsOn), gte(powersOfAttorney.endsOn, today)),
+        ),
+      });
+      if (!attorney) {
+        throw new DomainError(
+          "NO_STANDING",
+          "You are not an owner of this lot and hold no valid proxy or power of attorney for it",
+          403,
+        );
+      }
+      viaPowerOfAttorneyId = attorney.id;
     }
-    viaProxyId = proxy.id;
   }
 
   const at = ctx.clock.now();
@@ -1018,9 +1148,11 @@ export async function castVote(
         lotId: input.lotId,
         castByPersonId: personId,
         viaProxyId,
+        viaPowerOfAttorneyId,
         choice: input.choice,
         entitlementWeight: lot.entitlement,
         castAt: ctx.clock.now(),
+        retentionUntil: addMonthsDateOnly(toDateOnly(ctx.clock.now()), 12),
       })
       .onConflictDoNothing({ target: [votes.motionId, votes.lotId] })
       .returning();
@@ -1038,6 +1170,7 @@ export async function castVote(
         choice: input.choice,
         entitlementWeight: lot.entitlement,
         viaProxy: viaProxyId !== null,
+        viaPowerOfAttorney: viaPowerOfAttorneyId !== null,
       },
       actor: ctx.actor,
       ...causationFields(ctx),
@@ -1230,6 +1363,106 @@ export async function closeMotion(ctx: ServiceContext, schemeId: string, motionI
   });
 }
 
+export const exerciseCastingVoteInput = z.object({
+  choice: z.enum(["for", "against"]),
+});
+export type ExerciseCastingVoteInput = z.infer<typeof exerciseCastingVoteInput>;
+
+/**
+ * s 89A: after an equal vote, the human chair may exercise one casting vote
+ * if they are a lot owner (the chair appointment service enforces that for a
+ * person-backed chair). A manager-only chair has no casting vote. The action
+ * remains available only until the general meeting closes.
+ */
+export async function exerciseCastingVote(
+  ctx: ServiceContext,
+  schemeId: string,
+  chairPersonId: string,
+  motionId: string,
+  input: ExerciseCastingVoteInput,
+) {
+  const parsed = exerciseCastingVoteInput.parse(input);
+  return await ctx.db.transaction(async (tx) => {
+    const motionRows = await tx
+      .select()
+      .from(motions)
+      .where(and(eq(motions.id, motionId), eq(motions.schemeId, schemeId)))
+      .for("update");
+    const motion = motionRows[0];
+    if (!motion) throw notFound("Motion");
+    if (motion.resolutionType !== "ordinary" || !motion.meetingId) {
+      throw new DomainError(
+        "CASTING_VOTE_NOT_APPLICABLE",
+        "A casting vote applies only to an equal ordinary vote at a meeting",
+        422,
+      );
+    }
+    if (motion.status !== "carried" && motion.status !== "lost") {
+      throw new DomainError("BAD_STATUS", "The ordinary vote has not been declared", 409);
+    }
+
+    const meeting = await tx.query.meetings.findFirst({
+      where: and(eq(meetings.id, motion.meetingId), eq(meetings.schemeId, schemeId)),
+    });
+    if (!meeting || meetingEnded(meeting.status)) {
+      throw new DomainError(
+        "MEETING_ENDED",
+        "A casting vote cannot be exercised after the meeting closes",
+        409,
+      );
+    }
+    if (!meeting.chairPersonId || meeting.chairPersonId !== chairPersonId) {
+      throw new DomainError(
+        "NOT_MEETING_CHAIR",
+        "Only the recorded human chair may exercise the casting vote",
+        403,
+      );
+    }
+
+    const result = (motion.result ?? {}) as MotionResult;
+    if (result.castingVote) {
+      throw new DomainError(
+        "CASTING_VOTE_USED",
+        "The casting vote has already been exercised",
+        409,
+      );
+    }
+    const tied =
+      result.basis === "entitlement"
+        ? result.forWeight === result.againstWeight
+        : result.forCount === result.againstCount;
+    if (!tied) {
+      throw new DomainError("NOT_TIED", "The declared vote is not equal", 422);
+    }
+
+    const quorate = await generalMeetingQuorate(ctx, schemeId, motion.meetingId);
+    const carried = parsed.choice === "for";
+    const interim = carried && quorate === false;
+    const exercisedAt = ctx.clock.now().toISOString();
+    const updated: MotionResult = {
+      ...result,
+      castingVote: { chairPersonId, choice: parsed.choice, exercisedAt },
+      interim,
+      interimKind: interim ? "interim_ordinary" : null,
+      ripensOn: interim ? addDays(ctx.clock.now(), INTERIM_RIPEN_DAYS).toISOString() : null,
+      quorate,
+    };
+    await tx
+      .update(motions)
+      .set({ status: carried ? "carried" : "lost", result: updated })
+      .where(eq(motions.id, motionId));
+    await publishEvent(tx, {
+      schemeId,
+      stream: `motion:${motionId}`,
+      type: "motion.casting_vote.exercised",
+      payload: { motionId, meetingId: motion.meetingId, chairPersonId, choice: parsed.choice },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+    return { motionId, carried, interim, result: updated };
+  });
+}
+
 /**
  * The AI chair's ready-to-close flag: record that discussion on an open motion
  * appears finished, so a human officer can run the binding tally (closeMotion
@@ -1375,6 +1608,124 @@ export async function challengeInterimResolution(
 // Proxies + attendance + quorum + close
 // ---------------------------------------------------------------------------
 
+export const submitPowerOfAttorneyInput = z
+  .object({
+    lotId: z.string().uuid(),
+    attorneyPersonId: z.string().uuid(),
+    startsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    endsOn: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    /** A retained copy of the signed instrument is mandatory. */
+    documentId: z.string().uuid(),
+  })
+  .refine((v) => !v.endsOn || v.endsOn >= v.startsOn, {
+    message: "The power of attorney cannot end before it starts",
+    path: ["endsOn"],
+  });
+export type SubmitPowerOfAttorneyInput = z.infer<typeof submitPowerOfAttorneyInput>;
+
+/** Record a written power of attorney for a current lot owner. */
+export async function submitPowerOfAttorney(
+  ctx: ServiceContext,
+  schemeId: string,
+  donorPersonId: string,
+  input: SubmitPowerOfAttorneyInput,
+) {
+  const parsed = submitPowerOfAttorneyInput.parse(input);
+  if (donorPersonId === parsed.attorneyPersonId) {
+    throw new DomainError("SELF_ATTORNEY", "Choose another person as attorney", 422);
+  }
+  const [ownership, attorney, document] = await Promise.all([
+    ctx.db.query.ownerships.findFirst({
+      where: and(
+        eq(ownerships.schemeId, schemeId),
+        eq(ownerships.lotId, parsed.lotId),
+        eq(ownerships.personId, donorPersonId),
+        isNull(ownerships.endedOn),
+      ),
+    }),
+    ctx.db.query.people.findFirst({
+      where: and(eq(people.schemeId, schemeId), eq(people.id, parsed.attorneyPersonId)),
+    }),
+    ctx.db.query.documents.findFirst({
+      where: and(eq(documents.schemeId, schemeId), eq(documents.id, parsed.documentId)),
+    }),
+  ]);
+  if (!ownership) {
+    throw new DomainError("NOT_OWNER", "Only a current lot owner can appoint an attorney", 403);
+  }
+  if (!attorney) throw notFound("Attorney");
+  if (!document || document.deletedAt) throw notFound("Power of attorney document");
+
+  return await ctx.db.transaction(async (tx) => {
+    // A new instrument supersedes any earlier active appointment for the same
+    // lot/donor, while retaining the old row for the statutory record.
+    await tx
+      .update(powersOfAttorney)
+      .set({ revokedAt: ctx.clock.now() })
+      .where(
+        and(
+          eq(powersOfAttorney.schemeId, schemeId),
+          eq(powersOfAttorney.lotId, parsed.lotId),
+          eq(powersOfAttorney.donorPersonId, donorPersonId),
+          isNull(powersOfAttorney.revokedAt),
+        ),
+      );
+    const rows = await tx
+      .insert(powersOfAttorney)
+      .values({
+        schemeId,
+        donorPersonId,
+        lotId: parsed.lotId,
+        attorneyPersonId: parsed.attorneyPersonId,
+        startsOn: parsed.startsOn,
+        endsOn: parsed.endsOn ?? null,
+        documentId: parsed.documentId,
+      })
+      .returning();
+    const appointment = rows[0]!;
+    await publishEvent(tx, {
+      schemeId,
+      stream: `power_of_attorney:${appointment.id}`,
+      type: "power_of_attorney.recorded",
+      payload: {
+        powerOfAttorneyId: appointment.id,
+        lotId: parsed.lotId,
+        donorPersonId,
+        attorneyPersonId: parsed.attorneyPersonId,
+      },
+      actor: ctx.actor,
+      ...causationFields(ctx),
+    });
+    return appointment;
+  });
+}
+
+export async function revokePowerOfAttorney(
+  ctx: ServiceContext,
+  schemeId: string,
+  donorPersonId: string,
+  powerOfAttorneyId: string,
+) {
+  const appointment = await ctx.db.query.powersOfAttorney.findFirst({
+    where: and(
+      eq(powersOfAttorney.id, powerOfAttorneyId),
+      eq(powersOfAttorney.schemeId, schemeId),
+      eq(powersOfAttorney.donorPersonId, donorPersonId),
+    ),
+  });
+  if (!appointment) throw notFound("Power of attorney");
+  if (appointment.revokedAt) return appointment;
+  const rows = await ctx.db
+    .update(powersOfAttorney)
+    .set({ revokedAt: ctx.clock.now() })
+    .where(eq(powersOfAttorney.id, powerOfAttorneyId))
+    .returning();
+  return rows[0]!;
+}
+
 export const submitProxyInput = z.object({
   lotId: z.string(),
   proxyPersonId: z.string(),
@@ -1488,6 +1839,7 @@ export async function submitProxy(
         scope: input.meetingId ? "meeting" : "standing",
         meetingId: input.meetingId ?? null,
         expiresOn,
+        retentionUntil: addMonthsDateOnly(expiresOn, 12),
       })
       .returning();
     const proxy = rows[0]!;
@@ -1560,6 +1912,21 @@ export async function quorumStatus(ctx: ServiceContext, schemeId: string, meetin
         representedLots.add(p.lotId);
       }
     }
+    // Current powers of attorney held by attendees also represent the donor's
+    // lot for the s 77 quorum calculation.
+    const attorneyRows = await ctx.db.query.powersOfAttorney.findMany({
+      where: and(
+        eq(powersOfAttorney.schemeId, schemeId),
+        isNull(powersOfAttorney.revokedAt),
+        sql`${powersOfAttorney.startsOn} <= ${today}`,
+        or(isNull(powersOfAttorney.endsOn), gte(powersOfAttorney.endsOn, today)),
+      ),
+    });
+    for (const appointment of attorneyRows) {
+      if (attendeePersonIds.includes(appointment.attorneyPersonId)) {
+        representedLots.add(appointment.lotId);
+      }
+    }
   }
 
   const representedEntitlement = allLots
@@ -1593,6 +1960,13 @@ export async function closeMeeting(ctx: ServiceContext, schemeId: string, meetin
   if (!meeting) throw notFound("Meeting");
   if (meetingEnded(meeting.status)) {
     throw new DomainError("ALREADY_CLOSED", "Meeting is already closed", 409);
+  }
+  if ((meeting.kind === "agm" || meeting.kind === "sgm") && !meeting.chairName) {
+    throw new DomainError(
+      "CHAIR_REQUIRED",
+      "Record the human chair of the general meeting before closing it",
+      422,
+    );
   }
 
   const quorum = await quorumStatus(ctx, schemeId, meetingId);
@@ -1732,12 +2106,17 @@ export async function meetingDetail(ctx: ServiceContext, schemeId: string, meeti
     votesByMotion.set(v.motionId, recorded);
   }
   const quorum = await quorumStatus(ctx, schemeId, meetingId);
+  const attorneyAppointments = await ctx.db.query.powersOfAttorney.findMany({
+    where: eq(powersOfAttorney.schemeId, schemeId),
+    orderBy: (t, { desc }) => desc(t.createdAt),
+  });
   return {
     meeting,
     agenda,
     submissions,
     motions: motionRows.map((m) => ({ ...m, votes: votesByMotion.get(m.id) ?? [] })),
     quorum,
+    powersOfAttorney: attorneyAppointments,
     chairLog: meeting.chairLog,
     transcriptionStarted: meeting.transcriptionStarted,
   };

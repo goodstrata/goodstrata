@@ -1,10 +1,12 @@
 import {
   complianceService,
+  createManagerAppointmentInput,
   DomainError,
   managerRegistrationService,
   recordPiPolicyInput,
   recordRegistrationInput,
   schemesService,
+  terminateManagerAppointmentInput,
 } from "@goodstrata/core";
 import { userActor } from "@goodstrata/shared";
 import { Hono } from "hono";
@@ -25,6 +27,7 @@ import { zv } from "../validate.js";
 
 /** Manager back-office is admin-only (requireRole also lets manager_admin through). */
 const adminOnly = requireRole("manager_admin");
+const officerOrAdmin = requireRole("chair", "secretary", "treasurer");
 
 /** Resolve the management org for a scheme, or 404 if the scheme is self-managed. */
 async function organizationIdForScheme(
@@ -77,6 +80,74 @@ export function managerRoutes(deps: AppDeps) {
             c.req.valid("json"),
           );
           return c.json(result, 201);
+        },
+      )
+      .get("/:schemeId/manager/appointments", requireSchemeMember(deps), async (c) => {
+        const ctx = deps.serviceContext(userActor(c.get("user").id));
+        const appointments = await managerRegistrationService.listAppointments(
+          ctx,
+          c.get("schemeId"),
+        );
+        return c.json({ appointments });
+      })
+      .post(
+        "/:schemeId/manager/appointments",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", createManagerAppointmentInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const appointment = await managerRegistrationService.createManagerAppointment(
+            ctx,
+            c.get("schemeId"),
+            c.req.valid("json"),
+          );
+          return c.json({ appointment }, 201);
+        },
+      )
+      .post(
+        "/:schemeId/manager/appointments/:appointmentId/activate",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const appointment = await managerRegistrationService.activateManagerAppointment(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("appointmentId"),
+          );
+          return c.json({ appointment });
+        },
+      )
+      .post(
+        "/:schemeId/manager/appointments/:appointmentId/terminate",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        zv("json", terminateManagerAppointmentInput),
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          const appointment = await managerRegistrationService.terminateManagerAppointment(
+            ctx,
+            c.get("schemeId"),
+            c.req.param("appointmentId"),
+            c.req.valid("json"),
+          );
+          return c.json({ appointment });
+        },
+      )
+      .post(
+        "/:schemeId/manager/appointments/:appointmentId/notify",
+        requireSchemeMember(deps),
+        officerOrAdmin,
+        async (c) => {
+          const ctx = deps.serviceContext(userActor(c.get("user").id));
+          return c.json(
+            await managerRegistrationService.notifyAppointmentChange(
+              ctx,
+              c.get("schemeId"),
+              c.req.param("appointmentId"),
+            ),
+          );
         },
       )
       // Record a PI policy period (raises a pi_expiry obligation; flags < $2M).

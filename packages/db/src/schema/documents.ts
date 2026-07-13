@@ -1,4 +1,8 @@
-import { DOCUMENT_ACCESS_LEVELS, DOCUMENT_CATEGORIES } from "@goodstrata/shared";
+import {
+  DOCUMENT_ACCESS_LEVELS,
+  DOCUMENT_CATEGORIES,
+  RECORD_RETENTION_CLASSES,
+} from "@goodstrata/shared";
 import {
   bigint,
   date,
@@ -15,6 +19,7 @@ import { schemes } from "./tenancy.js";
 
 export const documentCategoryEnum = pgEnum("document_category", DOCUMENT_CATEGORIES);
 export const documentAccessLevelEnum = pgEnum("document_access_level", DOCUMENT_ACCESS_LEVELS);
+export const recordRetentionClassEnum = pgEnum("record_retention_class", RECORD_RETENTION_CLASSES);
 
 export const documents = pgTable(
   "documents",
@@ -32,6 +37,9 @@ export const documents = pgTable(
     accessLevel: documentAccessLevelEnum().notNull().default("owners"),
     /** Statutory retention (financial records: 7 years). */
     retentionUntil: date(),
+    /** Why and for how long this record is held; permanent records never purge. */
+    retentionClass: recordRetentionClassEnum().notNull().default("operational"),
+    retentionBasis: text(),
     /** Stamped by the daily retention sweep once the object is deleted and the row de-identified. */
     purgedAt: timestamp({ withTimezone: true }),
     /**

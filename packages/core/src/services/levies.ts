@@ -1,4 +1,6 @@
 import {
+  budgetLines,
+  budgets,
   type DbHandle,
   levyNoticeLines,
   levyNotices,
@@ -12,7 +14,13 @@ import {
 } from "@goodstrata/db";
 import { publishEvent } from "@goodstrata/events";
 import { buildLevyNoticePdf, type LevyNoticeDoc } from "@goodstrata/integrations/pdf";
-import { addMonthsDateOnly, formatCents, type LevyFrequency, toDateOnly } from "@goodstrata/shared";
+import {
+  addDays,
+  addMonthsDateOnly,
+  formatCents,
+  type LevyFrequency,
+  toDateOnly,
+} from "@goodstrata/shared";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { causationFields, type ServiceContext } from "../context.js";
@@ -29,6 +37,8 @@ import { DomainError, notFound } from "../errors.js";
 import { getAdoptedBudgetFunds } from "./budgets.js";
 import { sendEmail } from "./comms.js";
 import { uploadDocument } from "./documents.js";
+import { activeInterestAuthorisation } from "./interestAuthorisations.js";
+import { requireCarriedResolution } from "./resolutionValidation.js";
 import { ensureSchemeTrustAccount } from "./trustAccounts.js";
 
 const INSTALMENTS: Record<LevyFrequency, number> = {
@@ -49,6 +59,29 @@ export const createLevyScheduleInput = z.object({
 });
 export type CreateLevyScheduleInput = z.infer<typeof createLevyScheduleInput>;
 
+export const createSpecialFeeInput = z
+  .object({
+    description: z.string().trim().min(3).max(500),
+    totalCents: z.number().int().positive(),
+    fundKind: z.enum(["admin", "maintenance"]).default("admin"),
+    dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    motionId: z.string().uuid(),
+    allocationMethod: z.enum(["liability", "benefit"]).default("liability"),
+    benefitWeights: z
+      .array(z.object({ lotId: z.string().uuid(), weight: z.number().positive() }))
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    const ids = value.benefitWeights?.map((item) => item.lotId) ?? [];
+    if (new Set(ids).size !== ids.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["benefitWeights"],
+        message: "Each lot may appear once",
+      });
+    }
+  });
+
 export async function createLevySchedule(
   ctx: ServiceContext,
   schemeId: string,
@@ -68,6 +101,96 @@ export async function createLevySchedule(
     })
     .returning();
   return rows[0]!;
+}
+
+function allocateByWeight(totalCents: number, weights: { lotId: string; weight: number }[]) {
+  const totalWeight = weights.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight <= 0) {
+    throw new DomainError("INVALID_ALLOCATION", "Allocation weights must be positive", 422);
+  }
+  const raw = weights.map((item) => ({ ...item, exact: (totalCents * item.weight) / totalWeight }));
+  const result = raw.map((item) => ({ lotId: item.lotId, amountCents: Math.floor(item.exact) }));
+  const remainder = totalCents - result.reduce((sum, item) => sum + item.amountCents, 0);
+  const order = raw
+    .map((item, index) => ({
+      index,
+      fraction: item.exact - Math.floor(item.exact),
+      lotId: item.lotId,
+    }))
+    .sort((a, b) => b.fraction - a.fraction || a.lotId.localeCompare(b.lotId));
+  for (let i = 0; i < remainder; i += 1) {
+    result[order[i % order.length]!.index]!.amountCents += 1;
+  }
+  return result;
+}
+
+/** Special fees are resolution-gated and snapshot their benefit allocation. */
+export async function createSpecialFee(
+  ctx: ServiceContext,
+  schemeId: string,
+  input: z.infer<typeof createSpecialFeeInput>,
+) {
+  const lotRows = await ctx.db.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
+  if (lotRows.length === 0) throw new DomainError("NO_LOTS", "No lots to levy", 422);
+  const minimumDueOn = toDateOnly(addDays(ctx.clock.now(), 28));
+  if (input.dueOn < minimumDueOn) {
+    throw new DomainError(
+      "FEE_NOTICE_28_DAY_FLOOR",
+      `The due date must allow at least 28 days (use ${minimumDueOn} or later)`,
+      422,
+    );
+  }
+  const adopted = await ctx.db.query.budgets.findMany({
+    where: and(eq(budgets.schemeId, schemeId), eq(budgets.status, "adopted")),
+    orderBy: (t, { desc }) => desc(t.fiscalYearStart),
+  });
+  const lines = adopted[0]
+    ? await ctx.db.query.budgetLines.findMany({ where: eq(budgetLines.budgetId, adopted[0].id) })
+    : [];
+  const annualFeesCents = lines.reduce((sum, line) => sum + line.amountCents, 0);
+  const specialResolutionRequired = input.totalCents > annualFeesCents * 2;
+  await requireCarriedResolution(ctx, schemeId, input.motionId, {
+    minimum: specialResolutionRequired ? "special" : "ordinary",
+  });
+
+  let weights: { lotId: string; weight: number }[];
+  if (input.allocationMethod === "benefit") {
+    if (!input.benefitWeights?.length) {
+      throw new DomainError(
+        "BENEFIT_ALLOCATION_REQUIRED",
+        "Benefit-principle fees require weights for every benefited lot",
+        422,
+      );
+    }
+    const schemeLots = new Set(lotRows.map((lot) => lot.id));
+    if (input.benefitWeights.some((item) => !schemeLots.has(item.lotId))) {
+      throw new DomainError("INVALID_ALLOCATION_LOT", "Allocation references another scheme", 422);
+    }
+    weights = input.benefitWeights;
+  } else {
+    weights = lotRows.map((lot) => ({ lotId: lot.id, weight: lot.liability }));
+  }
+  const allocations = allocateByWeight(input.totalCents, weights);
+  const rows = await ctx.db
+    .insert(levySchedules)
+    .values({
+      schemeId,
+      budgetId: null,
+      feeKind: "special",
+      resolutionMotionId: input.motionId,
+      description: input.description,
+      specialFeeCents: input.totalCents,
+      specialFundKind: input.fundKind,
+      specialAllocations: allocations,
+      frequency: "annual",
+      instalments: 1,
+      firstDueOn: input.dueOn,
+    })
+    .returning();
+  return {
+    ...rows[0]!,
+    resolutionThreshold: specialResolutionRequired ? "special" : "ordinary",
+  };
 }
 
 export async function listSchedules(ctx: ServiceContext, schemeId: string) {
@@ -103,7 +226,9 @@ export async function issueLevyRun(
   const scheme = await ctx.db.query.schemes.findFirst({ where: eq(schemes.id, schemeId) });
   if (!scheme) throw notFound("Scheme");
 
-  const funds = await getAdoptedBudgetFunds(ctx, schemeId, schedule.budgetId);
+  const annualFunds = schedule.budgetId
+    ? await getAdoptedBudgetFunds(ctx, schemeId, schedule.budgetId)
+    : null;
   const lotRows = await ctx.db.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
   if (lotRows.length === 0) throw new DomainError("NO_LOTS", "No lots to levy", 422);
 
@@ -114,11 +239,26 @@ export async function issueLevyRun(
     throw new DomainError("ALREADY_ISSUED", `Instalment ${instalment} is already issued`, 409);
   }
 
-  const run = calculateLevyRun(
-    funds,
-    lotRows.map((l) => ({ lotId: l.id, liability: l.liability })),
-    schedule.instalments,
-  ).filter((r) => r.instalment === instalment);
+  const run = annualFunds
+    ? calculateLevyRun(
+        annualFunds,
+        lotRows.map((l) => ({ lotId: l.id, liability: l.liability })),
+        schedule.instalments,
+      ).filter((r) => r.instalment === instalment)
+    : (schedule.specialAllocations ?? []).map((allocation) => ({
+        lotId: allocation.lotId,
+        instalment: 1,
+        totalCents: allocation.amountCents,
+        lines: [
+          {
+            fundKind: schedule.specialFundKind ?? ("admin" as const),
+            amountCents: allocation.amountCents,
+          },
+        ],
+      }));
+  if (!annualFunds && schedule.feeKind !== "special") {
+    throw new DomainError("INVALID_LEVY_SCHEDULE", "Levy schedule has no adopted budget", 422);
+  }
 
   // Per-OC trust segregation (OC Act s 122): the scheme must have its OWN
   // collection account before any PayID is allocated — references register
@@ -134,6 +274,20 @@ export async function issueLevyRun(
   const dueOn = addMonthsDateOnly(
     schedule.firstDueOn,
     (instalment - 1) * MONTHS_BETWEEN[schedule.frequency],
+  );
+  // s 31: the approved fee notice must give the owner at least 28 days.
+  const minimumDueOn = toDateOnly(addDays(ctx.clock.now(), 28));
+  if (dueOn < minimumDueOn) {
+    throw new DomainError(
+      "FEE_NOTICE_28_DAY_FLOOR",
+      `Fee notices must allow at least 28 days (due date must be ${minimumDueOn} or later)`,
+      422,
+    );
+  }
+  const interestAuthority = await activeInterestAuthorisation(
+    ctx,
+    schemeId,
+    toDateOnly(ctx.clock.now()),
   );
   const year = dueOn.slice(0, 4);
 
@@ -164,7 +318,8 @@ export async function issueLevyRun(
   const prepared = await Promise.all(
     run.map(async (entry) => {
       const lot = lotRows.find((l) => l.id === entry.lotId)!;
-      const noticeNumber = `LN-${year}-${String(instalment).padStart(2, "0")}-${lot.lotNumber}`;
+      const prefix = schedule.feeKind === "special" ? `SF-${schedule.id.slice(0, 8)}` : "LN";
+      const noticeNumber = `${prefix}-${year}-${String(instalment).padStart(2, "0")}-${lot.lotNumber}`;
       let payid: string | null = null;
       try {
         payid = await ctx.integrations.payments.createPaymentReference({
@@ -213,6 +368,8 @@ export async function issueLevyRun(
           totalCents: entry.totalCents,
           status: "issued",
           payid,
+          interestRateBps: interestAuthority?.rateBps ?? 0,
+          interestMotionId: interestAuthority?.motionId ?? null,
         })
         .returning();
       const notice = noticeRows[0]!;
@@ -220,7 +377,10 @@ export async function issueLevyRun(
       const lineRows = entry.lines.map((line) => ({
         levyNoticeId: notice.id,
         fundKind: line.fundKind,
-        description: `${line.fundKind === "admin" ? "Administration" : "Maintenance"} fund levy`,
+        description:
+          schedule.feeKind === "special"
+            ? (schedule.description ?? "Special fee")
+            : `${line.fundKind === "admin" ? "Administration" : "Maintenance"} fund levy`,
         amountCents: line.amountCents,
       }));
       await tx.insert(levyNoticeLines).values(lineRows);
@@ -304,6 +464,10 @@ export async function issueLevyRun(
           payid: account.payidRoot,
           accountName: scheme.name,
         },
+        interestRateBps: interestAuthority?.rateBps ?? 0,
+        interestAuthorised: Boolean(interestAuthority && interestAuthority.rateBps > 0),
+        disputeProcess:
+          "The owners corporation's internal dispute resolution process applies to disputes about these fees and charges. Contact the secretary or manager to lodge a written complaint.",
       });
       const doc = await uploadDocument(ctx, schemeId, {
         filename: `Levy-Notice-${notice.noticeNumber}.pdf`,
@@ -356,7 +520,9 @@ export async function issueLevyRun(
         keyValueTable(detailRows, "Notice details"),
         paragraph(howToPay),
         infoNote(
-          "Payment is due at least 28 days after this notice under the Owners Corporations Act 2006 (Vic). If you are experiencing hardship, contact the committee to discuss a payment plan.",
+          interestAuthority?.rateBps
+            ? `Payment is due within 28 days. The owners corporation has resolved that penalty interest at ${interestAuthority.rateBps / 100}% p.a. applies after the due date. Its internal dispute process applies to fee disputes; contact the secretary or manager. If you are experiencing hardship, ask about a payment plan.`
+            : "Payment is due within 28 days. The owners corporation's internal dispute process applies to fee disputes; contact the secretary or manager. If you are experiencing hardship, ask about a payment plan.",
         ),
       ],
       cta: { label: "View & pay", url: financeUrl },

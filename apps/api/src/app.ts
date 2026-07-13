@@ -16,6 +16,7 @@ import { estimatorRoutes } from "./routes/estimator.js";
 import { eventsRoutes } from "./routes/events.js";
 import { decisionsRoutes, financeRoutes } from "./routes/finance.js";
 import { grievancesRoutes } from "./routes/grievances.js";
+import { insuranceRoutes } from "./routes/insurance.js";
 import { maintenanceRoutes } from "./routes/maintenance.js";
 import { managerRoutes } from "./routes/manager.js";
 import { meetingsRoutes } from "./routes/meetings.js";
@@ -33,6 +34,7 @@ import {
 import { overviewRoutes } from "./routes/overview.js";
 import { publicQuoteRoutes, publicWorkOrderRoutes } from "./routes/portal.js";
 import { profileRoutes } from "./routes/profile.js";
+import { recordsRoutes } from "./routes/records.js";
 import { rfqsRoutes } from "./routes/rfqs.js";
 import { schemesRoutes } from "./routes/schemes.js";
 import { trustRoutes } from "./routes/trust.js";
@@ -53,12 +55,14 @@ export function createApp(deps: AppDeps, hub: SseHub) {
     .route("/schemes", peopleRoutes(deps))
     .route("/schemes", committeeRoutes(deps))
     .route("/schemes", documentsRoutes(deps))
+    .route("/schemes", recordsRoutes(deps))
     .route("/schemes", activationRoutes(deps))
     .route("/schemes", financeRoutes(deps))
     .route("/schemes", documentsPdfRoutes(deps))
     .route("/schemes", trustRoutes(deps))
     .route("/schemes", decisionsRoutes(deps))
     .route("/schemes", maintenanceRoutes(deps))
+    .route("/schemes", insuranceRoutes(deps))
     .route("/schemes", rfqsRoutes(deps))
     .route("/schemes", grievancesRoutes(deps))
     .route("/schemes", complianceRoutes(deps))

@@ -121,7 +121,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     <!-- C1 "The Number": the flagship explainer. Leads the hero in source so
          DOM/focus order matches the visual (WCAG 2.4.3): CSS grid seats it in
          the full-width first row on desktop, and it stays on top when the hero
-         stacks on mobile. Muted, looped, self-contained; clips.js pre-warms it
+         stacks on mobile. Poster-first and self-contained; clips.js pre-warms it
          near view and never loads it for reduced-motion / Save-Data. -->
     <div class="clip-wrap">
       <figure class="clip" id="c1-clip">
@@ -130,7 +130,6 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           class="clip-video"
           poster="/clips/c1-poster.jpg"
           muted
-          loop
           playsinline
           preload="none"
           disablepictureinpicture
@@ -140,10 +139,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           <source src="/clips/c1-the-number.mp4" type="video/mp4" />
         </video>
         <!-- clips.js injects the centred "play with sound" button over the
-             muted ambient loop, and a ✕ dismiss control for the docked state.
+             paused poster, and a ✕ dismiss control for the docked state.
              Neither is rendered for the reduced-motion / Save-Data fallback. -->
-        <!-- Shown by clips.js on the 'ended' event of a with-sound playthrough
-             (the loop is turned off once the viewer opts into audio). -->
+        <!-- Shown by clips.js on the 'ended' event of a with-sound playthrough. -->
         <button type="button" class="clip-again" hidden aria-label="Watch the clip again with sound">
           <span class="clip-again-btn">Watch again ↻</span>
         </button>
@@ -267,7 +265,6 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           class="clip-video"
           data-poster="/clips/c4-schedule-b-poster.jpg"
           muted
-          loop
           playsinline
           preload="none"
           disablepictureinpicture
@@ -339,7 +336,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       </a>
     </div>
     <!-- C2 "The money is code": the trust / objection-killer clip. Same generic
-         .clip block as C1, so clips.js gives it muted ambient loop, play-with-sound
+         .clip block as C1, so clips.js gives it poster-first, play-with-sound
          and the mobile sticky-dock for free. preload="none": never fetched until
          scrolled near. -->
     <figure class="clip" id="c2-clip">
@@ -348,7 +345,6 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           class="clip-video"
           data-poster="/clips/c2-money-is-code-poster.jpg"
           muted
-          loop
           playsinline
           preload="none"
           disablepictureinpicture
@@ -472,7 +468,6 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           class="clip-video"
           data-poster="/clips/c3-one-laptop-poster.jpg"
           muted
-          loop
           playsinline
           preload="none"
           disablepictureinpicture
@@ -539,7 +534,6 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           class="clip-video"
           data-poster="/clips/c5-handbook-poster.jpg"
           muted
-          loop
           playsinline
           preload="none"
           disablepictureinpicture

@@ -153,7 +153,9 @@ export function registerGovernedTools(server: McpServer, ctx: McpToolContext): v
             422,
           );
         }
-        const funds = await budgetsService.getAdoptedBudgetFunds(svc, schemeId, schedule.budgetId);
+        const funds = schedule.budgetId
+          ? await budgetsService.getAdoptedBudgetFunds(svc, schemeId, schedule.budgetId)
+          : null;
         const lotRows = await svc.db.query.lots.findMany({ where: eq(lots.schemeId, schemeId) });
         if (lotRows.length === 0) throw new DomainError("NO_LOTS", "No lots to levy", 422);
         const existing = await svc.db.query.levyNotices.findFirst({
@@ -170,11 +172,23 @@ export function registerGovernedTools(server: McpServer, ctx: McpToolContext): v
           );
         }
 
-        const run = calculateLevyRun(
-          funds,
-          lotRows.map((l) => ({ lotId: l.id, liability: l.liability })),
-          schedule.instalments,
-        ).filter((r) => r.instalment === instalment);
+        const run = funds
+          ? calculateLevyRun(
+              funds,
+              lotRows.map((l) => ({ lotId: l.id, liability: l.liability })),
+              schedule.instalments,
+            ).filter((r) => r.instalment === instalment)
+          : (schedule.specialAllocations ?? []).map((allocation) => ({
+              lotId: allocation.lotId,
+              instalment: 1,
+              totalCents: allocation.amountCents,
+              lines: [
+                {
+                  fundKind: schedule.specialFundKind ?? ("admin" as const),
+                  amountCents: allocation.amountCents,
+                },
+              ],
+            }));
         const dueOn = addMonthsDateOnly(
           schedule.firstDueOn,
           (instalment - 1) * MONTHS_BETWEEN[schedule.frequency],
@@ -289,7 +303,7 @@ export function registerGovernedTools(server: McpServer, ctx: McpToolContext): v
   // ── resolve_decision ──────────────────────────────────────────────────────
   // Casts the caller's vote and lets the tally decide; on approval the
   // registered follow-up executor (code, never a model) runs the action —
-  // e.g. finance.adoptBudget. Member-gated like POST
+  // e.g. finance.approveBudgetProposal. Member-gated like POST
   // /:schemeId/decisions/:decisionId/resolve; the decider tier is enforced by
   // the decisions service (and pre-checked here so the dry-run is honest).
   server.registerTool(
@@ -297,7 +311,7 @@ export function registerGovernedTools(server: McpServer, ctx: McpToolContext): v
     {
       title: "Resolve a decision gate (two-phase preview → confirm)",
       description:
-        "Cast the caller's vote on a pending decision gate and let the tally resolve it: treasurer-tier decisions resolve on one eligible vote; committee/all-owners tiers resolve on a simple majority of eligible voters. ON APPROVAL any attached follow-up action executes (e.g. adopting a budget so levies can issue against it). Requires the mcp:govern scope; the caller must hold the decision's decider role (manager_admin bypasses). Call WITHOUT confirmToken first for a dry-run of the current tally and what would fire.",
+        "Cast the caller's vote on a pending decision gate and let the tally resolve it: treasurer-tier decisions resolve on one eligible vote; committee/all-owners tiers resolve on a simple majority of eligible voters. ON APPROVAL any attached follow-up action executes (for example approving a proposed budget for tabling; statutory adoption still requires a carried AGM/SGM motion). Requires the mcp:govern scope; the caller must hold the decision's decider role (manager_admin bypasses). Call WITHOUT confirmToken first for a dry-run of the current tally and what would fire.",
       inputSchema: {
         schemeId: z.string().describe("Scheme id from list_schemes"),
         decisionId: z.string().describe("Decision id from find_my_pending_actions"),

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { funds, lots, ownerships, people, schemes, users } from "@goodstrata/db";
+import { funds, lots, meetings, motions, ownerships, people, schemes, users } from "@goodstrata/db";
 import { provisionTestDatabase, type TestDatabase } from "@goodstrata/db/testing";
 import { integrationsFromEnv, mockPaymentsProvider } from "@goodstrata/integrations";
 import { type Actor, type Clock, fixedClock, systemActor, userActor } from "@goodstrata/shared";
@@ -9,6 +9,8 @@ import type { ServiceContext } from "../src/context.js";
 import * as arrearsService from "../src/services/arrears.js";
 import * as budgetsService from "../src/services/budgets.js";
 import * as decisionsService from "../src/services/decisions.js";
+import * as finalFeeNoticesService from "../src/services/finalFeeNotices.js";
+import * as interestAuthorisationsService from "../src/services/interestAuthorisations.js";
 import * as leviesService from "../src/services/levies.js";
 import * as paymentsService from "../src/services/payments.js";
 import * as trustAccountsService from "../src/services/trustAccounts.js";
@@ -105,6 +107,7 @@ afterAll(async () => {
 describe("the money loop", () => {
   let budgetId: string;
   let scheduleId: string;
+  let financeMotionId: string;
 
   it("drafts a budget and opens the treasurer decision gate", async () => {
     const ctx = ctxAt(T0, userActor(managerUserId));
@@ -129,7 +132,7 @@ describe("the money loop", () => {
     ).rejects.toThrow(/adopted/);
   });
 
-  it("treasurer approval adopts the budget via the code executor", async () => {
+  it("treasurer approval tables the proposal; a carried AGM motion adopts it", async () => {
     const ctx = ctxAt(T0, userActor(managerUserId));
     const pending = await decisionsService.listDecisions(ctx, schemeId, "pending");
     const resolved = await decisionsService.resolveDecision(
@@ -145,7 +148,36 @@ describe("the money loop", () => {
     // invoke the same code path directly.
     const execCtx = ctxAt(T0, systemActor("decision-executor"));
     const { executed } = await decisionsService.executeDecisionFollowUp(execCtx, pending[0]!.id);
-    expect(executed).toBe("finance.adoptBudget");
+    expect(executed).toBe("finance.approveBudgetProposal");
+
+    const [meeting] = await tdb.db
+      .insert(meetings)
+      .values({
+        schemeId,
+        kind: "agm",
+        title: "Annual general meeting",
+        scheduledAt: new Date(T0),
+        status: "closed",
+      })
+      .returning();
+    const [motion] = await tdb.db
+      .insert(motions)
+      .values({
+        schemeId,
+        meetingId: meeting!.id,
+        title: "Adopt annual budget and authorise interest",
+        text: "That the annual budget be adopted and 10% penalty interest be charged.",
+        resolutionType: "ordinary",
+        status: "carried",
+      })
+      .returning();
+    financeMotionId = motion!.id;
+    await budgetsService.adoptBudget(ctx, schemeId, budgetId, financeMotionId);
+    await interestAuthorisationsService.authoriseInterest(ctx, schemeId, {
+      motionId: financeMotionId,
+      rateBps: 1_000,
+      effectiveFrom: "2026-07-01",
+    });
 
     const budgets = await budgetsService.listBudgets(ctx, schemeId);
     expect(budgets[0]!.status).toBe("adopted");
@@ -298,6 +330,18 @@ describe("the money loop", () => {
     // Same day again — nothing new.
     const scan2 = await arrearsService.scanArrears(ctx40, schemeId);
     expect(scan2.emitted).toHaveLength(0);
+
+    // The statutory final notice must exist early enough for its own full
+    // 28-day standstill to expire before the later recovery decision executes.
+    const overdueNow = await arrearsService.arrearsForScheme(ctx40, schemeId);
+    for (const row of overdueNow) {
+      await finalFeeNoticesService.issueFinalFeeNotice(
+        ctxAt("2026-07-31T00:00:00Z", userActor(managerUserId)),
+        schemeId,
+        row.lotId,
+        { serviceMethod: "email" },
+      );
+    }
 
     // Day 61 → stage 4 for both.
     const ctx61 = ctxAt("2026-08-31T00:00:00Z");
