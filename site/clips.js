@@ -60,27 +60,23 @@
       return; // no video load, no controls (they ship `hidden`)
     }
 
-    // Make sure the video is ready for an explicit play request: preload="none"
-    // defers every byte, so start fetching once the clip is within ~600px of
-    // the viewport. Loading media here never starts playback.
+    // Reveal deferred posters shortly before their clips enter view. Do not
+    // warm the video itself here: a failed speculative source selection can
+    // leave browsers in NETWORK_NO_SOURCE without a media error, which makes a
+    // later user-initiated play request hang or reject. The explicit click is
+    // deliberately the first time the media is loaded.
     if ("IntersectionObserver" in window) {
-      var warm = new IntersectionObserver(
-        function (entries, obs) {
+      var posterObserver = new IntersectionObserver(
+        function (entries, observer) {
           entries.forEach(function (entry) {
             if (!entry.isIntersecting) return;
             ensurePoster();
-            if (video.readyState === 0 && video.paused) {
-              video.preload = "auto";
-              try {
-                video.load();
-              } catch (e) {}
-            }
-            obs.disconnect();
+            observer.disconnect();
           });
         },
         { rootMargin: "600px 0px" },
       );
-      warm.observe(clip);
+      posterObserver.observe(clip);
     }
 
     // --- Play-with-sound button (generic: built for every clip) ---
