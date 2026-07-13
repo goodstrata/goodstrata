@@ -9,7 +9,16 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("../src/lib/api", () => ({ api: jest.fn() }));
 jest.mock("../src/lib/files", () => ({ downloadAndShare: jest.fn() }));
-jest.mock("../src/lib/roles", () => ({ useIsOfficer: () => true }));
+jest.mock("../src/lib/roles", () => ({
+  useIsOfficer: () => true,
+  useSchemePresentation: () => ({
+    mode: "officer",
+    data: { scheme: { name: "Marina Views" }, roles: ["chair"] },
+    isError: false,
+    isRefetching: false,
+    refetch: jest.fn(),
+  }),
+}));
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn() }),

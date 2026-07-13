@@ -19,8 +19,9 @@ import {
   type as t,
   useTheme,
 } from "../../../src/components";
+import { OwnerObligationsCard } from "../../../src/components/OwnerObligationsCard";
 import { api } from "../../../src/lib/api";
-import { schemeQueryOptions, useIsOfficer } from "../../../src/lib/roles";
+import { getSchemePresentationMode, schemeQueryOptions } from "../../../src/lib/roles";
 
 interface SchemeOverview {
   scheme: {
@@ -94,25 +95,21 @@ export default function SchemeHub() {
   const scheme = detailQuery.data?.scheme;
   const overview = overviewQuery.data;
   const finance = overview?.finance;
+  const presentationMode = getSchemePresentationMode(detailQuery.data?.roles);
+  const isOwnerView = presentationMode === "owner";
+  const hasCommitteeView = presentationMode === "committee" || presentationMode === "officer";
 
   const refetchAll = () => queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
   const refreshing = detailQuery.isRefetching || overviewQuery.isRefetching;
-  const loading = (detailQuery.isPending || overviewQuery.isPending) && !scheme && !finance;
-  const failed = (detailQuery.isError && !scheme) || (overviewQuery.isError && !overview);
+  const loading =
+    presentationMode === "loading" ||
+    ((detailQuery.isPending || overviewQuery.isPending) && !scheme && !finance);
+  const failed =
+    (detailQuery.isError && !scheme) || (hasCommitteeView && overviewQuery.isError && !overview);
 
   const outstanding = finance?.arrearsOutstandingCents ?? 0;
   const lotsInArrears = finance?.lotsInArrears ?? 0;
   const pendingDecisions = overview?.attention.pendingDecisions ?? 0;
-
-  // Presentation-only role gate, mirroring web's OWNER vs COMMITTEE split
-  // (schemes.$schemeId.tsx). Officers/managers get the full register; plain
-  // owners and committee members get the focused resident view. Gate on
-  // `rolesLoaded` so the officer set (with Decisions) is never flashed before
-  // roles resolve. The API still enforces every read — hiding a row is UX.
-  const isOfficer = useIsOfficer(schemeId);
-  const rolesLoaded = !!detailQuery.data;
-  const isCommitteeMember = detailQuery.data?.roles.includes("committee_member") ?? false;
-  const isManagerAdmin = detailQuery.data?.roles.includes("manager_admin") ?? false;
 
   const financeSubtitle =
     lotsInArrears > 0
@@ -169,17 +166,13 @@ export default function SchemeHub() {
       subtitle: "Cover and ten-year capital works",
       path: `/scheme/${schemeId}/building-compliance`,
     },
-    ...(isManagerAdmin || isOfficer
-      ? [
-          {
-            key: "manager",
-            icon: "briefcase-outline" as const,
-            title: "Manager",
-            subtitle: "Appointment, delegation and registration",
-            path: `/scheme/${schemeId}/manager`,
-          },
-        ]
-      : []),
+    {
+      key: "manager",
+      icon: "briefcase-outline",
+      title: "Manager",
+      subtitle: "Appointment, delegation and registration",
+      path: `/scheme/${schemeId}/manager`,
+    },
     {
       key: "meetings",
       icon: "calendar-outline",
@@ -272,7 +265,7 @@ export default function SchemeHub() {
       key: "finance",
       icon: "cash-outline",
       title: "What I owe",
-      subtitle: financeSubtitle,
+      subtitle: "Your lot balances and statements",
       path: `/scheme/${schemeId}/finance`,
     },
     {
@@ -313,10 +306,9 @@ export default function SchemeHub() {
   ];
 
   // Anyone on the committee gets the full hub — governance, finance and the
-  // registers are their job, not a privilege of office. Officer POWERS (issuing
-  // levies, running the grievance procedure, …) still hang off isOfficer inside
-  // each screen, and the API enforces them independently.
-  const links = isOfficer || isCommitteeMember ? officerLinks : ownerLinks;
+  // registers are their job, not a privilege of office. Officer powers remain
+  // gated inside each destination and by the API.
+  const links = hasCommitteeView ? officerLinks : ownerLinks;
 
   return (
     <Screen
@@ -352,60 +344,62 @@ export default function SchemeHub() {
         </>
       ) : (
         <>
-          <Card onPress={() => router.push(`/scheme/${schemeId}/finance`)}>
-            <Text style={[t.label, { color: theme.muted }]}>Levies outstanding</Text>
-            <View style={{ marginTop: space(1) }}>
-              <Figure cents={outstanding} size="hero" tone={outstanding > 0 ? "crit" : "default"} />
-            </View>
-            {finance?.hasBudget ? (
-              <Text style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}>
-                Admin {money(finance.adminCents)} · Maintenance {money(finance.maintenanceCents)}
-              </Text>
-            ) : null}
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginTop: space(3),
-              }}
-            >
-              <Text style={{ ...t.bodySmall, color: theme.muted }}>
-                {overview
-                  ? `${overview.glance.lots} lot${overview.glance.lots === 1 ? "" : "s"} · levied ${money(finance?.leviedCents ?? 0)}`
-                  : "Levies, payments and arrears"}
-              </Text>
-              {lotsInArrears > 0 ? (
-                <StatusPill
-                  tone="crit"
-                  label={`${lotsInArrears} lot${lotsInArrears === 1 ? "" : "s"} overdue`}
+          {isOwnerView ? (
+            <OwnerObligationsCard schemeId={schemeId} />
+          ) : (
+            <Card onPress={() => router.push(`/scheme/${schemeId}/finance`)}>
+              <Text style={[t.label, { color: theme.muted }]}>Levies outstanding</Text>
+              <View style={{ marginTop: space(1) }}>
+                <Figure
+                  cents={outstanding}
+                  size="hero"
+                  tone={outstanding > 0 ? "crit" : "default"}
                 />
-              ) : (
-                <StatusPill tone="ok" label="Paid up" />
-              )}
-            </View>
-          </Card>
+              </View>
+              {finance?.hasBudget ? (
+                <Text style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}>
+                  Admin {money(finance.adminCents)} · Maintenance {money(finance.maintenanceCents)}
+                </Text>
+              ) : null}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginTop: space(3),
+                }}
+              >
+                <Text style={{ ...t.bodySmall, color: theme.muted }}>
+                  {overview
+                    ? `${overview.glance.lots} lot${overview.glance.lots === 1 ? "" : "s"} · levied ${money(finance?.leviedCents ?? 0)}`
+                    : "Levies, payments and arrears"}
+                </Text>
+                {lotsInArrears > 0 ? (
+                  <StatusPill
+                    tone="crit"
+                    label={`${lotsInArrears} lot${lotsInArrears === 1 ? "" : "s"} overdue`}
+                  />
+                ) : (
+                  <StatusPill tone="ok" label="Paid up" />
+                )}
+              </View>
+            </Card>
+          )}
 
           <SectionHeader label="In this scheme" />
           <Card>
-            {rolesLoaded
-              ? links.map((link, i) => (
-                  <ListRow
-                    key={link.key}
-                    title={link.title}
-                    subtitle={link.subtitle}
-                    leading={<Ionicons name={link.icon} size={18} color={theme.accent} />}
-                    onPress={link.path ? () => router.push(link.path!) : undefined}
-                    chevron={!!link.path}
-                    right={undefined}
-                    divider={i < links.length - 1}
-                  />
-                ))
-              : [0, 1, 2, 3].map((i) => (
-                  <View key={i} style={{ paddingVertical: space(3) }}>
-                    <Skeleton width={i % 2 ? "55%" : "70%"} height={16} />
-                  </View>
-                ))}
+            {links.map((link, i) => (
+              <ListRow
+                key={link.key}
+                title={link.title}
+                subtitle={link.subtitle}
+                leading={<Ionicons name={link.icon} size={18} color={theme.accent} />}
+                onPress={link.path ? () => router.push(link.path!) : undefined}
+                chevron={!!link.path}
+                right={undefined}
+                divider={i < links.length - 1}
+              />
+            ))}
           </Card>
         </>
       )}

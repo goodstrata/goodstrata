@@ -25,10 +25,39 @@ const COMMITTEE_ROLES = ["committee_member", "chair", "secretary", "treasurer"];
 /** Everyone who sits on the committee, plus the manager. Drives the full hub. */
 const COMMITTEE_VIEW_ROLES = [...COMMITTEE_ROLES, "manager_admin"];
 
+/**
+ * The presentation tier is deliberately not a boolean: `loading` must remain
+ * distinct from `owner`, otherwise a cold route can briefly render personal
+ * balances before the cached scheme roles resolve.
+ */
+export type SchemePresentationMode = "loading" | "owner" | "committee" | "officer";
+
+/** Pure role permutation helper for route data and cached scheme lists. */
+export function getSchemePresentationMode(
+  roles: readonly string[] | undefined,
+): SchemePresentationMode {
+  if (roles === undefined) return "loading";
+  if (roles.some((role) => OFFICER_ROLES.includes(role))) return "officer";
+  if (roles.some((role) => COMMITTEE_VIEW_ROLES.includes(role))) return "committee";
+  return "owner";
+}
+
+/**
+ * Shared scheme-role subscription for screens that need a loading-safe
+ * presentation mode as well as query failure/refetch state.
+ */
+export function useSchemePresentation(schemeId: string) {
+  const query = useQuery({ ...schemeQueryOptions(schemeId), enabled: !!schemeId });
+  return {
+    ...query,
+    roles: query.data?.roles ?? [],
+    mode: getSchemePresentationMode(query.data?.roles),
+  };
+}
+
 /** Roles the signed-in user holds on this scheme ([] while loading). */
 export function useSchemeRoles(schemeId: string): string[] {
-  const { data } = useQuery(schemeQueryOptions(schemeId));
-  return data?.roles ?? [];
+  return useSchemePresentation(schemeId).roles;
 }
 
 /**
@@ -46,13 +75,12 @@ export function useIsOfficer(schemeId: string): boolean {
  * A committee member is NOT an owner viewer: they sit on the governing body, so
  * they get the full hub (governance, finance, the registers). What they don't
  * get is officer POWERS — those hang off useIsOfficer. Mirrors web's
- * apps/web/src/lib/roles.ts. Returns false while roles are still loading
- * (roles === []), so the committee layout is never flashed before the owner
- * layout resolves. Presentation only; the API still enforces access.
+ * apps/web/src/lib/roles.ts. Returns false while the scheme query is still
+ * loading, so neither resolved layout is flashed early. Presentation only;
+ * the API still enforces access.
  */
 export function useIsOwnerView(schemeId: string): boolean {
-  const roles = useSchemeRoles(schemeId);
-  return roles.length > 0 && !roles.some((r) => COMMITTEE_VIEW_ROLES.includes(r));
+  return useSchemePresentation(schemeId).mode === "owner";
 }
 
 /** Mirrors core's rolesAllowedToDecide for a decision's decider tier. */

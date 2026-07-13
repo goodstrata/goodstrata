@@ -24,7 +24,11 @@ export function ErrorState({
 }: ErrorStateProps) {
   const theme = useTheme();
   return (
-    <View style={{ alignItems: "center", paddingVertical: space(12), paddingHorizontal: space(6) }}>
+    <View
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+      style={{ alignItems: "center", paddingVertical: space(12), paddingHorizontal: space(6) }}
+    >
       <View
         style={{
           width: 40,

@@ -68,12 +68,13 @@ export function Button({
       accessibilityState={{ disabled: isDisabled, busy: !!pending }}
       style={[
         {
-          height: 50,
+          minHeight: 50,
           borderRadius: radius.control,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
           paddingHorizontal: space(5),
+          paddingVertical: space(3),
           minWidth: pending ? lockedWidth : undefined,
         },
         variantStyle,

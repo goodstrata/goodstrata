@@ -1,5 +1,14 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { Modal, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -17,6 +26,8 @@ export interface SheetProps {
   /** Backdrop tap and Android back both call this. */
   onClose: () => void;
   children: ReactNode;
+  /** Disable only when the caller already supplies its own vertical scroller. */
+  scrollable?: boolean;
 }
 
 /**
@@ -25,7 +36,7 @@ export interface SheetProps {
  * reduce-motion the sheet fades instead of sliding. Content padding
  * space(5) + safe-area bottom.
  */
-export function Sheet({ visible, onClose, children }: SheetProps) {
+export function Sheet({ visible, onClose, children, scrollable = true }: SheetProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -86,20 +97,53 @@ export function Sheet({ visible, onClose, children }: SheetProps) {
             accessibilityLabel="Close"
           />
         </Animated.View>
-        <Animated.View
-          style={[
-            {
-              backgroundColor: theme.surface,
-              borderTopLeftRadius: radius.card,
-              borderTopRightRadius: radius.card,
-              padding: space(5),
-              paddingBottom: insets.bottom + space(5),
-            },
-            sheetStyle,
-          ]}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          pointerEvents="box-none"
+          style={{ width: "100%", alignItems: "center", justifyContent: "flex-end" }}
         >
-          {children}
-        </Animated.View>
+          <Animated.View
+            accessibilityViewIsModal
+            importantForAccessibility="yes"
+            onAccessibilityEscape={onClose}
+            style={[
+              {
+                width: "100%",
+                maxWidth: 640,
+                maxHeight: windowHeight * 0.85,
+                backgroundColor: theme.surface,
+                borderTopLeftRadius: radius.card,
+                borderTopRightRadius: radius.card,
+                overflow: "hidden",
+              },
+              sheetStyle,
+            ]}
+          >
+            {scrollable ? (
+              <ScrollView
+                testID="sheet-scroll-view"
+                automaticallyAdjustKeyboardInsets
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{
+                  padding: space(5),
+                  paddingBottom: insets.bottom + space(5),
+                }}
+              >
+                {children}
+              </ScrollView>
+            ) : (
+              <View
+                style={{
+                  padding: space(5),
+                  paddingBottom: insets.bottom + space(5),
+                }}
+              >
+                {children}
+              </View>
+            )}
+          </Animated.View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

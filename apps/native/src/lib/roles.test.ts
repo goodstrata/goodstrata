@@ -1,5 +1,6 @@
 import {
   canDecide,
+  getSchemePresentationMode,
   OFFICER_ROLES,
   schemeQueryOptions,
   useIsOfficer,
@@ -71,6 +72,38 @@ describe("schemeQueryOptions", () => {
 
     options.queryFn();
     expect(mockApi).toHaveBeenCalledWith("/api/schemes/s1");
+  });
+});
+
+describe("getSchemePresentationMode — role permutations", () => {
+  it("keeps unresolved roles in an explicit loading state", () => {
+    expect(getSchemePresentationMode(undefined)).toBe("loading");
+  });
+
+  it.each([
+    [[]],
+    [["owner"]],
+    [["member"]],
+    [["owner", "member"]],
+  ])("uses the personal owner presentation for %j", (roles) => {
+    expect(getSchemePresentationMode(roles)).toBe("owner");
+  });
+
+  it.each([
+    [["committee_member"]],
+    [["owner", "committee_member"]],
+  ])("uses the read-only committee presentation for %j", (roles) => {
+    expect(getSchemePresentationMode(roles)).toBe("committee");
+  });
+
+  it.each([
+    [["chair"]],
+    [["secretary"]],
+    [["treasurer"]],
+    [["manager_admin"]],
+    [["owner", "committee_member", "chair"]],
+  ])("lets an officer role take precedence for %j", (roles) => {
+    expect(getSchemePresentationMode(roles)).toBe("officer");
   });
 });
 

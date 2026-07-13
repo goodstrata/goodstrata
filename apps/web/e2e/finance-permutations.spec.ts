@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { attemptId, attemptPlan, expectPrefilledInviteName } from "./test-fixtures";
+import {
+  attemptId,
+  attemptPlan,
+  expectPrefilledInviteName,
+  schemeIdFromPage,
+} from "./test-fixtures";
 
 const API = "http://localhost:3105";
 
@@ -264,6 +269,101 @@ test("finance permutations: officer error paths, manual payment rail, owner gati
   }
   await expect(ownerPage.getByText("BSB", { exact: true })).toHaveCount(0);
   await expect(ownerPage.getByText(/webhook last seen/)).toHaveCount(0);
+
+  // Amount due is aggregated per lot: a credit on one lot must not offset a
+  // debt on another and make the owner look more paid-up than they are.
+  const ownerSchemeId = schemeIdFromPage(ownerPage);
+  const lotsPattern = new RegExp(`/api/schemes/${ownerSchemeId}/lots$`);
+  const statementsPattern = new RegExp(`/api/schemes/${ownerSchemeId}/lots/[^/]+/statement$`);
+  await ownerPage.route(lotsPattern, async (route) => {
+    await route.fulfill({
+      json: {
+        lots: [
+          {
+            id: "owner-due-lot",
+            lotNumber: "1",
+            unitNumber: null,
+            owners: [{ personId: "owner-one", email: ownerEmail }],
+          },
+          {
+            id: "owner-credit-lot",
+            lotNumber: "2",
+            unitNumber: null,
+            owners: [{ personId: "owner-one", email: ownerEmail }],
+          },
+        ],
+      },
+    });
+  });
+  let failStatements = false;
+  await ownerPage.route(statementsPattern, async (route) => {
+    if (failStatements) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "TEMPORARILY_UNAVAILABLE", message: "Try again shortly" },
+        }),
+      });
+      return;
+    }
+    const isCreditLot = new URL(route.request().url()).pathname.includes("owner-credit-lot");
+    await route.fulfill({
+      json: { entries: [], balanceCents: isCreditLot ? -15_000 : 20_000 },
+    });
+  });
+  await ownerPage.goto(`/schemes/${ownerSchemeId}?section=finance`);
+  let ownerFinanceCard = ownerPage
+    .locator('[data-slot="card"]')
+    .filter({ hasText: "My levies" })
+    .first();
+  await expect(ownerFinanceCard.getByText("$200.00", { exact: true })).toBeVisible();
+  await expect(ownerFinanceCard.getByText("$50.00", { exact: true })).toHaveCount(0);
+
+  // A failed statement is unknown, not a reassuring zero. Keep the controlled
+  // lots response, fail both statement reads, and reload into a fresh cache.
+  failStatements = true;
+  await ownerPage.goto(`/schemes/${ownerSchemeId}?section=finance`);
+  ownerFinanceCard = ownerPage
+    .locator('[data-slot="card"]')
+    .filter({ hasText: "My levies" })
+    .first();
+  await expect(
+    ownerFinanceCard.getByText("We couldn't confirm your levy balance", { exact: true }),
+  ).toBeVisible();
+  await expect(ownerFinanceCard.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(ownerFinanceCard.getByText("$0.00", { exact: true })).toHaveCount(0);
+  await expect(ownerFinanceCard.getByText(/all paid up/i)).toHaveCount(0);
+  await ownerPage.unroute(lotsPattern);
+  await ownerPage.unroute(statementsPattern);
+
+  // A failed lot register is handled the same way and cannot fall through to
+  // the otherwise-valid "no lot linked" empty state.
+  const lotsFailurePattern = new RegExp(`/api/schemes/${ownerSchemeId}/lots(?:\\?.*)?$`);
+  await ownerPage.route(lotsFailurePattern, async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: { code: "TEMPORARILY_UNAVAILABLE", message: "Try again shortly" },
+      }),
+    });
+  });
+  await ownerPage.goto(`/schemes/${ownerSchemeId}?section=finance`);
+  ownerFinanceCard = ownerPage
+    .locator('[data-slot="card"]')
+    .filter({ hasText: "My levies" })
+    .first();
+  await expect(
+    ownerFinanceCard.getByText("We couldn't confirm your levy balance", { exact: true }),
+  ).toBeVisible();
+  await expect(ownerFinanceCard.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(ownerFinanceCard.getByText("$0.00", { exact: true })).toHaveCount(0);
+  await expect(ownerFinanceCard.getByText(/all paid up/i)).toHaveCount(0);
+  await expect(
+    ownerFinanceCard.getByText("No lot linked to your account yet", { exact: true }),
+  ).toHaveCount(0);
+  await ownerPage.unroute(lotsFailurePattern);
 
   await ownerContext.close();
 });

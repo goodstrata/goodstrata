@@ -75,7 +75,9 @@ export function Screen({
             {eyebrow || " "}
           </Text>
         ) : null}
-        <Text style={[type.display, { color: theme.text }]}>{title}</Text>
+        <Text accessibilityRole="header" style={[type.display, { color: theme.text }]}>
+          {title}
+        </Text>
       </View>
       {headerRight ? (
         <View
@@ -96,6 +98,9 @@ export function Screen({
     <SafeAreaView edges={topInset ? ["top"] : []} style={{ flex: 1, backgroundColor: theme.bg }}>
       {scroll ? (
         <ScrollView
+          testID="screen-scroll-view"
+          automaticallyAdjustKeyboardInsets
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: space(10) }}
           refreshControl={
             onRefresh ? (

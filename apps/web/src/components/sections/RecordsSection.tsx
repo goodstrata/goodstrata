@@ -373,7 +373,7 @@ function InspectionRequestForm({
         <Field label="Requester name">
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
           <Field label="Entitlement">
             {(control) => (
               <Select value={type} onValueChange={setType}>
@@ -404,7 +404,11 @@ function InspectionRequestForm({
             )}
           </Field>
         </div>
-        {create.error && <p className="text-sm text-critical">{create.error.message}</p>}
+        {create.error && (
+          <p role="alert" className="text-sm text-critical">
+            {create.error.message}
+          </p>
+        )}
         <Button pending={create.isPending} disabled={!name.trim()} onClick={() => create.mutate()}>
           Lodge written request
         </Button>
@@ -454,7 +458,7 @@ function CertificateRequestForm({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
           <Field label="Lot">
             {(control) => (
               <Select value={lotId} onValueChange={setLotId}>
@@ -498,7 +502,11 @@ function CertificateRequestForm({
         <p className="text-xs text-muted-foreground">
           Maximum fee for this service: ${(urgencyFees[urgency] / 100).toFixed(2)} ex GST (2026–27).
         </p>
-        {create.error && <p className="text-sm text-critical">{create.error.message}</p>}
+        {create.error && (
+          <p role="alert" className="text-sm text-critical">
+            {create.error.message}
+          </p>
+        )}
         <Button
           pending={create.isPending}
           disabled={!lotId || !name.trim()}
@@ -786,7 +794,11 @@ function IssueCertificateForm({
       <Field className="sm:col-span-2" label="Additional work disclosure">
         <Textarea value={works} onChange={(e) => setWorks(e.target.value)} />
       </Field>
-      {issue.error && <p className="text-sm text-critical sm:col-span-2">{issue.error.message}</p>}
+      {issue.error && (
+        <p role="alert" className="text-sm text-critical sm:col-span-2">
+          {issue.error.message}
+        </p>
+      )}
       <Button
         className="sm:col-span-2 sm:w-fit"
         pending={issue.isPending}

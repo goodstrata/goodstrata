@@ -44,7 +44,19 @@ describe("Screen", () => {
         <Text>rows</Text>
       </Screen>,
     );
-    expect(screen.getByText("Levies")).toBeOnTheScreen();
+    expect(screen.getByRole("header", { name: "Levies" })).toBeOnTheScreen();
+  });
+
+  it("keeps keyboard-open actions reachable in scrolling screens", async () => {
+    await render(
+      <Screen title="Add person">
+        <Text>Form</Text>
+      </Screen>,
+    );
+
+    const scrollView = screen.getByTestId("screen-scroll-view");
+    expect(scrollView.props.keyboardShouldPersistTaps).toBe("handled");
+    expect(scrollView.props.automaticallyAdjustKeyboardInsets).toBe(true);
   });
 
   it("shows the mono eyebrow above the title when provided", async () => {

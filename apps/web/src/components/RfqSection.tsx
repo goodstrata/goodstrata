@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, FileSearch, Gavel, HardHat, Plus, Send } from "lucide-react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Markdown } from "@/components/Markdown";
@@ -23,7 +23,6 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { FormMessage } from "@/components/ui/form-message";
 import { Input } from "@/components/ui/input";
-import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { Money } from "@/components/ui/money";
 import {
   Select,
@@ -45,6 +44,32 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, unwrap } from "@/lib/api";
 import { FormError, fieldError, SubmitButton, useAppForm } from "@/lib/form";
 import { formatDate } from "@/lib/format";
+
+const MarkdownEditor = lazy(() =>
+  import("@/components/ui/markdown-editor").then((module) => ({
+    default: module.MarkdownEditor,
+  })),
+);
+
+function ScopeEditorSkeleton({ id, describedBy }: { id: string; describedBy?: string }) {
+  return (
+    <div
+      id={id}
+      role="status"
+      aria-busy="true"
+      aria-describedby={describedBy}
+      className="min-h-40 space-y-2 rounded-md border border-input bg-transparent p-3 shadow-xs"
+    >
+      <div aria-hidden="true" className="space-y-2">
+        <Skeleton className="h-3 w-2/5" />
+        <Skeleton className="h-3 w-11/12" />
+        <Skeleton className="h-3 w-10/12" />
+        <Skeleton className="h-3 w-3/5" />
+      </div>
+      <span className="sr-only">Loading scope editor…</span>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types mirroring tradeRfqService's read shapes (listRfqs / getRfq).
@@ -430,14 +455,23 @@ function SendRfqDialog({
               hint={`Sent as written. Trade: ${rfq.category} · Location shared: ${rfq.suburb} (suburb only).`}
             >
               {(controlProps) => (
-                <MarkdownEditor
-                  {...controlProps}
-                  data-testid="rfq-spec"
-                  value={spec}
-                  onValueChange={setEditedSpec}
-                  loading={drafting}
-                  loadingLabel="The agent is drafting the scope…"
-                />
+                <Suspense
+                  fallback={
+                    <ScopeEditorSkeleton
+                      id={controlProps.id}
+                      describedBy={controlProps["aria-describedby"]}
+                    />
+                  }
+                >
+                  <MarkdownEditor
+                    {...controlProps}
+                    data-testid="rfq-spec"
+                    value={spec}
+                    onValueChange={setEditedSpec}
+                    loading={drafting}
+                    loadingLabel="The agent is drafting the scope…"
+                  />
+                </Suspense>
               )}
             </Field>
             <Field label="Quotes due" hint="Optional — a due date is included in the invitation.">
@@ -1096,7 +1130,7 @@ function AddQuoteDialog({
                       </Field>
                     )}
                   </form.Field>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
                     <form.Field name="email">
                       {(field) => (
                         <Field label="Email" error={fieldError(field.state.meta.errors)}>
@@ -1136,7 +1170,7 @@ function AddQuoteDialog({
               ) : null
             }
           </form.Subscribe>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
             <form.Field name="amount">
               {(field) => (
                 <Field
@@ -1231,7 +1265,7 @@ function AddQuoteDialog({
               Zero hidden margin: if any platform or referral fee applies to this quote, record it
               here with its recipient. It appears on the committee decision and the audit log.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
               <form.Field name="platformFee">
                 {(field) => (
                   <Field label="Platform fee ($)" error={fieldError(field.state.meta.errors)}>

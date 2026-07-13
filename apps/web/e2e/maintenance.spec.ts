@@ -151,6 +151,72 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   await ownerPage.getByRole("button", { name: "Create account & join" }).click();
   await ownerPage.waitForURL(/\/schemes\//);
 
+  // The owner shell remains legible at the narrow end of supported phones:
+  // the Registry Plate wraps instead of ellipsising, and the five-column bar
+  // keeps 12px task labels rather than shrinking long internal vocabulary.
+  const ownerSchemeId = schemeIdFromPage(ownerPage);
+  await ownerPage.setViewportSize({ width: 360, height: 800 });
+  const ownerHeading = ownerPage.getByRole("heading", { name: SCHEME_NAME });
+  await expect(ownerHeading).toBeVisible();
+  const headingLayout = await ownerHeading.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      textOverflow: style.textOverflow,
+      whiteSpace: style.whiteSpace,
+    };
+  });
+  expect(headingLayout.scrollWidth).toBeLessThanOrEqual(headingLayout.clientWidth + 1);
+  expect(headingLayout.textOverflow).not.toBe("ellipsis");
+  expect(headingLayout.whiteSpace).not.toBe("nowrap");
+  await expect(ownerPage.getByText("Viewing as Lot owner", { exact: true })).toBeVisible();
+
+  const brandMarks = ownerPage.locator(
+    'img[src="/mark-on-light.svg"], img[src="/mark-on-dark.svg"]',
+  );
+  await expect(brandMarks).toHaveCount(2);
+  expect(
+    await brandMarks.evaluateAll(
+      (marks) => marks.filter((mark) => getComputedStyle(mark).display !== "none").length,
+    ),
+  ).toBe(1);
+
+  const ownerNav = ownerPage.getByRole("navigation", { name: "Scheme sections" });
+  for (const label of ["Home", "Report", "Levies", "Meetings", "More"]) {
+    const navLabel = ownerNav.getByText(label, { exact: true });
+    await expect(navLabel).toBeVisible();
+    expect(
+      Number.parseFloat(await navLabel.evaluate((element) => getComputedStyle(element).fontSize)),
+    ).toBeGreaterThanOrEqual(12);
+  }
+
+  await ownerNav.getByRole("button", { name: "More sections" }).click();
+  for (const group of ["Everyday", "Meetings & decisions", "Building records"]) {
+    await expect(ownerPage.getByRole("heading", { name: group, level: 3 })).toBeVisible();
+  }
+  await ownerPage.getByRole("link", { name: "Documents", exact: true }).click();
+  const activeMore = ownerNav.getByRole("button", {
+    name: "More sections, current section: Documents",
+  });
+  await expect(activeMore).toHaveAttribute("aria-current", "page");
+  await expect(ownerNav.getByTestId("more-active-indicator")).toBeVisible();
+
+  // A fresh hidden-section deep link waits for roles and redirects without
+  // ever mounting the committee-only Agents query.
+  let agentRunRequests = 0;
+  const countAgentRuns = (request: import("@playwright/test").Request) => {
+    if (/\/api\/schemes\/[^/]+\/agent-runs(?:\?|$)/.test(request.url())) agentRunRequests += 1;
+  };
+  ownerPage.on("request", countAgentRuns);
+  await ownerPage.goto(`/schemes/${ownerSchemeId}?section=agents`);
+  await expect(ownerPage).toHaveURL(/[?&]section=overview/);
+  expect(agentRunRequests).toBe(0);
+  ownerPage.off("request", countAgentRuns);
+
+  // Return to the wider layout for the existing maintenance role journey.
+  await ownerPage.setViewportSize({ width: 1280, height: 800 });
+
   await section(ownerPage, "report an issue").click();
 
   // Any member can watch requests — the manager's report is visible.
@@ -175,6 +241,42 @@ test("maintenance: contractor pool + report issue validation + owner role gating
   // The manager's polling list (3s refetch) picks the owner's report up
   // without a reload — Playwright waits, no sleeps.
   await expect(page.getByTestId("mr-Broken intercom at entry")).toBeVisible({ timeout: 15_000 });
+
+  // On the active owner home, failed summary reads stay visibly unknown. They
+  // must not become a zero balance or false "nothing here" reassurance.
+  const ownerSummaryFailurePattern = new RegExp(
+    `/api/schemes/${ownerSchemeId}/(?:lots|maintenance|community/posts)(?:\\?.*)?$`,
+  );
+  await ownerPage.route(ownerSummaryFailurePattern, async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: { code: "TEMPORARILY_UNAVAILABLE", message: "Try again shortly" },
+      }),
+    });
+  });
+  await ownerPage.goto(`/schemes/${ownerSchemeId}?section=overview`);
+  await expect(
+    ownerPage.getByText("We couldn't confirm your levy balance", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    ownerPage.getByText("We couldn't load building requests", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    ownerPage.getByText("We couldn't load building updates", { exact: true }),
+  ).toBeVisible();
+  await expect(ownerPage.getByRole("button", { name: "Try again" })).toHaveCount(3);
+  for (const falseReassurance of [
+    "$0.00",
+    "No lot linked to your account yet",
+    "Nothing reported",
+    "Nothing posted yet",
+  ]) {
+    await expect(ownerPage.getByText(falseReassurance, { exact: true })).toHaveCount(0);
+  }
+  await expect(ownerPage.getByText(/all paid up/i)).toHaveCount(0);
+  await ownerPage.unroute(ownerSummaryFailurePattern);
 
   await ownerContext.close();
 });

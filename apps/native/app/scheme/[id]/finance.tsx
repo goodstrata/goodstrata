@@ -25,7 +25,8 @@ import {
 } from "../../../src/components";
 import { api } from "../../../src/lib/api";
 import { downloadAndShare } from "../../../src/lib/files";
-import { useIsOfficer } from "../../../src/lib/roles";
+import { summarizeOwnerObligations } from "../../../src/lib/ownerFinance";
+import { useIsOfficer, useSchemePresentation } from "../../../src/lib/roles";
 
 interface SchemeOverview {
   scheme: {
@@ -158,6 +159,9 @@ export default function SchemeFinance() {
   const schemeId = typeof params.id === "string" ? params.id : "";
   const focus = typeof params.focus === "string" ? params.focus : "";
   const focusType = typeof params.focusType === "string" ? params.focusType : "";
+  const presentation = useSchemePresentation(schemeId);
+  const isOwnerView = presentation.mode === "owner";
+  const hasCommitteeView = presentation.mode === "committee" || presentation.mode === "officer";
   const isOfficer = useIsOfficer(schemeId);
   const queryClient = useQueryClient();
   const [showAllPayments, setShowAllPayments] = useState(false);
@@ -175,7 +179,7 @@ export default function SchemeFinance() {
   const paymentsQuery = useQuery({
     queryKey: ["scheme", schemeId, "payments"],
     queryFn: () => api<{ payments: Payment[] }>(`/api/schemes/${schemeId}/payments`),
-    enabled: !!schemeId && isOfficer,
+    enabled: !!schemeId && hasCommitteeView,
   });
   const focusedPaymentQuery = useQuery({
     queryKey: ["scheme", schemeId, "payments", "focused", focus],
@@ -186,19 +190,19 @@ export default function SchemeFinance() {
   const arrearsQuery = useQuery({
     queryKey: ["scheme", schemeId, "arrears"],
     queryFn: () => api<{ arrears: ArrearsEntry[] }>(`/api/schemes/${schemeId}/arrears`),
-    enabled: !!schemeId && isOfficer,
+    enabled: !!schemeId && hasCommitteeView,
   });
   const myLotsQuery = useQuery({
     queryKey: ["scheme", schemeId, "lots", "mine"],
     queryFn: () => api<{ lots: OwnerLot[] }>(`/api/schemes/${schemeId}/lots/mine`),
-    enabled: !!schemeId && !isOfficer,
+    enabled: !!schemeId && isOwnerView,
   });
   const myLots = myLotsQuery.data?.lots ?? [];
   const myStatementQueries = useQueries({
     queries: myLots.map((lot) => ({
       queryKey: ["scheme", schemeId, "lot-statement", lot.id] as const,
       queryFn: () => api<OwnerStatement>(`/api/schemes/${schemeId}/lots/${lot.id}/statement`),
-      enabled: !isOfficer,
+      enabled: isOwnerView,
     })),
   });
 
@@ -210,8 +214,23 @@ export default function SchemeFinance() {
 
   const entering = useListEntering(paymentsQuery.isSuccess);
 
+  const ownerStatementsFailed = myStatementQueries.some((query) => query.isError);
+  const ownerDataFailed = myLotsQuery.isError || ownerStatementsFailed;
+  const ownerDataLoading =
+    myLotsQuery.isPending || myStatementQueries.some((query) => query.isPending);
+  const ownerSummary = summarizeOwnerObligations(
+    myStatementQueries.flatMap((query) => (query.data ? [query.data.balanceCents] : [])),
+  );
+  const refetchOwnerData = () => {
+    void Promise.all([
+      myLotsQuery.refetch(),
+      ...myStatementQueries.map((query) => query.refetch()),
+    ]);
+  };
+
   const refetchAll = () => queryClient.invalidateQueries({ queryKey: ["scheme", schemeId] });
   const refreshing =
+    presentation.isRefetching ||
     overviewQuery.isRefetching ||
     payStatusQuery.isRefetching ||
     paymentsQuery.isRefetching ||
@@ -220,15 +239,30 @@ export default function SchemeFinance() {
     myLotsQuery.isRefetching ||
     myStatementQueries.some((query) => query.isRefetching);
 
-  if (overviewQuery.isError && !overview) {
+  if (presentation.isError && !presentation.data) {
     return (
       <Screen title="Finance" topInset={false} refreshing={refreshing} onRefresh={refetchAll}>
-        <ErrorState onRetry={refetchAll} />
+        <ErrorState
+          title="Couldn't load your scheme access"
+          detail="Your role must be confirmed before finance can be shown."
+          onRetry={() => presentation.refetch()}
+        />
       </Screen>
     );
   }
 
-  if (overviewQuery.isPending && !finance) {
+  if (overviewQuery.isError && !overview && hasCommitteeView) {
+    return (
+      <Screen title="Finance" topInset={false} refreshing={refreshing} onRefresh={refetchAll}>
+        <ErrorState onRetry={() => overviewQuery.refetch()} />
+      </Screen>
+    );
+  }
+
+  if (
+    presentation.mode === "loading" ||
+    (hasCommitteeView && overviewQuery.isPending && !finance)
+  ) {
     return (
       <Screen title="Finance" topInset={false}>
         <Card>
@@ -240,7 +274,6 @@ export default function SchemeFinance() {
             <Skeleton width="50%" height={14} />
           </View>
         </Card>
-        <SectionHeader label="Recent payments" />
         <Card>
           {[0, 1, 2].map((i) => (
             <View key={i} style={{ paddingVertical: space(3) }}>
@@ -252,14 +285,8 @@ export default function SchemeFinance() {
     );
   }
 
-  const ownerOutstanding = myStatementQueries.reduce(
-    (sum, query) => sum + Math.max(0, query.data?.balanceCents ?? 0),
-    0,
-  );
-  const outstanding = isOfficer ? (finance?.arrearsOutstandingCents ?? 0) : ownerOutstanding;
-  const lotsInArrears = isOfficer
-    ? (finance?.lotsInArrears ?? 0)
-    : myStatementQueries.filter((query) => (query.data?.balanceCents ?? 0) > 0).length;
+  const outstanding = finance?.arrearsOutstandingCents ?? 0;
+  const lotsInArrears = finance?.lotsInArrears ?? 0;
   const noticeCount = finance?.noticeCount ?? 0;
   const overdueSince =
     arrears.length > 0
@@ -272,7 +299,9 @@ export default function SchemeFinance() {
     payments.find((payment) => payment.id === focus) ?? focusedPaymentQuery.data?.payment;
   const recentBase = showAllPayments ? payments : payments.slice(0, 5);
   const recent =
-    isOfficer && focusedPayment && !recentBase.some((payment) => payment.id === focusedPayment.id)
+    hasCommitteeView &&
+    focusedPayment &&
+    !recentBase.some((payment) => payment.id === focusedPayment.id)
       ? [focusedPayment, ...recentBase]
       : recentBase;
 
@@ -280,52 +309,133 @@ export default function SchemeFinance() {
     <Screen
       title="Finance"
       topInset={false}
-      eyebrow={overview?.scheme.name}
+      eyebrow={overview?.scheme.name ?? presentation.data?.scheme.name}
       reserveEyebrow
       refreshing={refreshing}
       onRefresh={refetchAll}
     >
-      <Card>
-        <Text style={[t.label, { color: theme.muted }]}>Levies outstanding</Text>
-        <View style={{ marginTop: space(1) }}>
-          <Figure cents={outstanding} size="hero" tone={outstanding > 0 ? "crit" : "default"} />
-        </View>
-        {isOfficer && finance?.hasBudget ? (
-          <Text style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}>
-            Admin {money(finance.adminCents)} · Maintenance {money(finance.maintenanceCents)}
-          </Text>
-        ) : null}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginTop: space(3),
-          }}
-        >
-          <Text style={{ ...t.bodySmall, color: theme.muted }}>
-            {isOfficer
-              ? `${noticeCount} levy notice${noticeCount === 1 ? "" : "s"} · levied ${money(finance?.leviedCents ?? 0)}`
-              : `${myLots.length} linked lot${myLots.length === 1 ? "" : "s"}`}
-          </Text>
-          {lotsInArrears > 0 ? (
-            <StatusPill
-              tone="crit"
-              label={`${lotsInArrears} lot${lotsInArrears === 1 ? "" : "s"} overdue`}
+      {isOwnerView ? (
+        ownerDataFailed ? (
+          <ErrorState
+            title="Couldn't load your levy balance"
+            detail={
+              ownerStatementsFailed
+                ? "One or more lot statements didn't load, so no total or payment status is shown."
+                : "Your linked lots didn't load, so no balance is shown."
+            }
+            onRetry={refetchOwnerData}
+          />
+        ) : ownerDataLoading ? (
+          <Card>
+            <Skeleton width="40%" height={12} />
+            <View style={{ marginTop: space(2) }}>
+              <Skeleton width="60%" height={40} radius={8} />
+            </View>
+            <View style={{ marginTop: space(3) }}>
+              <Skeleton width="50%" height={14} />
+            </View>
+          </Card>
+        ) : myLots.length === 0 ? (
+          <Card>
+            <Text style={[t.title, { color: theme.text }]}>My levies</Text>
+            <EmptyState
+              icon="receipt-outline"
+              title="No lot linked yet"
+              body="Ask an office holder to link your account to the lot register."
             />
-          ) : (
-            <StatusPill tone="ok" label="Paid up" />
-          )}
-        </View>
-        {isOfficer && outstanding > 0 && overdueSince ? (
-          <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(2) }}>
-            Overdue since {formatDate(overdueSince)}.
-          </Text>
-        ) : null}
-      </Card>
+          </Card>
+        ) : (
+          <Card>
+            <Text style={[t.label, { color: theme.muted }]}>Amount due on my lots</Text>
+            <View style={{ marginTop: space(1) }}>
+              <Figure
+                cents={ownerSummary.amountDueCents}
+                size="hero"
+                tone={ownerSummary.amountDueCents > 0 ? "crit" : "ok"}
+              />
+            </View>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginTop: space(3),
+              }}
+            >
+              <Text style={{ ...t.bodySmall, color: theme.muted }}>
+                {myLots.length} linked lot{myLots.length === 1 ? "" : "s"}
+              </Text>
+              {ownerSummary.lotsWithAmountDue > 0 ? (
+                <StatusPill
+                  tone="crit"
+                  label={`${ownerSummary.lotsWithAmountDue} of your lot${myLots.length === 1 ? "" : "s"} due`}
+                />
+              ) : (
+                <StatusPill tone="ok" label="Paid up" />
+              )}
+            </View>
+            {ownerSummary.amountDueCents === 0 && ownerSummary.lotsInCredit > 0 ? (
+              <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(2) }}>
+                Nothing is due; one or more linked lots are in credit.
+              </Text>
+            ) : null}
+          </Card>
+        )
+      ) : (
+        <Card>
+          <Text style={[t.label, { color: theme.muted }]}>Levies outstanding</Text>
+          <View style={{ marginTop: space(1) }}>
+            <Figure cents={outstanding} size="hero" tone={outstanding > 0 ? "crit" : "default"} />
+          </View>
+          {finance?.hasBudget ? (
+            <Text style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}>
+              Admin {money(finance.adminCents)} · Maintenance {money(finance.maintenanceCents)}
+            </Text>
+          ) : null}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: space(3),
+            }}
+          >
+            <Text style={{ ...t.bodySmall, color: theme.muted }}>
+              {noticeCount} levy notice{noticeCount === 1 ? "" : "s"} · levied{" "}
+              {money(finance?.leviedCents ?? 0)}
+            </Text>
+            {lotsInArrears > 0 ? (
+              <StatusPill
+                tone="crit"
+                label={`${lotsInArrears} lot${lotsInArrears === 1 ? "" : "s"} overdue`}
+              />
+            ) : (
+              <StatusPill tone="ok" label="Paid up" />
+            )}
+          </View>
+          {outstanding > 0 && overdueSince ? (
+            <Text style={{ ...t.bodySmall, color: theme.muted, marginTop: space(2) }}>
+              Overdue since {formatDate(overdueSince)}.
+            </Text>
+          ) : null}
+        </Card>
+      )}
 
       <SectionHeader label="How to pay" />
-      {trust ? (
+      {payStatusQuery.isPending ? (
+        <Card>
+          <Skeleton width="70%" height={18} />
+          <View style={{ marginTop: space(3) }}>
+            <Skeleton width="50%" height={14} />
+          </View>
+        </Card>
+      ) : payStatusQuery.isError ? (
+        <ErrorState
+          title="Couldn't load payment details"
+          detail="No bank details are shown until the scheme's trust account can be confirmed."
+          onRetry={() => payStatusQuery.refetch()}
+        />
+      ) : trust ? (
         <Card>
           <PayRow label="BSB" value={trust.bsb} divider />
           <PayRow label="Account number" value={trust.accountNumber} divider={!!trust.payidRoot} />
@@ -354,7 +464,7 @@ export default function SchemeFinance() {
         </>
       ) : null}
 
-      {!isOfficer && focus && focusType === "levy_notice" ? (
+      {isOwnerView && focus && focusType === "levy_notice" ? (
         <>
           <SectionHeader label="Levy notice" />
           <Card style={{ backgroundColor: theme.accentSoft }}>
@@ -378,7 +488,7 @@ export default function SchemeFinance() {
         </>
       ) : null}
 
-      {!isOfficer && focus && focusType === "payment" ? (
+      {isOwnerView && focus && focusType === "payment" ? (
         <>
           <SectionHeader label="Payment receipt" />
           {focusedPaymentQuery.isPending ? (
@@ -429,58 +539,35 @@ export default function SchemeFinance() {
         </>
       ) : null}
 
-      {!isOfficer ? (
+      {isOwnerView && !ownerDataFailed && !ownerDataLoading && myLots.length > 0 ? (
         <>
           <SectionHeader label="My lot statements" />
-          {myLotsQuery.isPending || myStatementQueries.some((query) => query.isPending) ? (
-            <Card>
-              <Skeleton width="70%" height={18} />
-              <View style={{ marginTop: space(3) }}>
-                <Skeleton width="50%" height={14} />
-              </View>
-            </Card>
-          ) : myLotsQuery.isError ? (
-            <ErrorState onRetry={() => myLotsQuery.refetch()} />
-          ) : myLots.length === 0 ? (
-            <EmptyState
-              icon="receipt-outline"
-              title="No lot linked yet"
-              body="Ask an office holder to link your account to the lot register."
-            />
-          ) : (
-            <Card>
-              {myLots.map((lot, index) => {
-                const balance = myStatementQueries[index]?.data?.balanceCents ?? 0;
-                return (
-                  <ListRow
-                    key={lot.id}
-                    title={`Lot ${lot.lotNumber}`}
-                    subtitle={
-                      lot.unitNumber ? `Unit ${lot.unitNumber} · Open statement` : "Open statement"
-                    }
-                    right={
-                      <Figure
-                        cents={Math.abs(balance)}
-                        size="small"
-                        tone={balance > 0 ? "crit" : "ok"}
-                      />
-                    }
-                    onPress={() =>
-                      router.push({
-                        pathname: `/scheme/${schemeId}/finance-statement`,
-                        params: { lotId: lot.id, lotNumber: lot.lotNumber },
-                      })
-                    }
-                    divider={index < myLots.length - 1}
-                  />
-                );
-              })}
-            </Card>
-          )}
+          <Card>
+            {myLots.map((lot, index) => {
+              const balance = myStatementQueries[index]?.data?.balanceCents ?? 0;
+              return (
+                <ListRow
+                  key={lot.id}
+                  title={`Lot ${lot.lotNumber}`}
+                  subtitle={
+                    lot.unitNumber ? `Unit ${lot.unitNumber} · Open statement` : "Open statement"
+                  }
+                  right={<Figure cents={balance} size="small" tone={balance > 0 ? "crit" : "ok"} />}
+                  onPress={() =>
+                    router.push({
+                      pathname: `/scheme/${schemeId}/finance-statement`,
+                      params: { lotId: lot.id, lotNumber: lot.lotNumber },
+                    })
+                  }
+                  divider={index < myLots.length - 1}
+                />
+              );
+            })}
+          </Card>
         </>
       ) : null}
 
-      {isOfficer ? (
+      {hasCommitteeView ? (
         <SectionHeader
           label="Recent payments"
           right={
@@ -501,7 +588,7 @@ export default function SchemeFinance() {
           }
         />
       ) : null}
-      {isOfficer && paymentsQuery.isPending ? (
+      {hasCommitteeView && paymentsQuery.isPending ? (
         <Card>
           {[0, 1, 2].map((i) => (
             <View key={i} style={{ paddingVertical: space(3) }}>
@@ -509,7 +596,9 @@ export default function SchemeFinance() {
             </View>
           ))}
         </Card>
-      ) : isOfficer && recent.length > 0 ? (
+      ) : hasCommitteeView && paymentsQuery.isError ? (
+        <ErrorState title="Couldn't load recent payments" onRetry={() => paymentsQuery.refetch()} />
+      ) : hasCommitteeView && recent.length > 0 ? (
         <Card>
           {recent.map((payment, i) => (
             <Animated.View key={payment.id} entering={entering(i)}>
@@ -539,11 +628,16 @@ export default function SchemeFinance() {
             </Animated.View>
           ))}
         </Card>
-      ) : isOfficer ? (
+      ) : hasCommitteeView ? (
         <EmptyState icon="cash-outline" title="No payments recorded yet" />
       ) : null}
 
-      {isOfficer && arrears.length > 0 ? (
+      {hasCommitteeView && arrearsQuery.isError ? (
+        <>
+          <SectionHeader label="Arrears" />
+          <ErrorState title="Couldn't load arrears" onRetry={() => arrearsQuery.refetch()} />
+        </>
+      ) : hasCommitteeView && arrears.length > 0 ? (
         <>
           <SectionHeader label="Arrears" />
           <Card>

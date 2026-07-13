@@ -1002,7 +1002,7 @@ function RaiseWorkOrderAction({
     <>
       <Button variant="secondary" label="Raise work order" onPress={() => setVisible(true)} />
       {result ? <InlineFeedback message={result} tone="ok" /> : null}
-      <Sheet visible={visible} onClose={() => setVisible(false)}>
+      <Sheet visible={visible} onClose={() => setVisible(false)} scrollable={false}>
         <SheetScroll>
           <SheetHeading
             title="Raise a work order"
@@ -1280,7 +1280,7 @@ function RfqCard({
           await detail.refetch();
         }}
       />
-      <Sheet visible={awardQuote !== null} onClose={() => setAwardQuote(null)}>
+      <Sheet visible={awardQuote !== null} onClose={() => setAwardQuote(null)} scrollable={false}>
         <SheetScroll>
           <SheetHeading
             title="Ask the committee to award?"
@@ -1465,7 +1465,7 @@ function SendRfqSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose}>
+    <Sheet visible={visible} onClose={onClose} scrollable={false}>
       <SheetScroll>
         <SheetHeading
           title="Review and send the RFQ"
@@ -1633,7 +1633,7 @@ function AddQuoteSheet({
   ];
 
   return (
-    <Sheet visible={visible} onClose={onClose}>
+    <Sheet visible={visible} onClose={onClose} scrollable={false}>
       <SheetScroll>
         <SheetHeading
           title="Add a quote"
@@ -1954,7 +1954,7 @@ function ContractorSection({
         </Card>
       )}
 
-      <Sheet visible={visible} onClose={() => setVisible(false)}>
+      <Sheet visible={visible} onClose={() => setVisible(false)} scrollable={false}>
         <SheetScroll>
           <SheetHeading
             title="Add a contractor"

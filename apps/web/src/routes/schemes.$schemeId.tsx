@@ -24,6 +24,8 @@ import { lazy, Suspense, useState } from "react";
 import { z } from "zod";
 import { StatusBadge } from "@/components/StatusBadge";
 import { OverviewSection } from "@/components/sections/OverviewSection";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { RegistryPlate } from "@/components/ui/registry-plate";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -142,6 +144,8 @@ export const Route = createFileRoute("/schemes/$schemeId")({
 interface SectionItem {
   key: Section;
   label: string;
+  /** Short visual label for the five-column mobile bar. */
+  shortLabel?: string;
   icon: LucideIcon;
 }
 
@@ -235,23 +239,51 @@ const OWNER_LABELS: Partial<Record<Section, string>> = {
   community: "My building",
 };
 
+/** Five-column mobile labels stay legible at 360px without shrinking type. */
+const OWNER_SHORT_LABELS: Partial<Record<Section, string>> = {
+  overview: "Home",
+  maintenance: "Report",
+  finance: "Levies",
+  meetings: "Meetings",
+};
+
 /** Owner mobile bottom-bar primaries; community + documents live behind "More". */
 const OWNER_MOBILE_PRIMARY: readonly Section[] = ["overview", "maintenance", "finance", "meetings"];
 
 /**
- * Derive the owner nav from the single-source committee groups: keep only owner
- * sections, apply owner labels, and flatten to one unheaded group (which reads
- * best for a short index). Order follows OWNER_SECTIONS, so "Report an issue"
- * sits second under Home.
+ * Derive the owner nav from the single-source committee groups, then organise
+ * the long "More" index around resident tasks. Every member-readable register
+ * remains available without presenting a fifteen-item undifferentiated list.
  */
 function ownerNavGroups(): { heading: string | null; items: SectionItem[] }[] {
   const byKey = new Map(ALL_ITEMS.map((item) => [item.key, item]));
-  const items = OWNER_SECTIONS.flatMap((key) => {
+  const itemFor = (key: Section): SectionItem | null => {
     const base = byKey.get(key);
-    if (!base) return [];
-    return [{ ...base, label: OWNER_LABELS[key] ?? base.label }];
+    if (!base) return null;
+    return {
+      ...base,
+      label: OWNER_LABELS[key] ?? base.label,
+      shortLabel: OWNER_SHORT_LABELS[key],
+    };
+  };
+  const group = (heading: string | null, keys: Section[]) => ({
+    heading,
+    items: keys.map(itemFor).filter((item): item is SectionItem => item !== null),
   });
-  return [{ heading: null, items }];
+
+  return [
+    group(null, ["overview"]),
+    group("Everyday", ["maintenance", "finance", "community", "messages"]),
+    group("Meetings & decisions", ["meetings", "decisions", "grievances", "committee"]),
+    group("Building records", [
+      "insurance",
+      "compliance",
+      "lots",
+      "people",
+      "documents",
+      "records",
+    ]),
+  ];
 }
 
 interface NavConfig {
@@ -262,10 +294,37 @@ interface NavConfig {
 const COMMITTEE_NAV: NavConfig = { groups: NAV_GROUPS, mobilePrimary: MOBILE_PRIMARY };
 const OWNER_NAV: NavConfig = { groups: ownerNavGroups(), mobilePrimary: OWNER_MOBILE_PRIMARY };
 
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Lot owner",
+  tenant: "Resident",
+  committee_member: "Committee member",
+  chair: "Chair",
+  secretary: "Secretary",
+  treasurer: "Treasurer",
+  contractor: "Service provider",
+  manager_admin: "Scheme manager",
+};
+
+function humaniseRole(role: string): string {
+  return (
+    ROLE_LABELS[role] ??
+    role
+      .split("_")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ")
+  );
+}
+
+function roleSummary(roles: string[]): string {
+  return [...new Set(roles.map(humaniseRole))].join(" · ");
+}
+
 function SchemePage() {
   const { schemeId } = Route.useParams();
   const { section } = Route.useSearch();
-  const { data } = useQuery(schemeQueryOptions(schemeId));
+  const schemeQuery = useQuery(schemeQueryOptions(schemeId));
+  const { data } = schemeQuery;
   const isOwnerView = useIsOwnerView(schemeId);
   // Keep the bottom bar through tablet widths. Dense registers and forms need
   // the full canvas until lg; a 14rem sidebar at 768px leaves too little room.
@@ -273,11 +332,28 @@ function SchemePage() {
 
   // The sections this viewer's nav offers; null for anyone on the committee
   // (they get the whole register) and while roles are still loading.
-  const visible: readonly Section[] | null = isOwnerView ? OWNER_SECTIONS : null;
+  const visible: readonly Section[] | null = data && isOwnerView ? OWNER_SECTIONS : null;
 
   // Pick the nav set only once roles have loaded (data present) so an owner
   // never sees the committee index flash before their own resolves.
   const nav: NavConfig | null = data ? (isOwnerView ? OWNER_NAV : COMMITTEE_NAV) : null;
+
+  if (schemeQuery.isError) {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 py-8">
+        <ErrorState
+          title="We couldn't load this owners corporation"
+          message="The scheme details are temporarily unavailable. Try again, or return to your schemes."
+          onRetry={() => void schemeQuery.refetch()}
+        />
+        <div className="flex justify-center">
+          <Button asChild variant="outline">
+            <Link to="/">Back to schemes</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -288,11 +364,7 @@ function SchemePage() {
             <RegistryPlate
               eyebrow={`${data.scheme.planOfSubdivision} · Tier ${data.scheme.tier}`}
               name={data.scheme.name}
-              meta={
-                data.roles.length > 0
-                  ? `your roles: ${data.roles.map((r) => r.replace(/_/g, " ")).join(", ")}`
-                  : undefined
-              }
+              meta={data.roles.length > 0 ? `Viewing as ${roleSummary(data.roles)}` : undefined}
               badge={<StatusBadge status={data.scheme.status} />}
             />
           ) : (
@@ -302,9 +374,13 @@ function SchemePage() {
               <Skeleton className="h-px w-full" />
             </div>
           )}
-          <Suspense fallback={<SectionSkeleton />}>
-            <SectionBody schemeId={schemeId} section={section} visible={visible} />
-          </Suspense>
+          {data ? (
+            <Suspense fallback={<SectionSkeleton />}>
+              <SectionBody schemeId={schemeId} section={section} visible={visible} />
+            </Suspense>
+          ) : (
+            <SectionSkeleton />
+          )}
         </div>
       </div>
       {isMobile && nav && <BottomNav schemeId={schemeId} active={section} nav={nav} />}
@@ -445,27 +521,33 @@ function NavGroups({
 }) {
   return (
     <div className="space-y-5">
-      {groups.map((group) => (
-        <div key={group.heading ?? "overview"}>
-          {group.heading && (
-            <p className="mb-1 px-2.5 text-xs font-semibold text-muted-foreground">
-              {group.heading}
-            </p>
-          )}
-          <ul className="space-y-0.5">
-            {group.items.map((item) => (
-              <li key={item.key}>
-                <SectionLink
-                  schemeId={schemeId}
-                  item={item}
-                  active={active === item.key}
-                  onNavigate={onNavigate}
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      {groups.map((group, index) => {
+        const headingId = group.heading ? `scheme-nav-${schemeId}-${index}` : undefined;
+        return (
+          <section key={group.heading ?? "overview"} aria-labelledby={headingId}>
+            {group.heading && (
+              <h3
+                id={headingId}
+                className="mb-1 px-2.5 text-xs font-semibold text-muted-foreground"
+              >
+                {group.heading}
+              </h3>
+            )}
+            <ul className="space-y-0.5">
+              {group.items.map((item) => (
+                <li key={item.key}>
+                  <SectionLink
+                    schemeId={schemeId}
+                    item={item}
+                    active={active === item.key}
+                    onNavigate={onNavigate}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -511,6 +593,7 @@ function BottomNav({
     .map((key) => allItems.find((item) => item.key === key))
     .filter((item): item is SectionItem => item !== undefined);
   const moreActive = !nav.mobilePrimary.includes(active);
+  const activeItem = allItems.find((item) => item.key === active);
 
   return (
     <nav
@@ -527,13 +610,16 @@ function BottomNav({
               params={{ schemeId }}
               search={{ section: item.key }}
               aria-current={isActive ? "page" : undefined}
+              aria-label={item.shortLabel ? item.label : undefined}
               className={cn(
                 "flex min-h-11 flex-col items-center justify-center gap-1",
                 isActive ? "text-primary" : "text-muted-foreground",
               )}
             >
               <item.icon aria-hidden="true" className="size-5" />
-              <span className="text-[10px] font-medium">{item.label}</span>
+              <span className={cn("text-xs font-medium", isActive && "font-semibold")}>
+                {item.shortLabel ?? item.label}
+              </span>
             </Link>
           );
         })}
@@ -541,13 +627,28 @@ function BottomNav({
           type="button"
           onClick={() => setMoreOpen(true)}
           aria-expanded={moreOpen}
+          aria-current={moreActive ? "page" : undefined}
+          aria-label={
+            moreActive && activeItem
+              ? `More sections, current section: ${activeItem.label}`
+              : "More sections"
+          }
           className={cn(
             "flex min-h-11 flex-col items-center justify-center gap-1",
             moreActive ? "text-primary" : "text-muted-foreground",
           )}
         >
-          <Ellipsis aria-hidden="true" className="size-5" />
-          <span className="text-[10px] font-medium">More</span>
+          <span className="relative">
+            <Ellipsis aria-hidden="true" className="size-5" />
+            {moreActive && (
+              <span
+                aria-hidden="true"
+                data-testid="more-active-indicator"
+                className="absolute -top-0.5 -right-1 size-1.5 rounded-full bg-primary"
+              />
+            )}
+          </span>
+          <span className={cn("text-xs font-medium", moreActive && "font-semibold")}>More</span>
         </button>
       </div>
 

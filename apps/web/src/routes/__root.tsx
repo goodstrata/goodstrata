@@ -79,7 +79,12 @@ function RootLayout() {
             <Link to="/" className="flex shrink-0 items-center" aria-label="GoodStrata home">
               {params.schemeId ? (
                 <>
-                  <img src="/icon.svg" alt="" className="size-7 lg:hidden" />
+                  <img src="/mark-on-light.svg" alt="" className="size-7 dark:hidden lg:hidden" />
+                  <img
+                    src="/mark-on-dark.svg"
+                    alt=""
+                    className="hidden size-7 dark:block dark:lg:hidden"
+                  />
                   <img
                     src="/logo-on-light.svg"
                     alt="GoodStrata"

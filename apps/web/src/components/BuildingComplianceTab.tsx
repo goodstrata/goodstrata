@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, CheckCircle2, ShieldCheck, Wrench } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -315,6 +315,7 @@ function useInsuranceDocuments(schemeId: string) {
 function PolicyForm({ schemeId }: { schemeId: string }) {
   const qc = useQueryClient();
   const docs = useInsuranceDocuments(schemeId);
+  const certificateDescriptionId = useId();
   const [kind, setKind] = useState("building");
   const [insurer, setInsurer] = useState("");
   const [number, setNumber] = useState("");
@@ -352,7 +353,9 @@ function PolicyForm({ schemeId }: { schemeId: string }) {
     <Card>
       <CardHeader>
         <CardTitle>Record policy</CardTitle>
-        <CardDescription>The certificate must already be in the document register.</CardDescription>
+        <CardDescription id={certificateDescriptionId}>
+          The certificate must already be in the document register.
+        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 sm:grid-cols-2">
         <Field label="Cover type">
@@ -369,18 +372,20 @@ function PolicyForm({ schemeId }: { schemeId: string }) {
           )}
         </Field>
         <Field label="Certificate">
-          <Select value={documentId} onValueChange={setDocumentId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Choose document" />
-            </SelectTrigger>
-            <SelectContent>
-              {docs.data?.documents.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
-                  {d.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {(control) => (
+            <Select value={documentId} onValueChange={setDocumentId}>
+              <SelectTrigger {...control} aria-describedby={certificateDescriptionId}>
+                <SelectValue placeholder="Choose document" />
+              </SelectTrigger>
+              <SelectContent>
+                {docs.data?.documents.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </Field>
         <Field label="Insurer">
           <Input value={insurer} onChange={(e) => setInsurer(e.target.value)} />
@@ -402,7 +407,11 @@ function PolicyForm({ schemeId }: { schemeId: string }) {
           <Button disabled={save.isPending || !documentId} onClick={() => save.mutate()}>
             {save.isPending ? "Saving…" : "Record policy"}
           </Button>
-          {save.error && <p className="mt-2 text-sm text-critical">{save.error.message}</p>}
+          {save.error && (
+            <p role="alert" className="mt-2 text-sm text-critical">
+              {save.error.message}
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -457,7 +466,11 @@ function PlanForm({ schemeId }: { schemeId: string }) {
           <Button disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Creating…" : "Create draft"}
           </Button>
-          {save.error && <p className="mt-2 text-sm text-critical">{save.error.message}</p>}
+          {save.error && (
+            <p role="alert" className="mt-2 text-sm text-critical">
+              {save.error.message}
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -586,7 +599,9 @@ function PlanActions({ schemeId, plan }: { schemeId: string; plan: Plan }) {
           </div>
         </div>
         {(addItem.error || approve.error) && (
-          <p className="text-sm text-critical">{(addItem.error ?? approve.error)?.message}</p>
+          <p role="alert" className="text-sm text-critical">
+            {(addItem.error ?? approve.error)?.message}
+          </p>
         )}
       </CardContent>
     </Card>

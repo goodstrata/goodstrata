@@ -12,7 +12,6 @@ import {
   ErrorState,
   Figure,
   formatDate,
-  ListRow,
   PressableScale,
   Screen,
   Skeleton,
@@ -24,10 +23,11 @@ import {
   useListEntering,
   useTheme,
 } from "../../src/components";
+import { OwnerObligationsCard } from "../../src/components/OwnerObligationsCard";
 import { api, apiPost } from "../../src/lib/api";
 import { authClient } from "../../src/lib/auth";
 import { API_ORIGIN } from "../../src/lib/config";
-import { OFFICER_ROLES } from "../../src/lib/roles";
+import { getSchemePresentationMode, OFFICER_ROLES } from "../../src/lib/roles";
 
 interface SchemeRow {
   id: string;
@@ -94,9 +94,9 @@ interface AttentionItem {
   target?: "decisions" | "maintenance" | "compliance";
 }
 
-/** Things that need the owner's eye, drawn from each scheme's overview. */
+/** Committee work queues, drawn from each scheme's overview. */
 function attentionItems(
-  entries: { scheme: SchemeRow }[],
+  entries: { scheme: SchemeRow; roles: string[] }[],
   overviews: (SchemeOverview | undefined)[],
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
@@ -105,6 +105,9 @@ function attentionItems(
   // attention row would say "levies overdue" three times on one screen.
   const singleScheme = entries.length === 1;
   entries.forEach((entry, i) => {
+    // Owners get their personal lot obligations below their scheme card. The
+    // overview's governance/maintenance/arrears counters are committee data.
+    if (getSchemePresentationMode(entry.roles) === "owner") return;
     const ov = overviews[i];
     if (!ov) return;
     const pending = ov.attention?.pendingDecisions ?? 0;
@@ -373,105 +376,6 @@ function OnboardingChecklistCard({
   );
 }
 
-interface OwnerLot {
-  id: string;
-  lotNumber: string;
-  unitNumber: string | null;
-}
-
-interface OwnerStatement {
-  entries: unknown[];
-  balanceCents: number;
-}
-
-function OwnerLeviesCard({ schemeId }: { schemeId: string }) {
-  const theme = useTheme();
-  const router = useRouter();
-  const lotsQuery = useQuery({
-    queryKey: ["scheme", schemeId, "lots", "mine"],
-    queryFn: () => api<{ lots: OwnerLot[] }>(`/api/schemes/${schemeId}/lots/mine`),
-  });
-  const myLots = lotsQuery.data?.lots ?? [];
-  const statements = useQueries({
-    queries: myLots.map((lot) => ({
-      queryKey: ["scheme", schemeId, "lot-statement", lot.id] as const,
-      queryFn: () => api<OwnerStatement>(`/api/schemes/${schemeId}/lots/${lot.id}/statement`),
-    })),
-  });
-  const loading = lotsQuery.isPending || statements.some((statement) => statement.isPending);
-  const total = statements.reduce((sum, statement) => sum + (statement.data?.balanceCents ?? 0), 0);
-
-  return (
-    <Card style={{ marginTop: space(3) }}>
-      <Text style={[t.title, { color: theme.text }]}>My levies</Text>
-      {loading ? (
-        <View style={{ marginTop: space(4), gap: space(3) }}>
-          <Skeleton width="55%" height={40} radius={8} />
-          <Skeleton width="100%" height={48} />
-        </View>
-      ) : lotsQuery.isError ? (
-        <Text style={[t.bodySmall, { color: theme.muted, marginTop: space(3) }]}>
-          Couldn't load your lots. Pull to refresh and try again.
-        </Text>
-      ) : myLots.length === 0 ? (
-        <EmptyState
-          icon="receipt-outline"
-          title="No lot linked to your account yet"
-          body="Once your lot is on the register, your levy balance will show here."
-        />
-      ) : (
-        <>
-          <View style={{ marginTop: space(3) }}>
-            <Figure cents={Math.abs(total)} size="hero" tone={total > 0 ? "crit" : "ok"} />
-            <Text style={[t.bodySmall, { color: theme.muted, marginTop: space(1) }]}>
-              {total > 0
-                ? "Amount due"
-                : total < 0
-                  ? "In credit — nothing due right now"
-                  : "You're all paid up. Nothing due right now."}
-            </Text>
-          </View>
-          <View
-            style={{
-              marginTop: space(4),
-              paddingTop: space(1),
-              borderTopWidth: StyleSheet.hairlineWidth,
-              borderTopColor: theme.line,
-            }}
-          >
-            {myLots.map((lot, index) => {
-              const balance = statements[index]?.data?.balanceCents ?? 0;
-              return (
-                <ListRow
-                  key={lot.id}
-                  title={`Lot ${lot.lotNumber}`}
-                  subtitle={
-                    lot.unitNumber ? `Unit ${lot.unitNumber} · Open statement` : "Open statement"
-                  }
-                  right={
-                    <Figure
-                      cents={Math.abs(balance)}
-                      size="small"
-                      tone={balance > 0 ? "crit" : "ok"}
-                    />
-                  }
-                  onPress={() =>
-                    router.push({
-                      pathname: "/scheme/[id]/finance-statement",
-                      params: { id: schemeId, lotId: lot.id, lotNumber: lot.lotNumber },
-                    })
-                  }
-                  divider={index < myLots.length - 1}
-                />
-              );
-            })}
-          </View>
-        </>
-      )}
-    </Card>
-  );
-}
-
 export default function Overview() {
   const theme = useTheme();
   const router = useRouter();
@@ -590,6 +494,8 @@ export default function Overview() {
 
         {entries.map((entry, index) => {
           const { scheme, roles } = entry;
+          const presentationMode = getSchemePresentationMode(roles);
+          const isOwnerView = presentationMode === "owner";
           const query = overviewQueries[index];
           const ov = query?.data;
           const outstanding = ov?.finance?.arrearsOutstandingCents ?? 0;
@@ -605,15 +511,17 @@ export default function Overview() {
               ? `${plural(lots, "lot")} · ${people === 1 ? "1 person" : `${people} people`}`
               : "Setting up";
 
-          const pill =
-            outstanding > 0
+          const schemePill = {
+            tone: statusTone(schemeStatus),
+            label: schemeStatus.charAt(0).toUpperCase() + schemeStatus.slice(1),
+          };
+          const pill = isOwnerView
+            ? schemePill
+            : outstanding > 0
               ? { tone: statusTone("overdue"), label: "Overdue" }
               : noticeCount > 0
                 ? { tone: statusTone("paid"), label: "Paid" }
-                : {
-                    tone: statusTone(schemeStatus),
-                    label: schemeStatus.charAt(0).toUpperCase() + schemeStatus.slice(1),
-                  };
+                : schemePill;
 
           return (
             <Animated.View key={scheme.id} entering={entering(index)}>
@@ -625,38 +533,44 @@ export default function Overview() {
                 ) : null}
                 <Text style={[t.title, { color: theme.text }]}>{scheme.name}</Text>
 
-                <Text style={[t.label, { color: theme.muted, marginTop: space(4) }]}>
-                  Levies outstanding
-                </Text>
-                <View style={{ marginTop: space(1) }}>
-                  {ov ? (
-                    <>
-                      <Figure
-                        cents={outstanding}
-                        size="hero"
-                        tone={outstanding > 0 ? "crit" : "default"}
-                      />
-                      {outstanding > 0 && lotsInArrears > 0 ? (
-                        <Text style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}>
-                          {plural(lotsInArrears, "lot")} in arrears
-                        </Text>
-                      ) : null}
-                    </>
-                  ) : query?.isError ? (
-                    <Text style={[t.bodySmall, { color: theme.muted }]}>
-                      Couldn't load the balance — pull to refresh.
+                {!isOwnerView ? (
+                  <>
+                    <Text style={[t.label, { color: theme.muted, marginTop: space(4) }]}>
+                      Levies outstanding
                     </Text>
-                  ) : (
-                    <Skeleton width="55%" height={40} radius={8} />
-                  )}
-                </View>
+                    <View style={{ marginTop: space(1) }}>
+                      {ov ? (
+                        <>
+                          <Figure
+                            cents={outstanding}
+                            size="hero"
+                            tone={outstanding > 0 ? "crit" : "default"}
+                          />
+                          {outstanding > 0 && lotsInArrears > 0 ? (
+                            <Text
+                              style={[t.figureSmall, { color: theme.muted, marginTop: space(1) }]}
+                            >
+                              {plural(lotsInArrears, "lot")} in arrears
+                            </Text>
+                          ) : null}
+                        </>
+                      ) : query?.isError ? (
+                        <Text style={[t.bodySmall, { color: theme.muted }]}>
+                          Couldn't load the balance — pull to refresh.
+                        </Text>
+                      ) : (
+                        <Skeleton width="55%" height={40} radius={8} />
+                      )}
+                    </View>
+                  </>
+                ) : null}
 
                 <View
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    marginTop: space(4),
+                    marginTop: isOwnerView ? space(3) : space(4),
                     paddingTop: space(3),
                     borderTopWidth: StyleSheet.hairlineWidth,
                     borderTopColor: theme.line,
@@ -669,11 +583,8 @@ export default function Overview() {
               {schemeStatus !== "active" && ov ? (
                 <OnboardingChecklistCard scheme={scheme} overview={ov} roles={roles} />
               ) : null}
-              {schemeStatus === "active" &&
-              roles.length > 0 &&
-              !hasOfficerRole(roles) &&
-              session?.user?.email ? (
-                <OwnerLeviesCard schemeId={scheme.id} />
+              {schemeStatus === "active" && isOwnerView ? (
+                <OwnerObligationsCard schemeId={scheme.id} separated />
               ) : null}
             </Animated.View>
           );

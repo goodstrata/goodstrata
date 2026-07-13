@@ -1,5 +1,5 @@
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
-import { attemptId, attemptPlan } from "./test-fixtures";
+import { attemptId, attemptPlan, schemeIdFromPage } from "./test-fixtures";
 
 const SCHEME_NAME = "48 Rose St Owners Corporation";
 
@@ -43,6 +43,7 @@ test("scheme shell stays visually stable across responsive modes and themes", as
     `visual.manager.${id}@example.com`,
     testInfo.retry === 0 ? "PS543210V" : attemptPlan("65", "V", testInfo),
   );
+  const schemeId = schemeIdFromPage(page);
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.getByTestId("onboarding-checklist")).toBeVisible();
@@ -71,4 +72,37 @@ test("scheme shell stays visually stable across responsive modes and themes", as
   await page.setViewportSize({ width: 820, height: 900 });
   await expect(page.getByRole("navigation", { name: "Scheme sections" })).toBeVisible();
   await compareScreenshot(page, "scheme-maintenance-tablet-light.png", testInfo);
+
+  // A terminal scheme-detail failure replaces the register body with a clear
+  // retry/back decision. The active section is not mounted while roles are
+  // unknown, so its request must not fire on this failed fresh load.
+  const schemeDetailPattern = new RegExp(`/api/schemes/${schemeId}$`);
+  let maintenanceRequests = 0;
+  const countMaintenanceRequests = (request: import("@playwright/test").Request) => {
+    if (/\/api\/schemes\/[^/]+\/maintenance(?:\?|$)/.test(request.url())) {
+      maintenanceRequests += 1;
+    }
+  };
+  page.on("request", countMaintenanceRequests);
+  await page.route(schemeDetailPattern, async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: { code: "TEMPORARILY_UNAVAILABLE", message: "Try again shortly" },
+      }),
+    });
+  });
+  await page.reload();
+  await expect(
+    page.getByText("We couldn't load this owners corporation", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Back to schemes", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  expect(maintenanceRequests).toBe(0);
+
+  await page.unroute(schemeDetailPattern);
+  page.off("request", countMaintenanceRequests);
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("heading", { name: SCHEME_NAME })).toBeVisible();
 });

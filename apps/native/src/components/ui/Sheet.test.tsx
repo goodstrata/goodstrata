@@ -51,4 +51,17 @@ describe("Sheet", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("makes long content scrollable and keeps keyboard-open actions reachable", async () => {
+    await render(
+      <Sheet visible onClose={jest.fn()}>
+        <Text>Long form</Text>
+      </Sheet>,
+      { wrapper },
+    );
+
+    const scrollView = screen.getByTestId("sheet-scroll-view");
+    expect(scrollView.props.keyboardShouldPersistTaps).toBe("handled");
+    expect(scrollView.props.automaticallyAdjustKeyboardInsets).toBe(true);
+  });
 });

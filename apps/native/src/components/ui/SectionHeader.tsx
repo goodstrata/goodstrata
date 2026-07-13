@@ -22,7 +22,9 @@ export function SectionHeader({ label, right }: SectionHeaderProps) {
         marginBottom: space(2),
       }}
     >
-      <Text style={[type.eyebrow, { color: theme.muted }]}>{label}</Text>
+      <Text accessibilityRole="header" style={[type.eyebrow, { color: theme.muted }]}>
+        {label}
+      </Text>
       {right ?? null}
     </View>
   );

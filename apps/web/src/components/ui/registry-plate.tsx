@@ -45,22 +45,40 @@ function RegistryPlate({
   const Name = compact ? "p" : "h1";
   return (
     <header data-slot="registry-plate" className={cn("min-w-0", className)}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className={cn("font-mono text-muted-foreground", compact ? "text-[11px]" : "text-xs")}>
-            {eyebrow}
-          </p>
-          <Name
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
+        <p
+          className={cn(
+            "col-start-1 row-start-1 font-mono text-muted-foreground",
+            compact ? "text-[11px]" : "text-xs",
+          )}
+        >
+          {eyebrow}
+        </p>
+        <Name
+          className={cn(
+            "mt-0.5 min-w-0 font-display font-bold tracking-tight",
+            compact
+              ? "col-start-1 row-start-2 truncate text-xl"
+              : "col-span-2 row-start-2 break-words text-3xl leading-tight text-balance sm:col-span-1 md:text-4xl",
+          )}
+        >
+          {name}
+        </Name>
+        {meta && (
+          <p
             className={cn(
-              "mt-0.5 truncate font-display font-bold tracking-tight",
-              compact ? "text-xl" : "text-3xl md:text-4xl",
+              "mt-0.5 min-w-0 break-words text-13 text-muted-foreground",
+              compact ? "col-start-1 row-start-3" : "col-span-2 row-start-3 sm:col-span-1",
             )}
           >
-            {name}
-          </Name>
-          {meta && <p className="mt-0.5 text-13 text-muted-foreground">{meta}</p>}
-        </div>
-        {badge && <div className="shrink-0 pt-0.5">{badge}</div>}
+            {meta}
+          </p>
+        )}
+        {badge && (
+          <div className="col-start-2 row-start-1 shrink-0 self-start pt-0.5 sm:row-span-3">
+            {badge}
+          </div>
+        )}
       </div>
       <div className={cn("flex items-center gap-2", compact ? "mt-2" : "mt-3")}>
         <StrataMotif compact={compact} />

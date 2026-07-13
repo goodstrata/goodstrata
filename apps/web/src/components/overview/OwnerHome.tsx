@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { formatMoney } from "@/components/ui/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, unwrap } from "@/lib/api";
@@ -137,7 +138,8 @@ function ReportIssueHero({ schemeId }: { schemeId: string }) {
 /**
  * The owner's own money position, driven only by the lots they own — never the
  * scheme-wide arrears table. Resolves owned lots from the member-readable lots
- * list (matched by the signed-in email) and sums each lot's statement balance.
+ * list (matched by the signed-in email) and sums the positive amount due on
+ * each lot. A credit on one lot must never hide money due on another.
  */
 export function OwnerFinanceSummary({ schemeId }: { schemeId: string }) {
   const { data: session } = useSession();
@@ -166,8 +168,17 @@ export function OwnerFinanceSummary({ schemeId }: { schemeId: string }) {
   });
 
   const loading = lotsQuery.isPending || statements.some((s) => s.isPending);
-  const balanceCents = statements.reduce((sum, s) => sum + (s.data?.balanceCents ?? 0), 0);
-  const owes = balanceCents > 0;
+  const unavailable = lotsQuery.isError || statements.some((s) => s.isError);
+  const amountDueCents = statements.reduce(
+    (sum, statement) => sum + Math.max(statement.data?.balanceCents ?? 0, 0),
+    0,
+  );
+  const owes = amountDueCents > 0;
+
+  function retryBalance() {
+    void lotsQuery.refetch();
+    for (const statement of statements) void statement.refetch();
+  }
 
   return (
     <Card>
@@ -177,6 +188,12 @@ export function OwnerFinanceSummary({ schemeId }: { schemeId: string }) {
       <CardContent className="space-y-4">
         {loading ? (
           <Skeleton className="h-12 w-40" />
+        ) : unavailable ? (
+          <ErrorState
+            title="We couldn't confirm your levy balance"
+            message="Your balance is temporarily unavailable, so we haven't shown an amount. Try again before making a payment."
+            onRetry={retryBalance}
+          />
         ) : myLots.length === 0 ? (
           <EmptyState
             icon={ReceiptText}
@@ -192,14 +209,10 @@ export function OwnerFinanceSummary({ schemeId }: { schemeId: string }) {
                   owes ? "text-critical" : "text-positive",
                 )}
               >
-                {formatMoney(Math.abs(balanceCents))}
+                {formatMoney(amountDueCents)}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {owes
-                  ? "Amount due"
-                  : balanceCents < 0
-                    ? "In credit — nothing due right now"
-                    : "You're all paid up. Nothing due right now."}
+                {owes ? "Amount due" : "You're all paid up. Nothing due right now."}
               </p>
             </div>
 
@@ -232,7 +245,7 @@ export function OwnerFinanceSummary({ schemeId }: { schemeId: string }) {
 // ---------------------------- 3. My requests --------------------------------
 
 function MyRequests({ schemeId }: { schemeId: string }) {
-  const { data, isPending } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["maintenance", schemeId],
     queryFn: async () =>
       unwrap<{ requests: MaintenanceRequest[] }>(
@@ -254,6 +267,12 @@ function MyRequests({ schemeId }: { schemeId: string }) {
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-12 w-full" />
           </div>
+        ) : isError ? (
+          <ErrorState
+            title="We couldn't load building requests"
+            message="Requests may still be open. Try again to check their latest status."
+            onRetry={() => void refetch()}
+          />
         ) : open.length === 0 ? (
           <EmptyState
             icon={Wrench}
@@ -360,7 +379,7 @@ function NextMeetingCard({
 // -------------------------- 5. Community teaser -----------------------------
 
 function CommunityTeaser({ schemeId }: { schemeId: string }) {
-  const { data, isPending } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["community", schemeId, "latest"],
     queryFn: async () =>
       unwrap<{ posts: CommunityPost[] }>(
@@ -378,6 +397,12 @@ function CommunityTeaser({ schemeId }: { schemeId: string }) {
       <CardContent className="space-y-3">
         {isPending ? (
           <Skeleton className="h-16 w-full" />
+        ) : isError ? (
+          <ErrorState
+            title="We couldn't load building updates"
+            message="There may still be new posts. Try again to check the latest updates."
+            onRetry={() => void refetch()}
+          />
         ) : posts.length === 0 ? (
           <EmptyState
             icon={MessagesSquare}

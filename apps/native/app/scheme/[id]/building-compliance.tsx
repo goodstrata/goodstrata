@@ -82,7 +82,7 @@ export default function BuildingComplianceScreen() {
   const refresh = () => Promise.all([insurance.refetch(), plans.refetch()]);
   if ((insurance.isPending || plans.isPending) && !insurance.data && !plans.data)
     return (
-      <Screen title="Insurance & plan">
+      <Screen title="Insurance & plan" topInset={false}>
         <Card>
           <Skeleton width="80%" height={20} />
           <Skeleton width="60%" height={16} />
@@ -91,7 +91,7 @@ export default function BuildingComplianceScreen() {
     );
   if (!insurance.data || !plans.data)
     return (
-      <Screen title="Insurance & plan">
+      <Screen title="Insurance & plan" topInset={false}>
         <ErrorState onRetry={refresh} />
       </Screen>
     );
@@ -99,6 +99,7 @@ export default function BuildingComplianceScreen() {
   return (
     <Screen
       title="Insurance & plan"
+      topInset={false}
       refreshing={insurance.isRefetching || plans.isRefetching}
       onRefresh={refresh}
     >

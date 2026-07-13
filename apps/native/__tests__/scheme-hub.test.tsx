@@ -7,6 +7,7 @@ import SchemeHub from "../app/scheme/[id]/index";
 // value each test seeds.
 jest.mock("@tanstack/react-query", () => ({
   useQuery: jest.fn(),
+  useQueries: () => [],
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
 }));
 
@@ -17,6 +18,7 @@ jest.mock("../src/lib/api", () => ({ api: jest.fn() }));
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
   router: { push: (...args: unknown[]) => mockPush(...args) },
+  useRouter: () => ({ push: (...args: unknown[]) => mockPush(...args) }),
   useLocalSearchParams: () => ({ id: "s1" }),
 }));
 
@@ -73,7 +75,7 @@ const overviewData = {
  * Seed the mocked cache. `roles === undefined` models the detail query still
  * loading (roles not yet resolved) while the overview may already be present.
  */
-function seed(roles: string[] | undefined) {
+function seed(roles: string[] | undefined, { overviewError = false } = {}) {
   mockUseQuery.mockImplementation((opts: { queryKey: readonly unknown[] }) => {
     const key = opts.queryKey;
     // ["scheme", id] — the shared detail/roles query.
@@ -87,7 +89,12 @@ function seed(roles: string[] | undefined) {
     }
     // ["scheme", id, "overview"].
     if (Array.isArray(key) && key[2] === "overview") {
-      return { data: overviewData, isPending: false, isError: false, isRefetching: false };
+      return {
+        data: overviewError ? undefined : overviewData,
+        isPending: false,
+        isError: overviewError,
+        isRefetching: false,
+      };
     }
     return { data: undefined, isPending: false, isError: false, isRefetching: false };
   });
@@ -112,6 +119,18 @@ describe("SchemeHub — role-gated navigation", () => {
     expect(screen.getByText("Report an issue")).toBeOnTheScreen();
     // The officer "Finance" label is not used in the owner view.
     expect(screen.queryByText("Finance")).toBeNull();
+    // Scheme-wide finance never appears in the owner presentation.
+    expect(screen.queryByText("Levies outstanding")).toBeNull();
+    expect(screen.queryByText("12 lots · levied $1,500.00")).toBeNull();
+  });
+
+  it("keeps personal owner tools available when the committee overview is unavailable", async () => {
+    seed(["owner"], { overviewError: true });
+    await render(<SchemeHub />);
+
+    expect(screen.getByText("My levies")).toBeOnTheScreen();
+    expect(screen.getByText("What I owe")).toBeOnTheScreen();
+    expect(screen.queryByText("Something went wrong")).toBeNull();
   });
 
   it("gives a committee member the full register — governance is their job", async () => {
@@ -122,6 +141,7 @@ describe("SchemeHub — role-gated navigation", () => {
     expect(screen.getByText("Finance")).toBeOnTheScreen();
     expect(screen.getByText("Compliance")).toBeOnTheScreen();
     expect(screen.getByText("Lots")).toBeOnTheScreen();
+    expect(screen.getByText("Levies outstanding")).toBeOnTheScreen();
     // They read the register as the committee, not as a resident.
     expect(screen.queryByText("What I owe")).toBeNull();
   });

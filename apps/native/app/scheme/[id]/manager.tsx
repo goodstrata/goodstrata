@@ -15,6 +15,7 @@ import {
   useTheme,
 } from "../../../src/components";
 import { api, apiPost } from "../../../src/lib/api";
+import { useIsOfficer } from "../../../src/lib/roles";
 
 interface Appointment {
   id: string;
@@ -29,6 +30,7 @@ export default function ManagerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const schemeId = String(id ?? "");
   const theme = useTheme();
+  const isOfficer = useIsOfficer(schemeId);
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: ["scheme", schemeId, "manager-appointments"],
@@ -49,7 +51,7 @@ export default function ManagerScreen() {
   });
   if (query.isPending)
     return (
-      <Screen title="Manager">
+      <Screen title="Manager" topInset={false}>
         <Card>
           <Skeleton width="75%" height={20} />
         </Card>
@@ -57,12 +59,12 @@ export default function ManagerScreen() {
     );
   if (!query.data)
     return (
-      <Screen title="Manager">
+      <Screen title="Manager" topInset={false}>
         <ErrorState onRetry={() => query.refetch()} />
       </Screen>
     );
   return (
-    <Screen title="Manager">
+    <Screen title="Manager" topInset={false}>
       <Text style={[t.body, { color: theme.muted }]}>
         Registered-manager mode activates only after the approved-form appointment, delegation, BLA
         registration and continuous $2 million PI gates pass.
@@ -84,17 +86,19 @@ export default function ManagerScreen() {
               {formatDate(item.startsOn)}–{formatDate(item.endsOn)} · {item.delegatedPowers.length}{" "}
               delegated powers
             </Text>
-            {item.status === "draft" ? (
+            {isOfficer && item.status === "draft" ? (
               <Button
                 label="Activate after eligibility check"
                 onPress={() => action.mutate({ appointmentId: item.id, action: "activate" })}
               />
             ) : null}
-            <Button
-              label={item.changeNotifiedAt ? "Notify owners again" : "Notify owners"}
-              variant="secondary"
-              onPress={() => action.mutate({ appointmentId: item.id, action: "notify" })}
-            />
+            {isOfficer ? (
+              <Button
+                label={item.changeNotifiedAt ? "Notify owners again" : "Notify owners"}
+                variant="secondary"
+                onPress={() => action.mutate({ appointmentId: item.id, action: "notify" })}
+              />
+            ) : null}
           </Card>
         ))
       )}

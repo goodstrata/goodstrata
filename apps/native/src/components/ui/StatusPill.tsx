@@ -98,9 +98,10 @@ export function StatusPill({ tone, label }: StatusPillProps) {
   return (
     <View
       style={{
-        height: 24,
+        minHeight: 24,
         borderRadius: radius.pill,
         paddingHorizontal: space(3),
+        paddingVertical: space(1),
         backgroundColor: soft,
         alignItems: "center",
         justifyContent: "center",
