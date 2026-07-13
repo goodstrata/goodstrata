@@ -229,18 +229,23 @@
       if (againBtn) againBtn.hidden = false;
       undock();
     });
-    // Both sources 404 / blocked / network drop mid-load: stop and tell the
-    // visitor what happened. The play control remains available so any retry
-    // is also an explicit visitor action rather than automatic playback.
+    // A speculative preload can emit a transient media error even when the
+    // poster or a fallback source is usable. Keep background loading silent;
+    // only surface an error when it interrupts an explicit play attempt.
     video.addEventListener("error", function () {
+      var explicitAttempt = playBtn.classList.contains("is-pending");
       setPending(false);
       undock();
       video.loop = false;
       video.muted = true;
       playBtn.hidden = false;
       if (againBtn) againBtn.hidden = true;
-      showMsg("Couldn’t load the video — tap play to retry, or use the summary and link below.");
+      if (explicitAttempt) {
+        showMsg("Couldn’t load the video — tap play to retry, or use the summary and link below.");
+      }
     });
+    video.addEventListener("loadeddata", hideMsg);
+    video.addEventListener("canplay", hideMsg);
 
     // Leaving mobile width (rotate / resize to desktop) can't stay docked.
     var onMQ = function () {
