@@ -1,10 +1,11 @@
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { createRootRouteWithContext, Link, Outlet, useParams } from "@tanstack/react-router";
-import { ChevronLeft, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
+import { ChevronLeft, Loader2, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { MessagesBell } from "@/components/MessagesBell";
 import { NotificationsBell } from "@/components/NotificationsBell";
+import { RouteAccessibility } from "@/components/route-accessibility";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FormMessage } from "@/components/ui/form-message";
 import { Toaster } from "@/components/ui/sonner";
 import { signOut, useSession } from "@/lib/auth";
 import { schemeQueryOptions } from "@/lib/roles";
@@ -43,6 +45,8 @@ function RootLayout() {
   const { data: session } = useSession();
   const params = useParams({ strict: false }) as { schemeId?: string };
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const { data: activeScheme } = useQuery({
     ...schemeQueryOptions(params.schemeId ?? ""),
     enabled: Boolean(params.schemeId),
@@ -65,8 +69,24 @@ function RootLayout() {
     meta.content = THEME_COLOR[resolvedTheme];
   }, [resolvedTheme]);
 
+  async function handleSignOut() {
+    setSigningOut(true);
+    setSignOutError(null);
+    try {
+      const result = await signOut();
+      if (result.error) throw new Error(result.error.message ?? "Sign-out failed");
+      // A full document load also drops the React Query cache, so no data from
+      // the previous account survives into the next session.
+      window.location.href = "/login";
+    } catch {
+      setSignOutError("Couldn't sign you out. Check your connection and try again.");
+      setSigningOut(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <RouteAccessibility schemeName={activeScheme?.scheme.name} />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:ring-2 focus:ring-ring"
@@ -181,18 +201,29 @@ function RootLayout() {
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                   <DropdownMenuSeparator />
+                  {signOutError ? (
+                    <div className="p-1">
+                      <FormMessage>{signOutError}</FormMessage>
+                    </div>
+                  ) : null}
                   <DropdownMenuItem
-                    onClick={() => {
-                      // Land on the home page rather than sitting on a now-
-                      // unauthorised screen. A full document load (not a router
-                      // navigate) also drops the React Query cache, so nothing
-                      // from the previous session survives into the next one.
-                      void signOut().finally(() => {
-                        window.location.href = "/";
-                      });
+                    disabled={signingOut}
+                    onSelect={(event) => {
+                      // Keep the menu open while the request runs so pending or
+                      // failure feedback remains attached to the action.
+                      event.preventDefault();
+                      if (!signingOut) void handleSignOut();
                     }}
                   >
-                    <LogOut className="size-4" /> Sign out
+                    {signingOut ? (
+                      <Loader2
+                        className="size-4 animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <LogOut className="size-4" aria-hidden="true" />
+                    )}
+                    {signingOut ? "Signing out…" : "Sign out"}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

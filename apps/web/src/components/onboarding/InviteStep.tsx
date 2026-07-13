@@ -78,7 +78,9 @@ export function InviteStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="page-title">Invite your committee & owners</h1>
+        <h1 tabIndex={-1} className="page-title outline-none">
+          Invite your committee & owners
+        </h1>
         <p className="text-sm text-muted-foreground">
           Send an invite and each person gets a secure link to join. You can always do this later
           from the People register — no need to add everyone now.
@@ -107,6 +109,9 @@ export function InviteStep({
                   placeholder="name@example.com"
                   autoComplete="off"
                   inputMode="email"
+                  autoCapitalize="none"
+                  enterKeyHint="next"
+                  spellCheck={false}
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -154,7 +159,7 @@ export function InviteStep({
       </form>
 
       {sent.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="space-y-2" aria-label="Invitations sent" aria-live="polite">
           {sent.map((invite) => (
             <li
               key={invite.email}

@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { FlatList, RefreshControl, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 import {
+  Button,
+  Card,
   EmptyState,
   ErrorState,
   ListRow,
@@ -93,6 +95,8 @@ function useNotificationsFeed() {
   const unreadCount = useMemo(() => items.filter((n) => !n.readAt).length, [items]);
 
   const anyData = notifQueries.some((q) => q.data !== undefined);
+  const pendingCount = notifQueries.filter((q) => q.isPending).length;
+  const failedCount = notifQueries.filter((q) => q.isError).length;
   const loading =
     schemesQuery.isPending ||
     (schemes.length > 0 && !anyData && notifQueries.some((q) => q.isPending));
@@ -102,7 +106,16 @@ function useNotificationsFeed() {
   const refetchAll = () =>
     Promise.all([schemesQuery.refetch(), ...notifQueries.map((q) => q.refetch())]);
 
-  return { schemes, items, unreadCount, loading, errored, refetchAll };
+  return {
+    schemes,
+    items,
+    unreadCount,
+    loading,
+    errored,
+    pendingCount,
+    failedCount,
+    refetchAll,
+  };
 }
 
 /**
@@ -118,7 +131,8 @@ export function useUnreadNotificationsCount(): number {
 export default function Notifications() {
   const theme = useTheme();
   const queryClient = useQueryClient();
-  const { schemes, items, unreadCount, loading, errored, refetchAll } = useNotificationsFeed();
+  const { schemes, items, unreadCount, loading, errored, pendingCount, failedCount, refetchAll } =
+    useNotificationsFeed();
   const [pulling, setPulling] = useState(false);
   const refresh = async () => {
     setPulling(true);
@@ -219,14 +233,68 @@ export default function Notifications() {
         refreshControl={
           <RefreshControl refreshing={pulling} onRefresh={refresh} tintColor={theme.muted} />
         }
+        ListHeaderComponent={
+          items.length > 0 && (failedCount > 0 || pendingCount > 0) ? (
+            <Card style={{ marginBottom: space(3) }}>
+              <View
+                accessibilityRole={failedCount > 0 ? "alert" : undefined}
+                accessibilityLiveRegion="polite"
+                style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}
+              >
+                <Ionicons
+                  name={failedCount > 0 ? "cloud-offline-outline" : "sync-outline"}
+                  size={20}
+                  color={failedCount > 0 ? theme.warn : theme.muted}
+                />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[t.bodySmall, { color: theme.text }]}>
+                    {failedCount > 0
+                      ? `${failedCount} ${failedCount === 1 ? "building" : "buildings"} couldn't be checked`
+                      : `Checking ${pendingCount} more ${pendingCount === 1 ? "building" : "buildings"}`}
+                  </Text>
+                  <Text style={[t.caption, { color: theme.muted, marginTop: 2 }]}>
+                    {failedCount > 0
+                      ? "Showing the notifications that are available."
+                      : "New results will appear here automatically."}
+                  </Text>
+                </View>
+                {failedCount > 0 ? (
+                  <Button variant="secondary" label="Retry" onPress={() => void refetchAll()} />
+                ) : null}
+              </View>
+            </Card>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={{ paddingTop: space(4) }}>
-            <EmptyState icon="checkmark-done-outline" title="You're all caught up" />
+            {failedCount > 0 ? (
+              <ErrorState
+                title="Couldn't check every building"
+                detail="No complete notification view is available yet. Try the failed buildings again."
+                onRetry={refetchAll}
+              />
+            ) : pendingCount > 0 ? (
+              <View
+                accessibilityRole="progressbar"
+                accessibilityLabel={`Checking ${pendingCount} ${pendingCount === 1 ? "building" : "buildings"} for notifications`}
+                accessibilityLiveRegion="polite"
+                style={{ gap: space(3) }}
+              >
+                <Skeleton width="55%" height={16} />
+                <Skeleton width="82%" height={12} />
+                <Text style={[t.bodySmall, { color: theme.muted }]}>Checking your buildings…</Text>
+              </View>
+            ) : (
+              <EmptyState icon="checkmark-done-outline" title="You're all caught up" />
+            )}
           </View>
         }
         renderItem={({ item, index }) => {
           const unread = !item.readAt;
-          const subtitle = item.body || (schemes.length > 1 ? item.schemeName : undefined);
+          const subtitle =
+            [item.body, schemes.length > 1 ? item.schemeName : undefined]
+              .filter(Boolean)
+              .join(" · ") || undefined;
           const row = (
             <ListRow
               title={item.title}

@@ -28,6 +28,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
+import { FormMessage } from "@/components/ui/form-message";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -243,6 +244,7 @@ function ChangePasswordCard() {
                 <Input
                   type="password"
                   autoComplete="current-password"
+                  enterKeyHint="next"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -262,6 +264,7 @@ function ChangePasswordCard() {
                 <Input
                   type="password"
                   autoComplete="new-password"
+                  enterKeyHint="next"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -280,6 +283,7 @@ function ChangePasswordCard() {
                 <Input
                   type="password"
                   autoComplete="new-password"
+                  enterKeyHint="done"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -624,15 +628,17 @@ function DangerCard({ user }: { user: SettingsUser }) {
       await signOut();
       window.location.href = "/login";
     },
-    onError: (e) => {
-      const message = e instanceof Error ? e.message : "Couldn't delete your account";
-      toast.error(
-        /session.*(expired|fresh)/i.test(message)
-          ? "For safety this needs a recent sign-in. Sign out, sign back in, then try again."
-          : message,
-      );
-    },
   });
+
+  const deleteError = del.isError
+    ? (() => {
+        const message =
+          del.error instanceof Error ? del.error.message : "Couldn't delete your account";
+        return /session.*(expired|fresh)/i.test(message)
+          ? "For safety this needs a recent sign-in. Sign out, sign back in, then try again."
+          : message;
+      })()
+    : null;
 
   const canDelete =
     confirm.trim().toLowerCase() === user.email.toLowerCase() &&
@@ -660,6 +666,7 @@ function DangerCard({ user }: { user: SettingsUser }) {
             if (!next) {
               setConfirm("");
               setPassword("");
+              del.reset();
             }
           }}
         >
@@ -690,8 +697,14 @@ function DangerCard({ user }: { user: SettingsUser }) {
                 <Input
                   id="delete-confirm"
                   autoComplete="off"
+                  autoCapitalize="none"
+                  enterKeyHint={hasPassword ? "next" : "done"}
+                  spellCheck={false}
                   value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
+                  onChange={(e) => {
+                    del.reset();
+                    setConfirm(e.target.value);
+                  }}
                 />
               </Field>
               {hasPassword ? (
@@ -700,11 +713,16 @@ function DangerCard({ user }: { user: SettingsUser }) {
                     id="delete-password"
                     type="password"
                     autoComplete="current-password"
+                    enterKeyHint="done"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      del.reset();
+                      setPassword(e.target.value);
+                    }}
                   />
                 </Field>
               ) : null}
+              {deleteError ? <FormMessage>{deleteError}</FormMessage> : null}
             </div>
             <DialogFooter>
               <DialogClose asChild>

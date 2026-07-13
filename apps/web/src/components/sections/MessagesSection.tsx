@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Mail, MailOpen, SquarePen, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Mail, MailOpen, Search, SquarePen, Users, X } from "lucide-react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -101,6 +101,17 @@ function participantNames(c: ConversationSummary): string {
   return c.otherParticipants.map((p) => p.name).join(", ");
 }
 
+function roleLabel(role: string): string {
+  const labels: Record<string, string> = {
+    chair: "Chair",
+    secretary: "Secretary",
+    treasurer: "Treasurer",
+    committee_member: "Committee member",
+    manager_admin: "Scheme manager",
+  };
+  return labels[role] ?? role.replaceAll("_", " ");
+}
+
 // ---------------------------------------------------------------------------
 // Section
 // ---------------------------------------------------------------------------
@@ -110,6 +121,9 @@ export function MessagesSection({ schemeId }: { schemeId: string }) {
   const isCommittee = useIsCommittee(schemeId);
   const [openId, setOpenId] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [returnFocusId, setReturnFocusId] = useState<string | null>(null);
 
   const inbox = useInfiniteQuery({
     queryKey: CONVERSATIONS_KEY(schemeId),
@@ -125,8 +139,41 @@ export function MessagesSection({ schemeId }: { schemeId: string }) {
     refetchInterval: MESSAGING_POLL_INTERVAL,
   });
 
-  const conversations = inbox.data?.pages.flatMap((page) => page.conversations) ?? [];
+  const conversations = useMemo(
+    () => inbox.data?.pages.flatMap((page) => page.conversations) ?? [],
+    [inbox.data],
+  );
+  const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase());
+  const visibleConversations = useMemo(
+    () =>
+      conversations.filter((conversation) => {
+        if (unreadOnly && conversation.unreadCount === 0) return false;
+        if (!deferredSearch) return true;
+        return [
+          participantNames(conversation),
+          conversation.subject,
+          conversation.lastMessage?.body,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(deferredSearch);
+      }),
+    [conversations, deferredSearch, unreadOnly],
+  );
   const open = conversations.find((c) => c.id === openId) ?? null;
+
+  // On a phone the thread replaces the inbox. Returning restores keyboard
+  // focus to the row that opened it, while search/filter state stays intact.
+  useEffect(() => {
+    if (!isMobile || openId !== null || !returnFocusId) return;
+    const frame = requestAnimationFrame(() => {
+      const row = document.getElementById(`conversation-${returnFocusId}`);
+      const searchField = document.getElementById("conversation-search");
+      (row ?? searchField)?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isMobile, openId, returnFocusId]);
 
   const newMessageButton = (
     <Button onClick={() => setComposeOpen(true)}>
@@ -168,9 +215,17 @@ export function MessagesSection({ schemeId }: { schemeId: string }) {
     const list = (
       <InboxList
         inbox={inbox}
-        conversations={conversations}
+        conversations={visibleConversations}
+        totalCount={conversations.length}
         openId={open?.id ?? null}
-        onOpen={setOpenId}
+        search={search}
+        unreadOnly={unreadOnly}
+        onSearchChange={setSearch}
+        onUnreadOnlyChange={setUnreadOnly}
+        onOpen={(conversationId) => {
+          setReturnFocusId(conversationId);
+          setOpenId(conversationId);
+        }}
       />
     );
     body = isMobile ? (
@@ -222,6 +277,7 @@ export function MessagesSection({ schemeId }: { schemeId: string }) {
         onOpenChange={setComposeOpen}
         onStarted={(conversationId) => {
           setComposeOpen(false);
+          setReturnFocusId(conversationId);
           setOpenId(conversationId);
         }}
       />
@@ -236,7 +292,12 @@ export function MessagesSection({ schemeId }: { schemeId: string }) {
 function InboxList({
   inbox,
   conversations,
+  totalCount,
   openId,
+  search,
+  unreadOnly,
+  onSearchChange,
+  onUnreadOnlyChange,
   onOpen,
 }: {
   inbox: {
@@ -245,92 +306,179 @@ function InboxList({
     fetchNextPage: () => unknown;
   };
   conversations: ConversationSummary[];
+  totalCount: number;
   openId: string | null;
+  search: string;
+  unreadOnly: boolean;
+  onSearchChange: (value: string) => void;
+  onUnreadOnlyChange: (value: boolean) => void;
   onOpen: (id: string) => void;
 }) {
+  const filtering = search.trim() !== "" || unreadOnly;
   return (
-    <Card className="gap-0 overflow-hidden py-0">
-      <ul aria-label="Conversations" className="divide-y">
-        {conversations.map((c) => {
-          const active = c.id === openId;
-          const soleParticipant = c.otherParticipants.length === 1 ? c.otherParticipants[0]! : null;
-          return (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => onOpen(c.id)}
-                aria-current={active ? "true" : undefined}
-                className={cn(
-                  "flex w-full items-start gap-2.5 px-3 py-3 text-left transition-colors hover:bg-muted/60",
-                  active && "bg-accent hover:bg-accent",
-                )}
-              >
-                {soleParticipant ? (
-                  <Avatar size="sm" className="mt-0.5">
-                    {soleParticipant.image && <AvatarImage src={soleParticipant.image} alt="" />}
-                    <AvatarFallback>{initials(soleParticipant.name)}</AvatarFallback>
-                  </Avatar>
-                ) : (
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <Users aria-hidden="true" className="size-4 text-muted-foreground" />
-                  </span>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline justify-between gap-2">
-                    <span
-                      className={cn(
-                        "truncate text-sm",
-                        c.unreadCount > 0 ? "font-semibold" : "font-medium",
-                      )}
-                    >
-                      {participantNames(c)}
-                    </span>
-                    <time
-                      dateTime={c.lastMessageAt}
-                      title={formatDateTime(c.lastMessageAt)}
-                      className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
-                    >
-                      {relativeTime(c.lastMessageAt)}
-                    </time>
-                  </span>
-                  {c.subject && (
-                    <span className="block truncate text-sm text-foreground/90">{c.subject}</span>
-                  )}
-                  <span className="flex items-center justify-between gap-2">
-                    <span
-                      className={cn(
-                        "truncate text-xs",
-                        c.unreadCount > 0 ? "font-medium text-foreground" : "text-muted-foreground",
-                      )}
-                    >
-                      {c.lastMessage?.body ?? "No messages"}
-                    </span>
-                    {c.unreadCount > 0 && (
-                      <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 font-mono text-[10px] font-semibold text-primary-foreground tabular-nums">
-                        {c.unreadCount > 99 ? "99+" : c.unreadCount}
-                        <span className="sr-only"> unread</span>
+    <div className="min-w-0 space-y-2.5">
+      <div className="space-y-2 rounded-lg border bg-card p-2.5">
+        <div className="relative">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            id="conversation-search"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search loaded conversations"
+            aria-label="Search loaded conversations"
+            className="h-9 pr-9 pl-8"
+          />
+          {search && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Clear conversation search"
+              onClick={() => onSearchChange("")}
+              className="absolute top-1/2 right-1.5 -translate-y-1/2"
+            >
+              <X aria-hidden="true" />
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant={unreadOnly ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={unreadOnly}
+            onClick={() => onUnreadOnlyChange(!unreadOnly)}
+          >
+            Unread only
+          </Button>
+          <span className="text-xs text-muted-foreground" role="status">
+            {conversations.length} of {totalCount}
+          </span>
+        </div>
+      </div>
+
+      <Card className="gap-0 overflow-hidden py-0">
+        {conversations.length === 0 && filtering ? (
+          <div
+            className="flex min-h-48 flex-col items-center justify-center gap-2 px-5 py-8 text-center"
+            role="status"
+          >
+            <Search aria-hidden="true" className="size-5 text-muted-foreground" />
+            <p className="text-sm font-medium">No conversations match</p>
+            <p className="text-xs text-muted-foreground">
+              Try another search or show all messages.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onSearchChange("");
+                onUnreadOnlyChange(false);
+              }}
+            >
+              Clear filters
+            </Button>
+          </div>
+        ) : (
+          <ul aria-label="Conversations" className="divide-y">
+            {conversations.map((conversation) => {
+              const active = conversation.id === openId;
+              const soleParticipant =
+                conversation.otherParticipants.length === 1
+                  ? conversation.otherParticipants[0]!
+                  : null;
+              return (
+                <li key={conversation.id}>
+                  <button
+                    id={`conversation-${conversation.id}`}
+                    type="button"
+                    onClick={() => onOpen(conversation.id)}
+                    aria-current={active ? "true" : undefined}
+                    className={cn(
+                      "relative flex w-full items-start gap-2.5 px-3 py-3 text-left transition-colors hover:bg-muted/60",
+                      active && "bg-accent hover:bg-accent",
+                      conversation.unreadCount > 0 &&
+                        "before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
+                    )}
+                  >
+                    {soleParticipant ? (
+                      <Avatar size="sm" className="mt-0.5">
+                        {soleParticipant.image && (
+                          <AvatarImage src={soleParticipant.image} alt="" />
+                        )}
+                        <AvatarFallback>{initials(soleParticipant.name)}</AvatarFallback>
+                      </Avatar>
+                    ) : (
+                      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                        <Users aria-hidden="true" className="size-4 text-muted-foreground" />
                       </span>
                     )}
-                  </span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {inbox.hasNextPage && (
-        <div className="flex justify-center border-t p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            pending={inbox.isFetchingNextPage}
-            onClick={() => void inbox.fetchNextPage()}
-          >
-            Load older conversations
-          </Button>
-        </div>
-      )}
-    </Card>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span
+                          className={cn(
+                            "truncate text-sm",
+                            conversation.unreadCount > 0 ? "font-semibold" : "font-medium",
+                          )}
+                        >
+                          {participantNames(conversation)}
+                        </span>
+                        <time
+                          dateTime={conversation.lastMessageAt}
+                          title={formatDateTime(conversation.lastMessageAt)}
+                          className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
+                        >
+                          {relativeTime(conversation.lastMessageAt)}
+                        </time>
+                      </span>
+                      {conversation.subject && (
+                        <span className="block truncate text-sm text-foreground/90">
+                          {conversation.subject}
+                        </span>
+                      )}
+                      <span className="flex items-center justify-between gap-2">
+                        <span
+                          className={cn(
+                            "truncate text-xs",
+                            conversation.unreadCount > 0
+                              ? "font-medium text-foreground"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {conversation.lastMessage?.body ?? "No messages"}
+                        </span>
+                        {conversation.unreadCount > 0 && (
+                          <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 font-mono text-[10px] font-semibold text-primary-foreground tabular-nums">
+                            {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                            <span className="sr-only"> unread</span>
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {inbox.hasNextPage && (
+          <div className="flex justify-center border-t p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              pending={inbox.isFetchingNextPage}
+              onClick={() => void inbox.fetchNextPage()}
+            >
+              Load older conversations
+            </Button>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -360,6 +508,7 @@ function ConversationView({
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
   const conversationId = conversation.id;
+  const headingId = `conversation-thread-${conversationId}`;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const thread = useInfiniteQuery({
@@ -377,8 +526,11 @@ function ConversationView({
   });
 
   // API pages are newest-first; render oldest→newest, newest at the bottom.
-  const newestFirst = thread.data?.pages.flatMap((page) => page.messages) ?? [];
-  const messages = [...newestFirst].reverse();
+  const newestFirst = useMemo(
+    () => thread.data?.pages.flatMap((page) => page.messages) ?? [],
+    [thread.data],
+  );
+  const messages = useMemo(() => [...newestFirst].reverse(), [newestFirst]);
   const newestId = newestFirst[0]?.id;
 
   const markRead = useMutation({
@@ -430,103 +582,108 @@ function ConversationView({
   formRef.current = form;
 
   return (
-    <Card className="gap-0 overflow-hidden py-0">
-      <div className="flex items-center gap-2 border-b px-3 py-2.5">
-        {onBack && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onBack}
-            aria-label="Back to conversations"
-            className="shrink-0"
-          >
-            <ArrowLeft aria-hidden="true" className="size-4" />
-          </Button>
-        )}
-        <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-medium">{participantNames(conversation)}</p>
-          {conversation.subject && (
-            <p className="truncate text-xs text-muted-foreground">{conversation.subject}</p>
-          )}
-        </div>
-      </div>
-
-      <div ref={scrollRef} className="max-h-[55dvh] min-h-48 overflow-y-auto px-3 py-3">
-        {thread.isError ? (
-          <ErrorState
-            message={
-              thread.error instanceof Error ? thread.error.message : "Couldn't load the messages."
-            }
-            onRetry={() => void thread.refetch()}
-          />
-        ) : thread.isPending ? (
-          <div className="space-y-3">
-            <Skeleton className="h-12 w-3/4" />
-            <Skeleton className="ml-auto h-12 w-3/4" />
-            <Skeleton className="h-12 w-2/3" />
-          </div>
-        ) : (
-          <>
-            {thread.hasNextPage && (
-              <div className="mb-3 flex justify-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  pending={thread.isFetchingNextPage}
-                  onClick={() => void thread.fetchNextPage()}
-                >
-                  Load earlier messages
-                </Button>
-              </div>
-            )}
-            <ol aria-live="polite" className="space-y-3">
-              {messages.map((m) => (
-                <MessageBubble key={m.id} message={m} mine={m.sender?.userId === currentUserId} />
-              ))}
-            </ol>
-          </>
-        )}
-      </div>
-
-      <form
-        className="border-t px-3 py-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void form.handleSubmit();
-        }}
-      >
-        <form.Field name="body">
-          {(field) => (
-            <Field
-              label="Reply"
-              error={fieldError(field.state.meta.errors)}
-              hint={charactersLeftHint(field.state.value)}
+    <section aria-labelledby={headingId}>
+      <Card className="gap-0 overflow-hidden py-0">
+        <div className="flex items-center gap-2 border-b px-3 py-2.5">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onBack}
+              aria-label="Back to conversations"
+              className="shrink-0"
             >
-              {(control) => (
-                <Textarea
-                  id={control.id}
-                  aria-invalid={control["aria-invalid"]}
-                  aria-describedby={control["aria-describedby"]}
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="Write a message…"
-                  rows={2}
-                  enterKeyHint="send"
-                />
-              )}
-            </Field>
+              <ArrowLeft aria-hidden="true" className="size-4" />
+            </Button>
           )}
-        </form.Field>
-        <FormError form={form} className="mt-2" />
-        <div className="mt-2 flex justify-end">
-          <SubmitButton form={form} size="sm">
-            Send
-          </SubmitButton>
+          <div className="min-w-0 leading-tight">
+            <h3 id={headingId} className="truncate text-sm font-medium">
+              {participantNames(conversation)}
+            </h3>
+            {conversation.subject && (
+              <p className="truncate text-xs text-muted-foreground">{conversation.subject}</p>
+            )}
+          </div>
         </div>
-      </form>
-    </Card>
+
+        <div ref={scrollRef} className="max-h-[55dvh] min-h-48 overflow-y-auto px-3 py-3">
+          {thread.isError ? (
+            <ErrorState
+              message={
+                thread.error instanceof Error ? thread.error.message : "Couldn't load the messages."
+              }
+              onRetry={() => void thread.refetch()}
+            />
+          ) : thread.isPending ? (
+            <div className="space-y-3">
+              <Skeleton className="h-12 w-3/4" />
+              <Skeleton className="ml-auto h-12 w-3/4" />
+              <Skeleton className="h-12 w-2/3" />
+            </div>
+          ) : (
+            <>
+              {thread.hasNextPage && (
+                <div className="mb-3 flex justify-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    pending={thread.isFetchingNextPage}
+                    onClick={() => void thread.fetchNextPage()}
+                  >
+                    Load earlier messages
+                  </Button>
+                </div>
+              )}
+              <ol aria-live="polite" className="space-y-3">
+                {messages.map((m) => (
+                  <MessageBubble key={m.id} message={m} mine={m.sender?.userId === currentUserId} />
+                ))}
+              </ol>
+            </>
+          )}
+        </div>
+
+        <form
+          className="border-t px-3 py-3"
+          aria-label={`Reply to ${participantNames(conversation)}`}
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void form.handleSubmit();
+          }}
+        >
+          <form.Field name="body">
+            {(field) => (
+              <Field
+                label="Reply"
+                error={fieldError(field.state.meta.errors)}
+                hint={charactersLeftHint(field.state.value)}
+              >
+                {(control) => (
+                  <Textarea
+                    id={control.id}
+                    aria-invalid={control["aria-invalid"]}
+                    aria-describedby={control["aria-describedby"]}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="Write a message…"
+                    rows={2}
+                    enterKeyHint="send"
+                  />
+                )}
+              </Field>
+            )}
+          </form.Field>
+          <FormError form={form} className="mt-2" />
+          <div className="mt-2 flex justify-end">
+            <SubmitButton form={form} size="sm">
+              Send
+            </SubmitButton>
+          </div>
+        </form>
+      </Card>
+    </section>
   );
 }
 
@@ -597,7 +754,7 @@ function NewMessageSheet({
   const isCommittee = useIsCommittee(schemeId);
 
   // Same query keys as CommitteeSection, so the caches are shared.
-  const { data: members } = useQuery({
+  const membersQuery = useQuery({
     queryKey: ["members", schemeId],
     queryFn: async () =>
       unwrap<{ members: { userId: string; name: string; email: string }[] }>(
@@ -605,7 +762,7 @@ function NewMessageSheet({
       ),
     enabled: open,
   });
-  const { data: committee } = useQuery({
+  const committeeQuery = useQuery({
     queryKey: ["committee", schemeId],
     queryFn: async () =>
       unwrap<{ committee: { userId: string | null; role: string }[] }>(
@@ -613,6 +770,9 @@ function NewMessageSheet({
       ),
     enabled: open,
   });
+  const members = membersQuery.data;
+  const committee = committeeQuery.data;
+  const recipientsError = membersQuery.isError || committeeQuery.isError;
 
   // Roles per officer-tier user, for labelling and (for plain members) the
   // allowed recipient set. The server enforces the officer-on-one-side rule
@@ -629,7 +789,7 @@ function NewMessageSheet({
     .map((m) => ({
       userId: m.userId,
       name: m.name,
-      detail: officerRoles.get(m.userId)?.join(", ").replace(/_/g, " ") ?? m.email,
+      detail: officerRoles.get(m.userId)?.map(roleLabel).join(", ") ?? m.email,
     }));
 
   const formRef = useRef<{ reset: () => void } | null>(null);
@@ -677,6 +837,33 @@ function NewMessageSheet({
             void form.handleSubmit();
           }}
         >
+          {recipientsError && (
+            <div
+              role="alert"
+              className="space-y-2 rounded-lg border border-caution/25 bg-caution/8 p-3 text-sm"
+            >
+              <p className="font-medium">Specific recipients couldn't load</p>
+              <p className="text-muted-foreground">
+                You can still message the committee as a group, or retry the people list.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void membersQuery.refetch();
+                  void committeeQuery.refetch();
+                }}
+              >
+                Try again
+              </Button>
+            </div>
+          )}
+          {!recipientsError && (membersQuery.isPending || committeeQuery.isPending) && (
+            <p className="text-sm text-muted-foreground" role="status">
+              Loading people…
+            </p>
+          )}
           <form.Field name="to">
             {(field) => (
               <Field label="To" error={fieldError(field.state.meta.errors)}>

@@ -1,17 +1,37 @@
 import { createFileRoute, type SearchSchemaInput, useNavigate } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import { Bell, KeyRound, SlidersHorizontal, UserRound } from "lucide-react";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { z } from "zod";
-import { NotificationsSection } from "@/components/settings/NotificationsSection";
-import { PreferencesSection } from "@/components/settings/PreferencesSection";
-import { ProfileSection } from "@/components/settings/ProfileSection";
-import { SecuritySection } from "@/components/settings/SecuritySection";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/lib/auth";
 import { useIsMobile } from "@/lib/use-mobile";
+
+// Account panels carry very different dependencies (session/device parsing,
+// avatar upload, notification matrices). Load only the selected panel so a
+// profile visit does not also download security and notification code.
+const ProfileSection = lazy(() =>
+  import("@/components/settings/ProfileSection").then((module) => ({
+    default: module.ProfileSection,
+  })),
+);
+const SecuritySection = lazy(() =>
+  import("@/components/settings/SecuritySection").then((module) => ({
+    default: module.SecuritySection,
+  })),
+);
+const NotificationsSection = lazy(() =>
+  import("@/components/settings/NotificationsSection").then((module) => ({
+    default: module.NotificationsSection,
+  })),
+);
+const PreferencesSection = lazy(() =>
+  import("@/components/settings/PreferencesSection").then((module) => ({
+    default: module.PreferencesSection,
+  })),
+);
 
 const SECTIONS = ["profile", "security", "notifications", "preferences"] as const;
 type SettingsSection = (typeof SECTIONS)[number];
@@ -80,34 +100,52 @@ function SettingsPage() {
 
           <div className="min-w-0 flex-1">
             <TabsContent value="profile">
-              <ProfileSection
-                user={{
-                  id: session.user.id,
-                  name: session.user.name,
-                  email: session.user.email,
-                  image: session.user.image,
-                  emailVerified: session.user.emailVerified,
-                }}
-              />
+              <Suspense fallback={<SettingsPanelSkeleton />}>
+                <ProfileSection
+                  user={{
+                    id: session.user.id,
+                    name: session.user.name,
+                    email: session.user.email,
+                    image: session.user.image,
+                    emailVerified: session.user.emailVerified,
+                  }}
+                />
+              </Suspense>
             </TabsContent>
             <TabsContent value="security">
-              <SecuritySection
-                user={{
-                  id: session.user.id,
-                  name: session.user.name,
-                  email: session.user.email,
-                }}
-              />
+              <Suspense fallback={<SettingsPanelSkeleton />}>
+                <SecuritySection
+                  user={{
+                    id: session.user.id,
+                    name: session.user.name,
+                    email: session.user.email,
+                  }}
+                />
+              </Suspense>
             </TabsContent>
             <TabsContent value="notifications">
-              <NotificationsSection />
+              <Suspense fallback={<SettingsPanelSkeleton />}>
+                <NotificationsSection />
+              </Suspense>
             </TabsContent>
             <TabsContent value="preferences">
-              <PreferencesSection />
+              <Suspense fallback={<SettingsPanelSkeleton />}>
+                <PreferencesSection />
+              </Suspense>
             </TabsContent>
           </div>
         </Tabs>
       )}
+    </div>
+  );
+}
+
+function SettingsPanelSkeleton() {
+  return (
+    <div className="space-y-4 rounded-xl border p-6" role="status" aria-label="Loading settings">
+      <Skeleton className="h-5 w-40" />
+      <Skeleton className="h-4 w-full max-w-64" />
+      <Skeleton className="h-11 w-full max-w-sm" />
     </div>
   );
 }

@@ -22,13 +22,14 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <meta property="og:image" content="https://goodstrata.com.au/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="GoodStrata" />
+  <meta property="og:image:alt" content="GoodStrata: The building runs itself. You stay in charge." />
   <meta property="article:published_time" content="2026-07-04" />
   <meta property="article:author" content="Good Strata Pty Ltd" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Your strata manager is now an open-source AI agent. It ran our building from a MacBook." />
   <meta name="twitter:description" content="110 audited events, 4 agent runs, ~21k local-model tokens, 1 human decision, $0.00 of money computed by an LLM." />
   <meta name="twitter:image" content="https://goodstrata.com.au/og-image.png" />
+  <meta name="twitter:image:alt" content="GoodStrata: The building runs itself. You stay in charge." />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
   <link rel="icon" href="/favicon.ico" sizes="32x32" />
@@ -38,7 +39,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-<!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" title="Google Tag Manager" aria-hidden="true" tabindex="-1" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <a class="skip-link" href="#content">Skip to content</a>
 
 <div class="wrap">
@@ -129,7 +130,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
     <h2>Get it</h2>
     <ul class="trust">
-      <li><b>Self-host:</b> <code>docker compose --profile app up</code>: Postgres plus one container. Point <code>AI_PROVIDER=local</code> at Ollama, or <code>anthropic</code> for hosted Claude. Demo building included: <code>pnpm seed:demo</code>.</li>
+      <li><b>Self-host:</b> <code>docker compose --profile app up --build</code>: Postgres plus one container. Point <code>AI_PROVIDER=local</code> at Ollama, or <code>anthropic</code> for hosted Claude. Demo building included: <code>pnpm seed:demo</code>.</li>
       <li><b>Managed:</b> goodstrata.com.au: same open code, hosted, with real NPP/PayID payments. Coming soon to Australian buildings.</li>
       <li><b>Source:</b> Apache-2.0, on <a href="https://github.com/goodstrata/goodstrata">GitHub</a>. The e2e test drives the entire story above (onboarding to AGM) in a real browser on every commit.</li>
     </ul>

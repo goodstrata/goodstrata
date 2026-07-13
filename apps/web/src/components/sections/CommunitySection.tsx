@@ -5,8 +5,17 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Ellipsis, Heart, ImagePlus, MessageSquare, MessagesSquare, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Ellipsis,
+  Heart,
+  ImagePlus,
+  MessageSquare,
+  MessagesSquare,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -30,6 +39,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -162,7 +172,19 @@ function charactersLeftHint(value: string): string | undefined {
 
 export function CommunitySection({ schemeId }: { schemeId: string }) {
   const isCommittee = useIsCommittee(schemeId);
+  const isOwnerView = useIsOwnerView(schemeId);
   const [channel, setChannel] = useState<Channel>("scheme");
+
+  const heading = (
+    <div className="space-y-1">
+      <h2 className="font-display text-2xl font-semibold tracking-tight">
+        {isOwnerView ? "My building" : "Community"}
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Notices, questions and photos shared by owners and residents.
+      </p>
+    </div>
+  );
 
   // Plain members see the open board only; anyone on the committee (or the
   // manager) also gets the private committee channel. The tabs are
@@ -170,6 +192,7 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
   if (!isCommittee) {
     return (
       <div className="max-w-2xl space-y-6">
+        {heading}
         <ChannelFeed schemeId={schemeId} channel="scheme" />
       </div>
     );
@@ -177,6 +200,7 @@ export function CommunitySection({ schemeId }: { schemeId: string }) {
 
   return (
     <div className="max-w-2xl space-y-6">
+      {heading}
       <Tabs value={channel} onValueChange={(v) => setChannel(v as Channel)}>
         <TabsList variant="line">
           <TabsTrigger value="scheme">Everyone</TabsTrigger>
@@ -199,6 +223,8 @@ function ChannelFeed({ schemeId, channel }: { schemeId: string; channel: Channel
   const currentUserId = session?.user?.id;
   const isCommittee = useIsCommittee(schemeId);
   const isOwnerView = useIsOwnerView(schemeId);
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase());
 
   const feed = useInfiniteQuery({
     queryKey: FEED_KEY(schemeId, channel),
@@ -253,13 +279,59 @@ function ChannelFeed({ schemeId, channel }: { schemeId: string; channel: Channel
 
   // A committee viewer's unfiltered feed interleaves committee posts; keep the
   // open board clean so each channel shows only its own conversation.
-  const posts = (feed.data?.pages.flatMap((page) => page.posts) ?? []).filter((p) =>
-    channel === "scheme" ? p.visibility === "scheme" : true,
+  const posts = useMemo(
+    () =>
+      (feed.data?.pages.flatMap((page) => page.posts) ?? []).filter((post) =>
+        channel === "scheme" ? post.visibility === "scheme" : true,
+      ),
+    [feed.data, channel],
+  );
+  const visiblePosts = useMemo(
+    () =>
+      deferredSearch
+        ? posts.filter((post) =>
+            `${post.author.name} ${post.body}`.toLocaleLowerCase().includes(deferredSearch),
+          )
+        : posts,
+    [posts, deferredSearch],
   );
 
   return (
     <div className="space-y-6">
       <PostComposer schemeId={schemeId} channel={channel} isOwnerView={isOwnerView} />
+
+      {(posts.length > 0 || search) && (
+        <div className="flex flex-col gap-2 rounded-lg border bg-card p-3 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search loaded posts"
+              aria-label={`Search ${channel === "committee" ? "committee" : "community"} posts`}
+              className="pr-9 pl-9"
+            />
+            {search && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Clear post search"
+                onClick={() => setSearch("")}
+                className="absolute top-1/2 right-2 -translate-y-1/2"
+              >
+                <X aria-hidden="true" />
+              </Button>
+            )}
+          </div>
+          <span className="shrink-0 text-xs text-muted-foreground" role="status">
+            {visiblePosts.length} of {posts.length} shown
+          </span>
+        </div>
+      )}
 
       {feed.isError ? (
         <ErrorState
@@ -291,9 +363,36 @@ function ChannelFeed({ schemeId, channel }: { schemeId: string; channel: Channel
                 : "Start the conversation — share the first update with your neighbours."
           }
         />
+      ) : visiblePosts.length === 0 ? (
+        <div
+          className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-10 text-center"
+          role="status"
+        >
+          <Search aria-hidden="true" className="size-5 text-muted-foreground" />
+          <p className="text-sm font-medium">No posts match this search</p>
+          <p className="text-sm text-muted-foreground">
+            Clear the search, or load older posts to look further back.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setSearch("")}>
+              Clear search
+            </Button>
+            {feed.hasNextPage && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                pending={feed.isFetchingNextPage}
+                onClick={() => void feed.fetchNextPage()}
+              >
+                Load older posts
+              </Button>
+            )}
+          </div>
+        </div>
       ) : (
         <div className="space-y-4">
-          {posts.map((post) => (
+          {visiblePosts.map((post) => (
             <PostCard
               key={post.id}
               schemeId={schemeId}
@@ -552,6 +651,7 @@ function PostCard({
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const canModerate = currentUserId === post.author.userId || isModerator;
+  const commentsId = `post-${post.id}-comments`;
 
   const likeMutation = useMutation({
     mutationFn: async () =>
@@ -621,6 +721,8 @@ function PostCard({
           variant="ghost"
           size="sm"
           onClick={() => likeMutation.mutate()}
+          disabled={likeMutation.isPending}
+          aria-busy={likeMutation.isPending || undefined}
           aria-pressed={post.likedByMe}
           aria-label={post.likedByMe ? "Unlike post" : "Like post"}
           className={cn(
@@ -636,6 +738,7 @@ function PostCard({
           size="sm"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
+          aria-controls={commentsId}
           className="gap-1.5 text-muted-foreground pointer-coarse:-my-1.5 pointer-coarse:min-h-11"
         >
           <MessageSquare aria-hidden="true" className="size-4" />
@@ -645,18 +748,20 @@ function PostCard({
       </div>
 
       {expanded && (
-        <CommentThread
-          schemeId={schemeId}
-          postId={post.id}
-          currentUserId={currentUserId}
-          isModerator={isModerator}
-          onCommentCountChange={(delta) =>
-            patchPost(post.id, (p) => ({
-              ...p,
-              commentCount: Math.max(0, p.commentCount + delta),
-            }))
-          }
-        />
+        <div id={commentsId}>
+          <CommentThread
+            schemeId={schemeId}
+            postId={post.id}
+            currentUserId={currentUserId}
+            isModerator={isModerator}
+            onCommentCountChange={(delta) =>
+              patchPost(post.id, (p) => ({
+                ...p,
+                commentCount: Math.max(0, p.commentCount + delta),
+              }))
+            }
+          />
+        </div>
       )}
     </Card>
   );
@@ -938,6 +1043,8 @@ function CommentItem({
             variant="ghost"
             size="xs"
             onClick={() => likeMutation.mutate()}
+            disabled={likeMutation.isPending}
+            aria-busy={likeMutation.isPending || undefined}
             aria-pressed={comment.likedByMe}
             aria-label={comment.likedByMe ? "Unlike comment" : "Like comment"}
             className={cn(

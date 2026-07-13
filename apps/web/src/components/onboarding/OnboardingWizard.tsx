@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { FinishStep } from "./FinishStep";
@@ -35,6 +35,20 @@ export function OnboardingWizard() {
   const [step, setStep] = useState(0);
   const [scheme, setScheme] = useState<CreatedScheme | null>(null);
   const [lotsAdded, setLotsAdded] = useState(0);
+  const stepContentRef = useRef<HTMLDivElement>(null);
+  const previousStep = useRef(step);
+
+  // Wizard steps replace one another without changing the URL. Move focus to
+  // the new step heading so keyboard and screen-reader users are not left on a
+  // button that just disappeared.
+  useEffect(() => {
+    if (previousStep.current === step) return;
+    previousStep.current = step;
+    const frame = window.requestAnimationFrame(() => {
+      stepContentRef.current?.querySelector<HTMLElement>("h1")?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [step]);
 
   const handleCreated = (created: CreatedScheme) => {
     setScheme(created);
@@ -56,11 +70,13 @@ export function OnboardingWizard() {
           <Progress
             value={((step + 1) / STEP_LABELS.length) * 100}
             aria-label={`Onboarding progress: step ${step + 1} of ${STEP_LABELS.length}`}
+            aria-valuetext={`Step ${step + 1} of ${STEP_LABELS.length}: ${STEP_LABELS[step]}`}
           />
           <ol className="flex gap-4 pt-0.5">
             {STEP_LABELS.map((label, i) => (
               <li
                 key={label}
+                aria-current={i === step ? "step" : undefined}
                 className={cn(
                   "text-xs",
                   i === step
@@ -77,25 +93,27 @@ export function OnboardingWizard() {
         </div>
       )}
 
-      {step === 0 && <WelcomeStep defaultName={defaultName} onCreated={handleCreated} />}
+      <div ref={stepContentRef}>
+        {step === 0 && <WelcomeStep defaultName={defaultName} onCreated={handleCreated} />}
 
-      {step === 1 && scheme && (
-        <LotsStep
-          schemeId={scheme.id}
-          addedCount={lotsAdded}
-          onDone={(count) => {
-            setLotsAdded(count);
-            setStep(2);
-          }}
-          onSkip={() => setStep(2)}
-        />
-      )}
+        {step === 1 && scheme && (
+          <LotsStep
+            schemeId={scheme.id}
+            addedCount={lotsAdded}
+            onDone={(count) => {
+              setLotsAdded(count);
+              setStep(2);
+            }}
+            onSkip={() => setStep(2)}
+          />
+        )}
 
-      {step === 2 && scheme && (
-        <InviteStep schemeId={scheme.id} onBack={() => setStep(1)} onFinish={() => setStep(3)} />
-      )}
+        {step === 2 && scheme && (
+          <InviteStep schemeId={scheme.id} onBack={() => setStep(1)} onFinish={() => setStep(3)} />
+        )}
 
-      {step === 3 && scheme && <FinishStep schemeId={scheme.id} schemeName={scheme.name} />}
+        {step === 3 && scheme && <FinishStep schemeId={scheme.id} schemeName={scheme.name} />}
+      </div>
     </div>
   );
 }

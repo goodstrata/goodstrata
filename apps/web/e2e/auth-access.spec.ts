@@ -63,7 +63,7 @@ test("password reset: non-disclosure copy, confirm mismatch, single-use link", a
   // Wait for the route swap to COMMIT before touching the form: the URL updates
   // before React unmounts the login card, and both pages have an email input
   // with the same placeholder — filling too early lands in the dying login form.
-  await expect(page.getByText("Reset your password")).toBeVisible();
+  await expect(page.locator("#main").getByText("Reset your password")).toBeVisible();
 
   // --- An unknown address gets the exact same "sent" state (no account
   // existence disclosure) ---
@@ -110,10 +110,11 @@ test("password reset: non-disclosure copy, confirm mismatch, single-use link", a
   await page.getByRole("button", { name: "Update password" }).click();
   await expect(page.getByText("Passwords don't match.")).toBeVisible();
 
-  // --- Matching passwords: success state, then back to sign-in ---
+  // --- Matching passwords: explicit success state, then back to sign-in ---
   await page.locator("#reset-confirm").fill(NEW_PASSWORD);
   await page.getByRole("button", { name: "Update password" }).click();
   await expect(page.getByText(/Password updated/)).toBeVisible();
+  await page.getByRole("link", { name: "Continue to sign in" }).click();
   await expect(page).toHaveURL(/\/login/, { timeout: 5_000 });
 
   // --- Old password is dead, new one signs in ---
@@ -146,8 +147,9 @@ test("join page fails safe: missing, garbage, and signed-in garbage tokens", asy
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create account & join" })).toHaveCount(0);
 
-  // --- Signed in, garbage token: the accept path (not signup) is offered, and
-  // accepting surfaces the 410 inline instead of navigating anywhere ---
+  // --- Signed in, garbage token: preview validation still fails closed before
+  // an accept action is offered, rather than asking the member to accept an
+  // unidentified building invitation. ---
   await page.goto("/login");
   await page.getByPlaceholder("you@example.com").fill(EMAIL);
   await page.getByPlaceholder("Your password").fill(NEW_PASSWORD);
@@ -155,8 +157,7 @@ test("join page fails safe: missing, garbage, and signed-in garbage tokens", asy
   await expect(page.getByRole("heading", { name: /set up your building/i })).toBeVisible();
 
   await page.goto("/join?token=this-token-does-not-exist");
-  await expect(page.getByText("Accept your invite")).toBeVisible();
-  await page.getByRole("button", { name: "Accept invite" }).click();
   await expect(page.getByRole("alert")).toContainText(/invalid or has expired/);
+  await expect(page.getByRole("button", { name: "Accept invite" })).toHaveCount(0);
   await expect(page).toHaveURL(/\/join\?token=/); // no navigation happened
 });

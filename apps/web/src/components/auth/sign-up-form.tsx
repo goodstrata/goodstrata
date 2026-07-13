@@ -86,6 +86,7 @@ export function SignUpForm() {
                 <Input
                   placeholder="Your name"
                   autoComplete="name"
+                  enterKeyHint="next"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -106,6 +107,9 @@ export function SignUpForm() {
                   type="email"
                   inputMode="email"
                   autoComplete="email"
+                  autoCapitalize="none"
+                  enterKeyHint="next"
+                  spellCheck={false}
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -126,6 +130,7 @@ export function SignUpForm() {
                   placeholder="Choose a password"
                   type="password"
                   autoComplete="new-password"
+                  enterKeyHint="next"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -146,6 +151,7 @@ export function SignUpForm() {
                 <Input
                   placeholder="e.g. 48 Rose St, Fitzroy"
                   autoComplete="off"
+                  enterKeyHint="done"
                   value={field.state.value ?? ""}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -163,6 +169,9 @@ export function SignUpForm() {
                     className="mt-0.5 size-4 shrink-0 accent-primary"
                     checked={field.state.value}
                     aria-invalid={fieldError(field.state.meta.errors) ? true : undefined}
+                    aria-describedby={
+                      fieldError(field.state.meta.errors) ? "signup-consent-error" : undefined
+                    }
                     onChange={(e) => field.handleChange(e.target.checked)}
                     onBlur={field.handleBlur}
                   />
@@ -189,19 +198,17 @@ export function SignUpForm() {
                   </span>
                 </label>
                 {fieldError(field.state.meta.errors) && (
-                  <p className="text-13 text-critical">{fieldError(field.state.meta.errors)}</p>
+                  <p id="signup-consent-error" role="alert" className="text-13 text-critical">
+                    {fieldError(field.state.meta.errors)}
+                  </p>
                 )}
               </div>
             )}
           </form.Field>
           <FormError form={form} />
-          <form.Subscribe selector={(s) => s.values.consent}>
-            {(consent) => (
-              <SubmitButton form={form} disabled={!consent} className="w-full">
-                Create account
-              </SubmitButton>
-            )}
-          </form.Subscribe>
+          <SubmitButton form={form} className="w-full">
+            Create account
+          </SubmitButton>
         </form>
         <div className="mt-3">
           <Button asChild variant="link" className="h-auto p-0 text-sm">

@@ -46,7 +46,10 @@ function ForgotPasswordPage() {
         <CardContent>
           {sent ? (
             <div className="flex flex-col gap-4">
-              <p className="flex items-start gap-2 rounded-md border border-primary/20 bg-accent/40 px-3 py-2.5 text-sm text-accent-foreground">
+              <p
+                role="status"
+                className="flex items-start gap-2 rounded-md border border-primary/20 bg-accent/40 px-3 py-2.5 text-sm text-accent-foreground"
+              >
                 <MailCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>
                   If an account exists for that address, a reset link is on its way. The link
@@ -79,6 +82,9 @@ function ForgotPasswordPage() {
                         type="email"
                         inputMode="email"
                         autoComplete="email"
+                        autoCapitalize="none"
+                        enterKeyHint="send"
+                        spellCheck={false}
                         value={field.state.value}
                         onChange={(e) => field.handleChange(e.target.value)}
                         onBlur={field.handleBlur}

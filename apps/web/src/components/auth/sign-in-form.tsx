@@ -77,6 +77,9 @@ export function SignInForm() {
                   type="email"
                   inputMode="email"
                   autoComplete="email"
+                  autoCapitalize="none"
+                  enterKeyHint="next"
+                  spellCheck={false}
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -96,6 +99,7 @@ export function SignInForm() {
                   placeholder="Your password"
                   type="password"
                   autoComplete="current-password"
+                  enterKeyHint="go"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -108,7 +112,7 @@ export function SignInForm() {
             Sign in
           </SubmitButton>
         </form>
-        <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="mt-3 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <Button asChild variant="link" className="h-auto p-0 text-sm">
             <Link to="/signup">New here? Create an account</Link>
           </Button>

@@ -299,6 +299,7 @@ function CreateSchemeForm({ onSuccess }: { onSuccess: () => void }) {
               <Input
                 placeholder="Scheme name (e.g. 48 Rose St Owners Corporation)"
                 autoComplete="organization"
+                enterKeyHint="next"
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -317,6 +318,7 @@ function CreateSchemeForm({ onSuccess }: { onSuccess: () => void }) {
               <Input
                 placeholder="Plan of subdivision (e.g. PS543210V)"
                 autoCapitalize="characters"
+                enterKeyHint="next"
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -335,6 +337,7 @@ function CreateSchemeForm({ onSuccess }: { onSuccess: () => void }) {
               <Input
                 placeholder="Street address"
                 autoComplete="address-line1"
+                enterKeyHint="next"
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -354,6 +357,7 @@ function CreateSchemeForm({ onSuccess }: { onSuccess: () => void }) {
                 <Input
                   placeholder="Suburb"
                   autoComplete="address-level2"
+                  enterKeyHint="next"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -373,6 +377,7 @@ function CreateSchemeForm({ onSuccess }: { onSuccess: () => void }) {
                   placeholder="Postcode"
                   inputMode="numeric"
                   autoComplete="postal-code"
+                  enterKeyHint="done"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}

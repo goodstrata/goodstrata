@@ -48,7 +48,9 @@ export function WelcomeStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="page-title">Welcome — let's set up your building</h1>
+        <h1 tabIndex={-1} className="page-title outline-none">
+          Welcome — let's set up your building
+        </h1>
         <p className="text-sm text-muted-foreground">
           Register your owners corporation from the plan of subdivision. It only takes a minute, and
           you can refine the details later.
@@ -75,6 +77,7 @@ export function WelcomeStep({
               <Input
                 placeholder="e.g. 48 Rose St Owners Corporation"
                 autoComplete="organization"
+                enterKeyHint="next"
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -95,6 +98,7 @@ export function WelcomeStep({
               <Input
                 placeholder="e.g. PS543210V"
                 autoCapitalize="characters"
+                enterKeyHint="next"
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -114,6 +118,7 @@ export function WelcomeStep({
               <Input
                 placeholder="Street address"
                 autoComplete="address-line1"
+                enterKeyHint="next"
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -134,6 +139,7 @@ export function WelcomeStep({
                 <Input
                   placeholder="Suburb"
                   autoComplete="address-level2"
+                  enterKeyHint="next"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -153,6 +159,7 @@ export function WelcomeStep({
                   placeholder="Postcode"
                   inputMode="numeric"
                   autoComplete="postal-code"
+                  enterKeyHint="done"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}

@@ -1,6 +1,7 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
@@ -31,7 +32,6 @@ const schema = z
 
 function ResetPasswordPage() {
   const { token, error } = Route.useSearch();
-  const navigate = useNavigate();
   const [done, setDone] = useState(false);
 
   const form = useAppForm({
@@ -44,7 +44,6 @@ function ResetPasswordPage() {
         throw new Error(result.error.message ?? "Couldn't reset your password. Try again.");
       }
       setDone(true);
-      setTimeout(() => void navigate({ to: "/login" }), 1400);
     },
   });
 
@@ -67,16 +66,32 @@ function ResetPasswordPage() {
     );
   }
 
+  if (done) {
+    return (
+      <div className="mx-auto w-full max-w-sm py-2 md:py-10">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Password updated</CardTitle>
+            <CardDescription>
+              Your new password is ready. Use it the next time you sign in.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild className="w-full">
+              <Link to="/login">Continue to sign in</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-6 py-2 md:py-10">
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Set a new password</CardTitle>
-          <CardDescription>
-            {done
-              ? "Password updated — taking you to sign in…"
-              : "Choose a new password for your account."}
-          </CardDescription>
+          <CardDescription>Choose a new password for your account.</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -97,6 +112,7 @@ function ResetPasswordPage() {
                   <Input
                     type="password"
                     autoComplete="new-password"
+                    enterKeyHint="next"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}
@@ -115,6 +131,7 @@ function ResetPasswordPage() {
                   <Input
                     type="password"
                     autoComplete="new-password"
+                    enterKeyHint="done"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}
@@ -123,7 +140,7 @@ function ResetPasswordPage() {
               )}
             </form.Field>
             <FormError form={form} />
-            <SubmitButton form={form} className="w-full" disabled={done}>
+            <SubmitButton form={form} className="w-full">
               Update password
             </SubmitButton>
           </form>

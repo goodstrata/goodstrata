@@ -33,19 +33,19 @@ test("cold path: fresh signup → guided wizard → scheme overview", async ({ p
   await page.getByRole("button", { name: "Create building & continue" }).click();
 
   // --- Wizard step 2: equal-share lots ---
-  await expect(page.getByRole("heading", { name: "Add your lots" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Add your lots" })).toBeFocused();
   await page.getByPlaceholder("e.g. 8").fill("6");
   await page.getByRole("button", { name: "Add lots & continue" }).click();
 
   // --- Wizard step 3: invite an owner ---
-  await expect(page.getByRole("heading", { name: /Invite your committee/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Invite your committee/ })).toBeFocused();
   await page.getByPlaceholder("name@example.com").fill(OWNER_EMAIL);
   await page.getByRole("button", { name: "Send invite" }).click();
   await expect(page.getByText(OWNER_EMAIL)).toBeVisible();
   await page.getByRole("button", { name: "Finish setup" }).click();
 
   // --- Finish screen, then land on the scheme's Overview ---
-  await expect(page.getByRole("heading", { name: `${SCHEME_NAME} is set up` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: `${SCHEME_NAME} is set up` })).toBeFocused();
   await page.getByRole("button", { name: "Go to your building" }).click();
   await expect(page).toHaveURL(/\/schemes\//);
   await expect(page.getByRole("heading", { name: SCHEME_NAME })).toBeVisible();

@@ -22,11 +22,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <meta property="og:image" content="https://goodstrata.com.au/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="GoodStrata" />
+  <meta property="og:image:alt" content="GoodStrata: The building runs itself. You stay in charge." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="GoodStrata Tools: ask Claude about your building" />
   <meta name="twitter:description" content="Connect GoodStrata to Claude and ask about your building in plain English. Plus the free fee-check tool." />
   <meta name="twitter:image" content="https://goodstrata.com.au/og-image.png" />
+  <meta name="twitter:image:alt" content="GoodStrata: The building runs itself. You stay in charge." />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
   <link rel="icon" href="/favicon.ico" sizes="32x32" />
@@ -95,7 +96,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   </style>
 </head>
 <body>
-<!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" title="Google Tag Manager" aria-hidden="true" tabindex="-1" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <a class="skip-link" href="#content">Skip to content</a>
 
 <div class="wrap">
@@ -146,8 +147,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           In Claude, open <b>Settings → Connectors → Add custom connector</b> and paste the GoodStrata URL:
           <div class="copyrow">
             <code id="mcpUrl">https://mcp.goodstrata.com.au/mcp</code>
-            <button class="copybtn" id="copyMcp" type="button">Copy</button>
+            <button class="copybtn" id="copyMcp" type="button" aria-describedby="copyStatus">Copy</button>
           </div>
+          <span class="visually-hidden" id="copyStatus" role="status" aria-live="polite"></span>
         </li>
         <li>When Claude opens a GoodStrata sign-in window, <b>sign in with your GoodStrata account</b> and approve access.</li>
         <li>
@@ -164,6 +166,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         <b>Read-only for now.</b> The connector can read your building, but it can't change anything,
         approve decisions, or move money. Those always stay a human tap inside the app. It uses the
         same sign-in and the same permissions you already have.
+      </p>
+      <p class="tool-note">
+        Don't have a GoodStrata account yet? <a href="https://my.goodstrata.com.au/signup">Create your free building</a>, then return here to connect it.
       </p>
     </div>
 
@@ -224,21 +229,28 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   (function () {
     var btn = document.getElementById("copyMcp");
     if (!btn) return;
+    var status = document.getElementById("copyStatus");
     btn.addEventListener("click", function () {
       var code = document.getElementById("mcpUrl");
       var url = code.textContent.trim();
-      function flash(label) {
+      function flash(label, announcement) {
         btn.textContent = label;
+        if (status) status.textContent = announcement;
         setTimeout(function () { btn.textContent = "Copy"; }, 1600);
       }
       // Clipboard can be unavailable (insecure context) or refuse (permission):
       // never let the click silently no-op. Select the URL so a manual
       // ⌘/Ctrl+C still works, and say what happened.
-      var write = navigator.clipboard && navigator.clipboard.writeText
-        ? navigator.clipboard.writeText(url)
-        : Promise.reject();
+      var write;
+      try {
+        write = navigator.clipboard && navigator.clipboard.writeText
+          ? navigator.clipboard.writeText(url)
+          : Promise.reject(new Error("Clipboard unavailable"));
+      } catch (error) {
+        write = Promise.reject(error);
+      }
       write.then(
-        function () { flash("Copied ✓"); },
+        function () { flash("Copied ✓", "Connector URL copied to the clipboard."); },
         function () {
           try {
             var range = document.createRange();
@@ -247,7 +259,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             sel.removeAllRanges();
             sel.addRange(range);
           } catch (e) {}
-          flash("Copy failed");
+          flash("URL selected", "Clipboard access was blocked. The connector URL is selected; press Control C or Command C to copy it.");
         }
       );
     });

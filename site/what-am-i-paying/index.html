@@ -22,11 +22,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <meta property="og:image" content="https://goodstrata.com.au/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="GoodStrata" />
+  <meta property="og:image:alt" content="GoodStrata: The building runs itself. You stay in charge." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="What are you really paying your strata manager?" />
   <meta name="twitter:description" content="Drop in your AGM or budget. See the management fees in plain dollars. GoodStrata does the same job for $0." />
   <meta name="twitter:image" content="https://goodstrata.com.au/og-image.png" />
+  <meta name="twitter:image:alt" content="GoodStrata: The building runs itself. You stay in charge." />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
   <link rel="icon" href="/favicon.ico" sizes="32x32" />
@@ -123,7 +124,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   </style>
 </head>
 <body>
-<!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" title="Google Tag Manager" aria-hidden="true" tabindex="-1" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <a class="skip-link" href="#content">Skip to content</a>
 
 <div class="wrap">
@@ -158,7 +159,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     </p>
 
     <div id="dropzone" class="dropzone" role="button" tabindex="0"
-         aria-label="Upload your strata AGM, budget or financial statement">
+         aria-label="Upload your strata AGM, budget or financial statement"
+         aria-describedby="uploadHelp">
       <span class="dz-mark" aria-hidden="true"><span></span><span></span><span></span></span>
       <h3 class="dz-idle-head">Drop your AGM, budget or financial statement here</h3>
       <p class="dz-idle">PDF or an image, or <span class="pick">choose a file</span></p>
@@ -167,8 +169,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       <p class="dz-busy" id="dzBusy" hidden><span class="spin" aria-hidden="true"></span><b id="dzFile"></b>: reading…</p>
       <input id="fileInput" type="file" accept="application/pdf,image/*" class="hidden" />
     </div>
-    <p class="privacy-line">
-      We read the numbers in your document to answer this one question, and we don't store it.
+    <p class="privacy-line" id="uploadHelp">
+      PDF or image, up to 12 MB. We read the numbers to answer this one question, and we don't store your document.
     </p>
 
     <div id="status" class="status hidden" role="status" aria-live="polite"></div>
@@ -334,16 +336,30 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   const statusEl = document.getElementById("status");
   const resultEl = document.getElementById("result");
 
-  const money = (cents) =>
-    cents == null ? null :
-    "$" + Math.round(cents / 100).toLocaleString("en-AU");
+  const finiteNumber = (value) => {
+    if (value == null || value === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
 
-  function setStatus(html, isErr) {
+  const money = (cents) => {
+    const number = finiteNumber(cents);
+    return number == null ? null : "$" + Math.round(number / 100).toLocaleString("en-AU");
+  };
+
+  function setStatus(message, isErr) {
     statusEl.className = "status" + (isErr ? " err" : "");
-    statusEl.innerHTML = html;
+    statusEl.setAttribute("role", isErr ? "alert" : "status");
+    statusEl.setAttribute("aria-live", isErr ? "assertive" : "polite");
+    statusEl.textContent = message;
     statusEl.classList.remove("hidden");
   }
-  function clearStatus() { statusEl.classList.add("hidden"); statusEl.innerHTML = ""; }
+  function clearStatus() {
+    statusEl.classList.add("hidden");
+    statusEl.setAttribute("role", "status");
+    statusEl.setAttribute("aria-live", "polite");
+    statusEl.textContent = "";
+  }
 
   dz.addEventListener("click", () => { if (!busy) input.click(); });
   dz.addEventListener("keydown", (e) => { if (busy) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
@@ -367,6 +383,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     dz.style.minHeight = dz.offsetHeight + "px";
     dz.classList.add("busy");
     dz.setAttribute("aria-disabled", "true");
+    dz.setAttribute("aria-busy", "true");
+    resultEl.setAttribute("aria-busy", "true");
     dzFile.textContent = file.name;
     dzBusy.hidden = false;
   }
@@ -375,6 +393,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     dz.style.minHeight = "";
     dz.classList.remove("busy");
     dz.removeAttribute("aria-disabled");
+    dz.removeAttribute("aria-busy");
+    resultEl.removeAttribute("aria-busy");
     dzBusy.hidden = true;
     input.value = ""; // re-picking the same file must fire 'change' again
   }
@@ -404,6 +424,18 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
   async function upload(file) {
     if (busy) return;
+    const hasAcceptedType = file.type === "application/pdf" || file.type.startsWith("image/");
+    const hasAcceptedExtension = /\.(pdf|png|jpe?g|webp|heic|heif)$/i.test(file.name || "");
+    if (!hasAcceptedType && !hasAcceptedExtension) {
+      track("calc_estimate_failed", { reason: "unsupported_file_type" });
+      setStatus("Choose a PDF or image of your AGM papers, budget, or financial statement.", true);
+      return;
+    }
+    if (file.size === 0) {
+      track("calc_estimate_failed", { reason: "empty_file" });
+      setStatus("That file is empty. Choose the original PDF or a clear photo and try again.", true);
+      return;
+    }
     if (file.size > 12 * 1024 * 1024) {
       track("calc_estimate_failed", { reason: "file_too_large" });
       setStatus("That file is over 12 MB. Try a smaller export or a single page.", true);
@@ -461,6 +493,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
   function render(d) {
     clearStatus();
+    if (!d || typeof d !== "object") {
+      track("calc_estimate_failed", { reason: "invalid_response" });
+      restoreIdle();
+      setStatus("The reader returned an incomplete result. Try the document again.", true);
+      return;
+    }
     if (!d.isStrataFinancialDoc) {
       track("calc_estimate_failed", { reason: "not_a_strata_doc" });
       restoreIdle();
@@ -470,23 +508,30 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       );
       return;
     }
-    const total = d.totalManagerCostAnnualCents ?? d.managementFeeAnnualCents;
+    const total = finiteNumber(d.totalManagerCostAnnualCents) ?? finiteNumber(d.managementFeeAnnualCents);
+    const perLotCents = finiteNumber(d.perLotAnnualCents);
+    const lotCount = finiteNumber(d.lotCount);
     // The money moment: the visitor now knows what their building pays. `value`
     // is in dollars so GA4 can report it as a value without further maths.
     track("calc_estimate_shown", {
       value: total != null ? Math.round(total / 100) : null,
       currency: "AUD",
-      per_lot_annual: d.perLotAnnualCents != null ? Math.round(d.perLotAnnualCents / 100) : null,
-      lot_count: d.lotCount ?? null,
+      per_lot_annual: perLotCents != null ? Math.round(perLotCents / 100) : null,
+      lot_count: lotCount,
       insurance_commission_noted: !!d.insuranceCommissionNoted,
       confidence: d.confidence ?? null,
     });
-    const items = (d.lineItems || []).filter((i) => i && i.amountCents != null);
+    const items = (Array.isArray(d.lineItems) ? d.lineItems : [])
+      .map((item) => item && ({
+        label: typeof item.label === "string" ? item.label.trim() : "",
+        amountCents: finiteNumber(item.amountCents),
+      }))
+      .filter((item) => item && item.label && item.amountCents != null);
     const rows = items.map((i) =>
       `<div class="row"><span>${escapeHtml(i.label)}</span><span class="amt">${money(i.amountCents)}</span></div>`
     ).join("");
-    const perLot = d.perLotAnnualCents != null
-      ? `<p class="meta">That's about <b>${money(d.perLotAnnualCents)}</b> per lot, per year${d.lotCount ? ` across ${d.lotCount} lots` : ""}.</p>` : "";
+    const perLot = perLotCents != null
+      ? `<p class="meta">That's about <b>${money(perLotCents)}</b> per lot, per year${lotCount && lotCount > 0 ? ` across ${Math.round(lotCount).toLocaleString("en-AU")} lots` : ""}.</p>` : "";
     const commission = d.insuranceCommissionNoted
       ? `<div class="flag">Heads up: this document mentions an <b>insurance commission</b>: money your manager earns on the policy they place, on top of the fees above. GoodStrata never takes one.</div>` : "";
     const conf = d.confidence === "low"
@@ -516,11 +561,14 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     // (visually the headline already says it, so keep the line off-screen) and
     // move focus to the result so it's next in the reading order.
     statusEl.className = "status visually-hidden";
+    statusEl.setAttribute("role", "status");
+    statusEl.setAttribute("aria-live", "polite");
     statusEl.textContent = total != null
       ? "Done. You're paying " + money(total) + " a year in strata management fees. The breakdown follows."
       : "Done. We found manager charges but couldn't total them. The line items follow.";
     resultEl.focus({ preventScroll: true });
-    resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    resultEl.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest" });
   }
 
   function escapeHtml(s) {

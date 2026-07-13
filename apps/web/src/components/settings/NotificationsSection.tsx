@@ -149,6 +149,13 @@ function NotificationsMatrix({ data }: { data: PrefsPayload }) {
 
   return (
     <div className="space-y-6">
+      <p role="status" aria-live="polite" className="sr-only">
+        {mutation.isPending
+          ? "Saving notification preference…"
+          : mutation.isSuccess
+            ? "Notification preference saved."
+            : ""}
+      </p>
       {!smsAvailable ? <NoPhoneAlert /> : null}
 
       {/* Column headers — once, aligned to the shared grid track. */}
@@ -312,6 +319,7 @@ function NoPhoneAlert() {
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
+                enterKeyHint="done"
                 placeholder="0412 345 678"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}

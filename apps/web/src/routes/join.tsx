@@ -30,6 +30,12 @@ interface InvitePreview {
   name: string | null;
 }
 
+async function fetchInvitePreview(token: string): Promise<InvitePreview> {
+  const res = await fetch(`/api/invites/preview?token=${encodeURIComponent(token)}`);
+  if (!res.ok) throw new Error("This invite is invalid or has expired.");
+  return (await res.json()) as InvitePreview;
+}
+
 const joinSchema = z.object({
   name: z.string(),
   password: z.string().min(8, "Use at least 8 characters."),
@@ -69,6 +75,11 @@ function JoinPage() {
 
 function AcceptInvite({ token }: { token: string }) {
   const navigate = useNavigate();
+  const preview = useQuery({
+    queryKey: ["invite-preview", token],
+    queryFn: () => fetchInvitePreview(token),
+    retry: false,
+  });
   const accept = useMutation({
     mutationFn: async () =>
       unwrap<{ schemeId: string }>(await api.invites.accept.$post({ json: { token } })),
@@ -76,13 +87,40 @@ function AcceptInvite({ token }: { token: string }) {
       void navigate({ to: "/schemes/$schemeId", params: { schemeId: data.schemeId } }),
   });
 
+  if (preview.isError) {
+    return (
+      <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
+        <ErrorState
+          title="Invite unavailable"
+          message={
+            preview.error instanceof Error
+              ? preview.error.message
+              : "This invite is invalid or has expired."
+          }
+          onRetry={() => void preview.refetch()}
+        />
+      </div>
+    );
+  }
+
+  if (preview.isPending || !preview.data) {
+    return (
+      <div className="mx-auto mt-8 w-full max-w-sm space-y-3 md:mt-16" role="status">
+        <span className="sr-only">Loading invitation</span>
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto mt-8 w-full max-w-sm md:mt-16">
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Accept your invite</CardTitle>
+          <CardTitle className="text-lg">Join {preview.data.schemeName}</CardTitle>
           <CardDescription>
-            You're signed in — accept to join the owners corporation.
+            You've been invited as {preview.data.role.replace(/_/g, " ")}. Accept to add your
+            signed-in account to this owners corporation.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -110,11 +148,7 @@ function SignupThenAccept({ token }: { token: string }) {
     refetch,
   } = useQuery({
     queryKey: ["invite-preview", token],
-    queryFn: async (): Promise<InvitePreview> => {
-      const res = await fetch(`/api/invites/preview?token=${encodeURIComponent(token)}`);
-      if (!res.ok) throw new Error("This invite is invalid or has expired.");
-      return (await res.json()) as InvitePreview;
-    },
+    queryFn: () => fetchInvitePreview(token),
     retry: false,
   });
   previewRef.current = preview;
@@ -171,7 +205,8 @@ function SignupThenAccept({ token }: { token: string }) {
   }
   if (isPending || !preview) {
     return (
-      <div className="mx-auto mt-8 w-full max-w-sm space-y-3 md:mt-16">
+      <div className="mx-auto mt-8 w-full max-w-sm space-y-3 md:mt-16" role="status">
+        <span className="sr-only">Loading invitation</span>
         <Skeleton className="h-6 w-2/3" />
         <Skeleton className="h-40 w-full" />
       </div>
@@ -227,6 +262,7 @@ function SignupThenAccept({ token }: { token: string }) {
                       id="join-name"
                       placeholder="Your name"
                       autoComplete="name"
+                      enterKeyHint="next"
                       value={field.state.value}
                       onChange={(e) => field.handleChange(e.target.value)}
                       onBlur={field.handleBlur}
@@ -247,6 +283,7 @@ function SignupThenAccept({ token }: { token: string }) {
                     placeholder="Choose a password"
                     type="password"
                     autoComplete="new-password"
+                    enterKeyHint="go"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}

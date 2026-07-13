@@ -22,11 +22,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <meta property="og:image" content="https://goodstrata.com.au/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="GoodStrata" />
+  <meta property="og:image:alt" content="GoodStrata: The building runs itself. You stay in charge." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Open source &amp; self-host: read every line, run it yourself" />
   <meta name="twitter:description" content="Apache-2.0, the whole platform. PostgreSQL plus one process. Local AI through Ollama: no API key, no data over the wire. No lock-in is a claim you can check." />
   <meta name="twitter:image" content="https://goodstrata.com.au/og-image.png" />
+  <meta name="twitter:image:alt" content="GoodStrata: The building runs itself. You stay in charge." />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15181f" />
   <link rel="icon" href="/favicon.ico" sizes="32x32" />
@@ -36,7 +37,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-<!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NQDV7J3M" title="Google Tag Manager" aria-hidden="true" tabindex="-1" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <a class="skip-link" href="#content">Skip to content</a>
 
 <div class="wrap">
@@ -104,7 +105,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       <div class="section-body">
         <p>
           The entire platform runs on PostgreSQL and a single Node process. One command,
-          <code>docker compose --profile app up</code>, brings up a database and one container, and
+          <code>docker compose --profile app up --build</code>, brings up a database and one container, and
           you have a working owners corporation. No Kafka, no Redis cluster, no queue service, no
           managed-cloud dependency to sign up for; the append-only event bus is just Postgres with
           <code>LISTEN/NOTIFY</code>. And every paid integration ships with an offline default, so
@@ -119,6 +120,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         <li><strong>Payments</strong> → manual reconciliation instead of the hosted NPP/PayID rail.</li>
         <li><strong>AI</strong> → a model on your own machine instead of a hosted API.</li>
       </ul>
+      <div class="lede-links">
+        <a href="https://github.com/goodstrata/goodstrata#quick-start">Open the quick-start guide →</a>
+      </div>
     </div>
 
     <div class="feature">
@@ -200,7 +204,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     <ul class="proof-list">
       <li><strong>Apache-2.0</strong>: permissive, and it covers the whole platform, not an open-core shell</li>
       <li><strong>Postgres + one process</strong>: the self-host floor. No Kafka, no Redis, no managed cloud</li>
-      <li><strong>One command</strong>: <code>docker compose --profile app up</code> brings up a running building</li>
+      <li><strong>One command</strong>: <code>docker compose --profile app up --build</code> brings up a running building</li>
       <li><strong>AI_PROVIDER=local</strong> points the agents at a model in Ollama: no API key, no data over the wire</li>
       <li><strong>Offline defaults</strong> for every paid integration, so you can run with zero external accounts</li>
       <li><strong>Open formats</strong>: export your ledger, event log and documents any time you like</li>

@@ -232,6 +232,7 @@ function DisplayNameCard({ user, onSaved }: { user: SettingsUser; onSaved: () =>
               >
                 <Input
                   autoComplete="name"
+                  enterKeyHint="done"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -351,6 +352,9 @@ function EmailCard({ user, onSent }: { user: SettingsUser; onSent: () => void })
                   type="email"
                   inputMode="email"
                   autoComplete="email"
+                  autoCapitalize="none"
+                  enterKeyHint="send"
+                  spellCheck={false}
                   placeholder="you@example.com"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}

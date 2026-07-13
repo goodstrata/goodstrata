@@ -32,7 +32,9 @@ export function FinishStep({ schemeId, schemeName }: { schemeId: string; schemeN
         <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-positive/10">
           <CheckCircle2 aria-hidden="true" className="size-7 text-positive" />
         </div>
-        <h1 className="page-title">{schemeName} is set up</h1>
+        <h1 tabIndex={-1} className="page-title outline-none">
+          {schemeName} is set up
+        </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
           Nicely done. Your owners corporation is on the record and ready to run.
         </p>

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { User } from "lucide-react";
-import { useRef, useState } from "react";
+import { Search, User } from "lucide-react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
@@ -36,10 +36,10 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
   const [electionMeetingId, setElectionMeetingId] = useState("");
   const [electedUserIds, setElectedUserIds] = useState<string[]>([]);
   const [expansionMotionId, setExpansionMotionId] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
   const {
     data: committee,
     isError: committeeError,
-    error: committeeErr,
     refetch: refetchCommittee,
   } = useQuery({
     queryKey: ["committee", schemeId],
@@ -48,14 +48,22 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
         await api.schemes[":schemeId"].committee.$get({ param: { schemeId } }),
       ),
   });
-  const { data: members } = useQuery({
+  const {
+    data: members,
+    isError: membersError,
+    refetch: refetchMembers,
+  } = useQuery({
     queryKey: ["members", schemeId],
     queryFn: async () =>
       unwrap<{ members: { userId: string; name: string; email: string }[] }>(
         await api.schemes[":schemeId"].members.$get({ param: { schemeId } }),
       ),
   });
-  const { data: meetings } = useQuery({
+  const {
+    data: meetings,
+    isError: meetingsError,
+    refetch: refetchMeetings,
+  } = useQuery({
     queryKey: ["meetings", schemeId],
     queryFn: async () =>
       unwrap<{
@@ -115,16 +123,68 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
   });
   formRef.current = form;
 
-  const nameFor = (id: string) => members?.members.find((m) => m.userId === id)?.name ?? id;
+  const nameFor = (id: string) =>
+    members?.members.find((member) => member.userId === id)?.name ?? "Former member";
   // One row per person, with all of their office-holder roles.
   const officers = new Map<string, string[]>();
   for (const m of committee?.committee ?? []) {
     if (m.role === "owner" || m.role === "tenant") continue;
     officers.set(m.userId, [...(officers.get(m.userId) ?? []), m.role]);
   }
+  const eligibleAgms = useMemo(
+    () =>
+      meetings?.meetings.filter(
+        (meeting) => meeting.kind === "agm" && meeting.status !== "draft",
+      ) ?? [],
+    [meetings],
+  );
+  const deferredMemberSearch = useDeferredValue(memberSearch.trim().toLocaleLowerCase());
+  const visibleMembers = useMemo(
+    () =>
+      deferredMemberSearch
+        ? (members?.members ?? []).filter((member) =>
+            `${member.name} ${member.email}`.toLocaleLowerCase().includes(deferredMemberSearch),
+          )
+        : (members?.members ?? []),
+    [members, deferredMemberSearch],
+  );
+  const electionGuidance =
+    electedUserIds.length < 3
+      ? `Select ${3 - electedUserIds.length} more ${3 - electedUserIds.length === 1 ? "owner" : "owners"}.`
+      : electedUserIds.length === 12
+        ? "Maximum of 12 selected."
+        : `${electedUserIds.length} selected — ready to record once an AGM is chosen.`;
+
+  if (membersError) {
+    return (
+      <div className="max-w-2xl space-y-6">
+        <div className="space-y-1">
+          <h2 className="font-display text-2xl font-semibold tracking-tight">Committee</h2>
+          <p className="text-sm text-muted-foreground">
+            Current office holders and the formal record of committee appointments.
+          </p>
+        </div>
+        <ErrorState
+          title="Couldn't load the committee workspace"
+          message="The member list is temporarily unavailable, so names and appointment options can't be confirmed."
+          onRetry={() => {
+            void refetchMembers();
+            void refetchCommittee();
+            if (isOfficer) void refetchMeetings();
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-6">
+      <div className="space-y-1">
+        <h2 className="font-display text-2xl font-semibold tracking-tight">Committee</h2>
+        <p className="text-sm text-muted-foreground">
+          Current office holders and the formal record of committee appointments.
+        </p>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Current committee</CardTitle>
@@ -133,14 +193,14 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
         <CardContent>
           {committeeError ? (
             <ErrorState
-              message={
-                committeeErr instanceof Error
-                  ? committeeErr.message
-                  : "Couldn't load the committee."
-              }
-              onRetry={() => void refetchCommittee()}
+              title="Couldn't load the current committee"
+              message="The office-holder list is temporarily unavailable. Try again before relying on this record."
+              onRetry={() => {
+                void refetchCommittee();
+                void refetchMembers();
+              }}
             />
-          ) : !committee ? (
+          ) : !committee || !members ? (
             <Skeleton className="h-20" />
           ) : (
             <ul className="space-y-2.5 text-sm" data-testid="committee-list">
@@ -163,7 +223,7 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
                     </span>
                     <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
                       {roles.map((r) => (
-                        <Badge key={r} tone="info">
+                        <Badge key={r} tone="info" className="capitalize">
                           {r.replace("_", " ")}
                         </Badge>
                       ))}
@@ -185,85 +245,142 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Field label="AGM">
-              {(control) => (
-                <Select value={electionMeetingId} onValueChange={setElectionMeetingId}>
-                  <SelectTrigger id={control.id} className="w-full">
-                    <SelectValue placeholder="Select an AGM…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {meetings?.meetings
-                      .filter((meeting) => meeting.kind === "agm" && meeting.status !== "draft")
-                      .map((meeting) => (
-                        <SelectItem key={meeting.id} value={meeting.id}>
-                          {meeting.title} ·{" "}
-                          {new Date(meeting.scheduledAt).toLocaleDateString("en-AU")}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </Field>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Elected owners ({electedUserIds.length})</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {members?.members.map((member) => {
-                  const selected = electedUserIds.includes(member.userId);
-                  return (
-                    <Button
-                      key={member.userId}
-                      type="button"
-                      variant={selected ? "default" : "outline"}
-                      className="h-auto min-h-11 justify-start px-3 py-2 text-left"
-                      aria-pressed={selected}
-                      onClick={() =>
-                        setElectedUserIds((current) =>
-                          selected
-                            ? current.filter((id) => id !== member.userId)
-                            : current.length < 12
-                              ? [...current, member.userId]
-                              : current,
-                        )
-                      }
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate">{member.name}</span>
-                        <span className="block truncate text-xs font-normal opacity-75">
-                          {member.email}
-                        </span>
-                      </span>
-                    </Button>
-                  );
-                })}
+            {meetingsError ? (
+              <ErrorState
+                title="Couldn't load election options"
+                message="Members or issued AGMs are temporarily unavailable. Try again before recording an election."
+                onRetry={() => {
+                  void refetchMembers();
+                  void refetchMeetings();
+                }}
+              />
+            ) : !members || !meetings ? (
+              <div className="space-y-3" role="status" aria-label="Loading election options">
+                <Skeleton className="h-10" />
+                <Skeleton className="h-24" />
               </div>
-            </div>
+            ) : (
+              <>
+                <Field
+                  label="AGM"
+                  hint={
+                    eligibleAgms.length === 0
+                      ? "No issued AGM is available. Send an AGM notice before recording its election."
+                      : undefined
+                  }
+                >
+                  {(control) => (
+                    <Select value={electionMeetingId} onValueChange={setElectionMeetingId}>
+                      <SelectTrigger id={control.id} className="w-full">
+                        <SelectValue placeholder="Select an AGM…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {eligibleAgms.map((meeting) => (
+                          <SelectItem key={meeting.id} value={meeting.id}>
+                            {meeting.title} ·{" "}
+                            {new Date(meeting.scheduledAt).toLocaleDateString("en-AU")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
 
-            {electedUserIds.length > 7 && (
-              <Field
-                label="Expansion motion ID"
-                hint="Required for 8–12 members; the ordinary motion must be finally carried at this AGM."
-              >
-                <Input
-                  value={expansionMotionId}
-                  onChange={(event) => setExpansionMotionId(event.target.value)}
-                  placeholder="Carried motion UUID"
-                />
-              </Field>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-sm font-medium">Elected owners ({electedUserIds.length})</p>
+                    <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
+                      {electionGuidance}
+                    </p>
+                  </div>
+                  <Field label="Find an owner">
+                    {(control) => (
+                      <div className="relative">
+                        <Search
+                          aria-hidden="true"
+                          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                        />
+                        <Input
+                          id={control.id}
+                          value={memberSearch}
+                          onChange={(event) => setMemberSearch(event.target.value)}
+                          placeholder="Search name or email"
+                          className="pl-9"
+                        />
+                      </div>
+                    )}
+                  </Field>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {visibleMembers.map((member) => {
+                      const selected = electedUserIds.includes(member.userId);
+                      return (
+                        <Button
+                          key={member.userId}
+                          type="button"
+                          variant={selected ? "default" : "outline"}
+                          className="h-auto min-h-11 justify-start px-3 py-2 text-left"
+                          aria-pressed={selected}
+                          aria-describedby="election-selection-guidance"
+                          onClick={() =>
+                            setElectedUserIds((current) =>
+                              selected
+                                ? current.filter((id) => id !== member.userId)
+                                : current.length < 12
+                                  ? [...current, member.userId]
+                                  : current,
+                            )
+                          }
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate">{member.name}</span>
+                            <span className="block truncate text-xs font-normal opacity-75">
+                              {member.email}
+                            </span>
+                          </span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  {visibleMembers.length === 0 && (
+                    <p
+                      className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground"
+                      role="status"
+                    >
+                      No members match this search.
+                    </p>
+                  )}
+                  <span id="election-selection-guidance" className="sr-only">
+                    Choose between 3 and 12 elected owners.
+                  </span>
+                </div>
+
+                {electedUserIds.length > 7 && (
+                  <Field
+                    label="Expansion motion ID"
+                    hint="Required for 8–12 members; the ordinary motion must be finally carried at this AGM."
+                  >
+                    <Input
+                      value={expansionMotionId}
+                      onChange={(event) => setExpansionMotionId(event.target.value)}
+                      placeholder="Carried motion UUID"
+                    />
+                  </Field>
+                )}
+
+                <Button
+                  onClick={() => recordElection.mutate()}
+                  pending={recordElection.isPending}
+                  disabled={
+                    !electionMeetingId ||
+                    electedUserIds.length < 3 ||
+                    electedUserIds.length > 12 ||
+                    (electedUserIds.length > 7 && !expansionMotionId.trim())
+                  }
+                >
+                  Record election
+                </Button>
+              </>
             )}
-
-            <Button
-              onClick={() => recordElection.mutate()}
-              pending={recordElection.isPending}
-              disabled={
-                !electionMeetingId ||
-                electedUserIds.length < 3 ||
-                electedUserIds.length > 12 ||
-                (electedUserIds.length > 7 && !expansionMotionId.trim())
-              }
-            >
-              Record election
-            </Button>
           </CardContent>
         </Card>
       )}
@@ -275,90 +392,94 @@ export function CommitteeSection({ schemeId }: { schemeId: string }) {
             <CardDescription>Appoint a member as an office holder.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void form.handleSubmit();
-              }}
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <form.Field name="userId">
-                  {(field) => (
-                    <Field
-                      className="flex-1"
-                      label="Member"
-                      hint={
-                        members && members.members.length === 0
-                          ? "No members have joined yet — invite people from the People tab first."
-                          : undefined
-                      }
-                      error={fieldError(field.state.meta.errors)}
-                    >
-                      {(control) => (
-                        <Select
-                          value={field.state.value}
-                          onValueChange={(v) => field.handleChange(v)}
-                        >
-                          <SelectTrigger
-                            id={control.id}
-                            aria-invalid={control["aria-invalid"]}
-                            aria-describedby={control["aria-describedby"]}
-                            className="w-full"
-                            data-testid="committee-member"
+            {!members ? (
+              <Skeleton className="h-32" />
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void form.handleSubmit();
+                }}
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                  <form.Field name="userId">
+                    {(field) => (
+                      <Field
+                        className="flex-1"
+                        label="Member"
+                        hint={
+                          members && members.members.length === 0
+                            ? "No members have joined yet — invite people from the People tab first."
+                            : undefined
+                        }
+                        error={fieldError(field.state.meta.errors)}
+                      >
+                        {(control) => (
+                          <Select
+                            value={field.state.value}
+                            onValueChange={(v) => field.handleChange(v)}
                           >
-                            <SelectValue placeholder="Select member…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {members?.members.map((m) => (
-                              <SelectItem key={m.userId} value={m.userId}>
-                                {m.name} ({m.email})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </Field>
-                  )}
-                </form.Field>
-                <form.Field name="role">
-                  {(field) => (
-                    <Field
-                      className="sm:w-48"
-                      label="Role"
-                      error={fieldError(field.state.meta.errors)}
-                    >
-                      {(control) => (
-                        <Select
-                          value={field.state.value}
-                          onValueChange={(v) => field.handleChange(v as RoleValue)}
-                        >
-                          <SelectTrigger
-                            id={control.id}
-                            aria-invalid={control["aria-invalid"]}
-                            aria-describedby={control["aria-describedby"]}
-                            className="w-full"
-                            data-testid="committee-role"
+                            <SelectTrigger
+                              id={control.id}
+                              aria-invalid={control["aria-invalid"]}
+                              aria-describedby={control["aria-describedby"]}
+                              className="w-full"
+                              data-testid="committee-member"
+                            >
+                              <SelectValue placeholder="Select member…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {members?.members.map((m) => (
+                                <SelectItem key={m.userId} value={m.userId}>
+                                  {m.name} ({m.email})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </Field>
+                    )}
+                  </form.Field>
+                  <form.Field name="role">
+                    {(field) => (
+                      <Field
+                        className="sm:w-48"
+                        label="Role"
+                        error={fieldError(field.state.meta.errors)}
+                      >
+                        {(control) => (
+                          <Select
+                            value={field.state.value}
+                            onValueChange={(v) => field.handleChange(v as RoleValue)}
                           >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="chair">Chair</SelectItem>
-                            <SelectItem value="secretary">Secretary</SelectItem>
-                            <SelectItem value="treasurer">Treasurer</SelectItem>
-                            <SelectItem value="committee_member">Committee member</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </Field>
-                  )}
-                </form.Field>
-              </div>
-              <FormError form={form} className="mt-3" />
-              <div className="mt-4">
-                <SubmitButton form={form}>Assign</SubmitButton>
-              </div>
-            </form>
+                            <SelectTrigger
+                              id={control.id}
+                              aria-invalid={control["aria-invalid"]}
+                              aria-describedby={control["aria-describedby"]}
+                              className="w-full"
+                              data-testid="committee-role"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="chair">Chair</SelectItem>
+                              <SelectItem value="secretary">Secretary</SelectItem>
+                              <SelectItem value="treasurer">Treasurer</SelectItem>
+                              <SelectItem value="committee_member">Committee member</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </Field>
+                    )}
+                  </form.Field>
+                </div>
+                <FormError form={form} className="mt-3" />
+                <div className="mt-4">
+                  <SubmitButton form={form}>Assign</SubmitButton>
+                </div>
+              </form>
+            )}
           </CardContent>
         </Card>
       )}

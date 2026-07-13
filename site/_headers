@@ -1,8 +1,8 @@
 # Security headers for the goodstrata.com.au marketing site (Cloudflare Workers
 # Assets honours this file — https://developers.cloudflare.com/workers/static-assets/headers/).
 # Applied to HTML/CSS/JS/font/image responses served straight from the asset
-# store. NOTE: /clips/* is served by worker.js (run_worker_first) and builds its
-# own Response, so these headers may not attach there — see the audit note.
+# store. /clips/* is served through worker.js for byte ranges, but the worker
+# preserves the underlying asset headers on its 200 and 206 responses.
 #
 # CSP is ENFORCED here (unlike the app, which is report-only): the site is hand-
 # written static HTML with no user-rendered input, and every resource it needs is
@@ -20,3 +20,14 @@
   Cross-Origin-Opener-Policy: same-origin
   Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), bluetooth=(), midi=(), serial=()
   Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.googletagmanager.com https://*.google-analytics.com; font-src 'self'; media-src 'self'; connect-src 'self' https://my.goodstrata.com.au https://www.googletagmanager.com https://www.google-analytics.com https://*.analytics.google.com https://*.google-analytics.com; frame-src https://www.googletagmanager.com; object-src 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests
+
+# Self-hosted font files change very rarely. Avoid a validation round-trip on
+# every page visit while leaving a bounded refresh window for future updates.
+/fonts/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
+
+# A selected explainer is 3–6.6 MB and video playback uses several range
+# requests. Keep those byte ranges warm for repeat views without making a
+# stable filename effectively permanent.
+/clips/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400

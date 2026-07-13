@@ -56,7 +56,9 @@ export function LotsStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="page-title">Add your lots</h1>
+        <h1 tabIndex={-1} className="page-title outline-none">
+          Add your lots
+        </h1>
         <p className="text-sm text-muted-foreground">
           A lot is each separately owned part of the building — a unit, townhouse or shop. Every lot
           carries a <span className="font-medium text-foreground">lot entitlement</span>: its share
@@ -111,6 +113,7 @@ export function LotsStep({
                   className="max-w-32"
                   placeholder="e.g. 8"
                   inputMode="numeric"
+                  enterKeyHint="done"
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -121,7 +124,7 @@ export function LotsStep({
 
           <FormError form={form} />
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-col-reverse items-stretch gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-end">
             <Button type="button" variant="ghost" onClick={onSkip}>
               I'll add these later
             </Button>

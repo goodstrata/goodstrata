@@ -120,6 +120,11 @@ a:hover {
   outline-offset: 2px;
   border-radius: 3px;
 }
+/* Keep in-page destinations clear of the sticky site header. This covers the
+   legal contents links as well as existing deep links such as #hand-around. */
+main [id] {
+  scroll-margin-top: 104px;
+}
 /* skip-to-content — off-screen until a keyboard user tabs onto it, then it
    drops in as the very first focus stop on every page (WCAG 2.4.1) */
 .skip-link {
@@ -641,6 +646,44 @@ article .byline {
   font-size: 14px;
   font-family: var(--font-mono);
 }
+/* Long legal pages need a compact map before the clauses start. A native
+   details element keeps the list useful on phones without adding any script. */
+.legal-toc {
+  margin: 24px 0 34px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.legal-toc summary {
+  padding: 13px 16px;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
+}
+.legal-toc[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+.legal-toc ol {
+  columns: 2;
+  column-gap: 32px;
+  padding: 16px 20px 18px 42px;
+}
+.legal-toc li {
+  break-inside: avoid;
+  margin: 0 0 8px;
+  color: var(--faint-ink);
+}
+.legal-toc a {
+  color: var(--muted-ink);
+}
+.legal-toc a:hover {
+  color: var(--primary-strong);
+}
+@media (max-width: 620px) {
+  .legal-toc ol {
+    columns: 1;
+  }
+}
 article h2 {
   font-size: 26px;
   margin: 46px 0 12px;
@@ -698,6 +741,7 @@ article code {
   border-radius: 5px;
   padding: 1px 6px;
   font-size: 0.88em;
+  overflow-wrap: anywhere;
 }
 article hr {
   border: none;
@@ -1076,6 +1120,9 @@ ul.never li b {
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+.table-scroll:focus-visible {
+  outline-offset: 4px;
 }
 table.compare {
   width: 100%;
