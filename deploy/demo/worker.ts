@@ -11,6 +11,22 @@ interface Env {
   GOOGLE_CLIENT_SECRET?: string;
 }
 
+const ROBOTS_TXT = `# GoodStrata application host; indexing is suppressed by X-Robots-Tag. Public site: https://goodstrata.com.au
+User-agent: *
+Disallow:
+`;
+
+function suppressIndexing(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("X-Robots-Tag", "noindex, nofollow");
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 /**
  * Cloudflare Containers front for the GoodStrata public demo.
  * One singleton container: Postgres + app + seeded demo scheme, ephemeral by
@@ -47,7 +63,20 @@ export class GoodstrataDemo extends Container<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const container = getContainer(env.DEMO);
-    return container.fetch(request);
+    const { pathname } = new URL(request.url);
+
+    // Already-indexed app URLs must remain crawlable until search engines see
+    // the response-level noindex directive and remove them.
+    if ((request.method === "GET" || request.method === "HEAD") && pathname === "/robots.txt") {
+      const body = request.method === "HEAD" ? null : ROBOTS_TXT;
+      return suppressIndexing(
+        new Response(body, {
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        }),
+      );
+    }
+
+    const response = await getContainer(env.DEMO).fetch(request);
+    return suppressIndexing(response);
   },
 };

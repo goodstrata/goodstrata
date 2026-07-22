@@ -54,6 +54,22 @@ interface Env {
 
 const APP_URL = "https://my.goodstrata.com.au";
 
+const ROBOTS_TXT = `# GoodStrata application host; indexing is suppressed by X-Robots-Tag. Public site: https://goodstrata.com.au
+User-agent: *
+Disallow:
+`;
+
+function suppressIndexing(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("X-Robots-Tag", "noindex, nofollow");
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 /**
  * Production GoodStrata app. One always-warm container (the agent event loop,
  * pg-boss workers and crons must keep running), connected to Supabase. Provider
@@ -172,6 +188,20 @@ export class GoodstrataApp extends Container<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    return getContainer(env.APP).fetch(request);
+    const { pathname } = new URL(request.url);
+
+    // Already-indexed app URLs must remain crawlable until search engines see
+    // the response-level noindex directive and remove them.
+    if ((request.method === "GET" || request.method === "HEAD") && pathname === "/robots.txt") {
+      const body = request.method === "HEAD" ? null : ROBOTS_TXT;
+      return suppressIndexing(
+        new Response(body, {
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        }),
+      );
+    }
+
+    const response = await getContainer(env.APP).fetch(request);
+    return suppressIndexing(response);
   },
 };
