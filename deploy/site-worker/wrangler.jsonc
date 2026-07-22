@@ -6,8 +6,8 @@
     "directory": "../../site",
     "html_handling": "auto-trailing-slash",
     "binding": "ASSETS",
-    // Media must hit the script so Range requests get real 206s (Safari
-    // refuses <video> from hosts that answer ranges with a full-body 200).
-    "run_worker_first": ["/clips/*"]
+    // Canonicalisation must happen before asset matching on every route; the
+    // script still delegates assets while keeping real 206s for Safari video.
+    "run_worker_first": true
   }
 }

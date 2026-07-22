@@ -1,25 +1,60 @@
-/* goodstrata-www — static assets, plus real HTTP Range support for /clips/*.
+/* goodstrata-www — canonical host redirects, static assets, and real HTTP
+   Range support for /clips/*. Every request reaches this script so alternate
+   hosts and plaintext URLs consolidate in one hop before asset handling.
    Workers static assets answer a Range request with a full-body 200 and no
    Accept-Ranges header; Safari/iOS treat that as a broken media server (WebKit
-   demands 206s for <video>), so clips flickered then died with a MediaError.
-   Only /clips/* is routed through this script (assets.run_worker_first);
-   every other path is served straight from the asset store as before. */
+   demands 206s for <video>), so clips still need the dedicated slicing path. */
 
 const MEDIA_PREFIX = "/clips/";
+
+// `wrangler dev` serves over plaintext http on loopback, so an unconditional
+// https upgrade turns every local request into a redirect to itself — the dev
+// proxy rewrites a Location pointing back at the dev server to http, and the
+// loop never terminates. Production traffic never has these hostnames.
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+function makeAssetRedirectPermanent(response) {
+  if (response.status !== 307 && response.status !== 308) return response;
+
+  // The asset store must remain authoritative about which HTML paths need
+  // normalising, but temporary redirects leave both URL shapes crawlable.
+  return new Response(response.body, {
+    status: 301,
+    statusText: "Moved Permanently",
+    headers: response.headers,
+  });
+}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Consolidate scheme and hostname together so plaintext www requests do
+    // not burn crawl budget on a two-hop path to the only canonical origin.
+    let mustRedirect = false;
+    if (url.hostname === "www.goodstrata.com.au") {
+      url.hostname = "goodstrata.com.au";
+      mustRedirect = true;
+    }
+    if (url.protocol === "http:" && !LOOPBACK_HOSTS.has(url.hostname)) {
+      url.protocol = "https:";
+      mustRedirect = true;
+    }
+    if (mustRedirect) return Response.redirect(url.toString(), 301);
+
     if (
       !url.pathname.startsWith(MEDIA_PREFIX) ||
       (request.method !== "GET" && request.method !== "HEAD")
     ) {
-      return env.ASSETS.fetch(request);
+      const response = await env.ASSETS.fetch(request);
+      return makeAssetRedirectPermanent(response);
     }
 
     // Fetch the underlying asset without the Range header (the asset store
     // ignores it anyway); slicing is done here.
-    const res = await env.ASSETS.fetch(new Request(url, { method: "GET" }));
+    const res = makeAssetRedirectPermanent(
+      await env.ASSETS.fetch(new Request(url, { method: "GET" })),
+    );
     if (!res.ok) return res;
 
     const passthrough = () => {
