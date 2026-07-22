@@ -49,6 +49,12 @@
     <priority>0.5</priority>
   </url>
   <url>
+    <loc>https://goodstrata.com.au/blog/</loc>
+    <lastmod>2026-07-22</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://goodstrata.com.au/blog/announcing-goodstrata/</loc>
     <lastmod>2026-07-13</lastmod>
     <changefreq>yearly</changefreq>
