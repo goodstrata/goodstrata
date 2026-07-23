@@ -42,6 +42,13 @@ export default {
     }
     if (mustRedirect) return Response.redirect(url.toString(), 301);
 
+    // The /tools page was retired. It was indexed on www, so send its old URL
+    // to the homepage with a 301 rather than leaving a 404 in the index.
+    if (url.pathname === "/tools" || url.pathname === "/tools/") {
+      url.pathname = "/";
+      return Response.redirect(url.toString(), 301);
+    }
+
     if (
       !url.pathname.startsWith(MEDIA_PREFIX) ||
       (request.method !== "GET" && request.method !== "HEAD")

@@ -10,7 +10,7 @@
 # (nav toggle, clip player, MCP-copy button, estimator, inline styles) require
 # 'unsafe-inline'; the residual XSS risk is minimal on a no-auth static site, and
 # the policy still blocks off-domain scripts, framing, plugins and form hijacking.
-# The /tools estimator POSTs to the API host, hence connect-src lists it.
+# The /what-am-i-paying estimator POSTs to the API host, hence connect-src lists it.
 
 /*
   Strict-Transport-Security: max-age=31536000; includeSubDomains
